@@ -287,10 +287,6 @@ fn terminal_card(title: &str, subtitle: &str, button_label: &str) -> String {
       <h2>{title}</h2>
       <p class="muted">{subtitle}</p>
     </div>
-    <div class="header-actions">
-      <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
-      <button class="btn primary" type="button" onclick="ocLoadTerminal()">{button_label}</button>
-    </div>
   </div>
   <div class="terminal-shell">
     <div class="terminal-head">
