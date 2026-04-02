@@ -587,7 +587,19 @@ fn set_mode_600(_path: &Path) -> std::io::Result<()> {
 
 fn detect_openclaw_version(gateway_bin: &str) -> String {
     run_capture(gateway_bin, &["--version"])
-        .and_then(|output| output.split_whitespace().last().map(|s| s.to_string()))
+        .and_then(|output| {
+            output
+                .split_whitespace()
+                .map(|token| token.trim_matches(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-')))
+                .find(|token| {
+                    let mut parts = token.split('.');
+                    let first = parts.next().unwrap_or_default();
+                    let second = parts.next().unwrap_or_default();
+                    first.chars().all(|c| c.is_ascii_digit())
+                        && second.chars().all(|c| c.is_ascii_digit())
+                })
+                .map(|s| s.to_string())
+        })
         .unwrap_or_else(|| "unknown".to_string())
 }
 
