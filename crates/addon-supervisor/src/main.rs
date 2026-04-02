@@ -884,6 +884,9 @@ fn run_services(
             ProcessSpec::new("actiond", action_bin, vec![]),
             shutdown_rx.clone(),
         )));
+
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
         handles.push(tokio::spawn(run_managed_process(
             ProcessSpec::new("ingressd", ingress_bin, vec![]),
             shutdown_rx,

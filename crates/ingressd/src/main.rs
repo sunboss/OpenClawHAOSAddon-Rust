@@ -147,7 +147,7 @@ async fn terminal_redirect() -> impl IntoResponse {
 async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     if !state.enable_terminal {
         return Html(
-            r#"<!doctype html><meta charset="utf-8"><body style="font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:24px">终端未启用。</body>"#
+            r#"<!doctype html><meta charset="utf-8"><body style="font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:24px">Terminal is disabled.</body>"#
                 .to_string(),
         );
     }
@@ -322,7 +322,26 @@ async fn proxy_action(
 }
 
 async fn proxy_ui(State(state): State<AppState>, request: Request) -> impl IntoResponse {
-    proxy_http_request(&state.client, &state.ui_base, request, false).await
+    let path = request.uri().path().to_string();
+    let response = proxy_http_request(&state.client, &state.ui_base, request, false).await;
+    if response.status() != StatusCode::BAD_GATEWAY {
+        return response;
+    }
+
+    match path.as_str() {
+        "/" | "/index.html" => fallback_ui_response(),
+        "/partials/health" => Html(
+            r#"<h2>Service Status</h2><p class="hint">UI backend is still warming up. Refresh in a few seconds.</p>"#
+                .to_string(),
+        )
+        .into_response(),
+        "/partials/diag" => Html(
+            r#"<h2>Quick Diagnostics</h2><p class="hint">UI backend is temporarily unavailable, but ingress is alive.</p>"#
+                .to_string(),
+        )
+        .into_response(),
+        _ => response,
+    }
 }
 
 async fn proxy_gateway(
@@ -542,6 +561,85 @@ fn simple_response(status: StatusCode, message: String) -> Response<Body> {
         .status(status)
         .body(Body::from(message))
         .expect("simple response")
+}
+
+fn fallback_ui_response() -> Response<Body> {
+    Html(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenClawHAOSAddon-Rust</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #eef4ff 0%, #f8fbff 100%);
+      color: #17314d;
+    }
+    .wrap {
+      max-width: 840px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    .card {
+      border: 1px solid #d7e4f4;
+      border-radius: 22px;
+      background: rgba(255,255,255,.96);
+      padding: 24px;
+      box-shadow: 0 10px 28px rgba(23, 52, 86, .08);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+    }
+    p {
+      line-height: 1.7;
+      color: #58718b;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid #b8cef0;
+      background: #edf5ff;
+      color: #17314d;
+      text-decoration: none;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>OpenClawHAOSAddon-Rust</h1>
+      <p>
+        Ingress is responding, but the Rust UI backend is still starting or restarting.
+        This fallback avoids a blank 502 screen while the UI catches up.
+      </p>
+      <div class="actions">
+        <button class="btn" type="button" onclick="location.reload()">Reload</button>
+        <a class="btn" href="./terminal/">Open Terminal</a>
+        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">Download CA Cert</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"#
+            .to_string(),
+    )
+    .into_response()
 }
 
 fn should_skip_header(name: &HeaderName, preserve_host: bool) -> bool {
