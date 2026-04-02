@@ -13,6 +13,7 @@ ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
 ARG BUILD_DATE=unknown
 ARG BUILD_REF=unknown
+ENV ADDON_VERSION=${BUILD_VERSION}
 
 LABEL \
   io.hass.type="addon" \

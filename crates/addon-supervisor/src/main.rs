@@ -231,8 +231,10 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
     )
     .unwrap_or_else(|| "disabled".to_string());
 
+    let add_on_version = detect_addon_version();
     let openclaw_version = detect_openclaw_version(&args.gateway_bin);
     apply_status_env(
+        &add_on_version,
         &openclaw_version,
         &mcp_status,
         &web_provider,
@@ -482,12 +484,14 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
 }
 
 fn apply_status_env(
+    add_on_version: &str,
     openclaw_version: &str,
     mcp_status: &str,
     web_provider: &str,
     memory_provider: &str,
 ) {
     unsafe {
+        env::set_var("ADDON_VERSION", add_on_version);
         env::set_var("OPENCLAW_VERSION", openclaw_version);
         env::set_var("MCP_STATUS", mcp_status);
         env::set_var("WEB_SEARCH_PROVIDER", web_provider);
@@ -585,6 +589,10 @@ fn detect_openclaw_version(gateway_bin: &str) -> String {
     run_capture(gateway_bin, &["--version"])
         .and_then(|output| output.split_whitespace().last().map(|s| s.to_string()))
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn detect_addon_version() -> String {
+    env::var("ADDON_VERSION").unwrap_or_else(|_| "unknown".to_string())
 }
 
 fn backup_state(args: &HaosEntryArgs) {
@@ -1139,6 +1147,7 @@ fn apply_child_env(command: &mut Command) {
         "ENABLE_HTTPS_PROXY",
         "HTTPS_PROXY_PORT",
         "GATEWAY_INTERNAL_PORT",
+        "ADDON_VERSION",
         "OPENCLAW_VERSION",
         "MCP_STATUS",
         "WEB_SEARCH_PROVIDER",

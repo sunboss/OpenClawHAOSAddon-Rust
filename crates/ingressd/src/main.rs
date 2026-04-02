@@ -314,6 +314,10 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     window.addEventListener("message", (event) => {
       const data = event.data;
       if (!data || typeof data !== "object") return;
+      if (data.type === "openclaw-focus-terminal") {
+        input.focus();
+        return;
+      }
       if (data.type !== "openclaw-run-command") return;
       if (typeof data.command !== "string" || !data.command.trim()) return;
       sendCommand(data.command);

@@ -13,6 +13,7 @@ struct AppState {
 
 #[derive(Clone, Debug)]
 struct PageConfig {
+    addon_version: String,
     access_mode: String,
     gateway_mode: String,
     gateway_url: String,
@@ -26,6 +27,7 @@ struct PageConfig {
 impl PageConfig {
     fn from_env() -> Self {
         Self {
+            addon_version: env_value("ADDON_VERSION", "unknown"),
             access_mode: env_value("ACCESS_MODE", "lan_https"),
             gateway_mode: env_value("GATEWAY_MODE", "local"),
             gateway_url: env_value("GW_PUBLIC_URL", ""),
@@ -221,6 +223,14 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       background: linear-gradient(135deg, var(--blue), var(--teal));
     }}
     .btn.ghost {{ background: #fff; }}
+    .section-label {{
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }}
     .kvs {{
       display: grid;
       gap: 12px;
@@ -262,6 +272,57 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       background: #f4f8ff;
       color: #2e4a67;
       font-weight: 700;
+    }}
+    details {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 10px 28px rgba(23, 52, 86, 0.08);
+      overflow: hidden;
+    }}
+    details > summary {{
+      list-style: none;
+      cursor: pointer;
+      padding: 14px 18px;
+      font-weight: 800;
+      color: var(--text);
+      background: #fbfdff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }}
+    details > summary::-webkit-details-marker {{ display: none; }}
+    details > summary::after {{
+      content: "+";
+      color: var(--muted);
+      font-size: 18px;
+    }}
+    details[open] > summary::after {{
+      content: "-";
+    }}
+    .details-body {{
+      padding: 16px 18px 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      line-height: 1.8;
+      background: #f9fbff;
+    }}
+    .details-body p {{
+      margin: 0 0 10px;
+    }}
+    .details-body code {{
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: #eef4ff;
+      color: #294565;
+      font-family: Consolas, "SFMono-Regular", monospace;
+    }}
+    .details-body ul {{
+      margin: 0;
+      padding-left: 18px;
+    }}
+    .details-body li + li {{
+      margin-top: 6px;
     }}
     .terminal-shell {{
       margin-top: 14px;
@@ -326,7 +387,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
           still open even when external JS CDNs are unavailable.
         </p>
       </div>
-      <div class="chip">Version {version}</div>
+      <div class="chip">Add-on {addon_version}</div>
     </section>
 
     <div class="layout">
@@ -341,10 +402,24 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
             <button class="btn primary" type="button" onclick="ocOpenGateway()">Open Native Gateway</button>
             <button class="btn" type="button" onclick="ocLoadTerminal()">Open Terminal</button>
             <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">Download CA Cert</a>
+          </div>
+          <div class="section-label">Diagnostics</div>
+          <div class="actions">
             <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw status --deep')">Gateway Status</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw gateway restart')">Restart Gateway</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand(`curl -fsSL https://registry.npmjs.org/openclaw/latest | jq -r '\"npm latest: \" + .version'`)">Check npm Version</button>
             <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw devices list')">Devices List</button>
             <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw doctor --fix')">Doctor Fix</button>
             <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw logs --follow')">Follow Logs</button>
+          </div>
+          <div class="section-label">Setup And Recovery</div>
+          <div class="actions">
+            <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw onboard')">Onboard</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('cat /etc/nginx/html/gateway.token')">Read Token</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('mcporter list HA')">MCP List</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('cat /config/.mcporter/mcporter.json')">MCP Config</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('ls -la /share/openclaw-backup/latest')">Backup Dir</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('rsync -a --delete /config/.openclaw/ /share/openclaw-backup/latest/.openclaw/ && rsync -a --delete /config/.mcporter/ /share/openclaw-backup/latest/.mcporter/')">Backup State</button>
           </div>
           <div class="note">
             If the native Gateway page reports a certificate error, trust the downloaded CA cert
@@ -384,6 +459,52 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
         </section>
       </div>
     </div>
+
+    <details>
+      <summary>Token And Connection Help</summary>
+      <div class="details-body">
+        <p>
+          The native Gateway page uses the local HTTPS endpoint on port <code>{https_port}</code>.
+          If your browser warns about the certificate, install the downloaded CA cert first and reopen
+          the page.
+        </p>
+        <ul>
+          <li><code>Read Token</code> prints the current gateway token in the embedded terminal.</li>
+          <li><code>Open Native Gateway</code> opens the HTTPS Gateway UI in a new tab.</li>
+          <li><code>Open Terminal</code> scrolls to the embedded terminal and focuses the command input.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>MCP Settings</summary>
+      <div class="details-body">
+        <p>
+          This add-on keeps Home Assistant MCP registration under <code>/config/.mcporter</code>.
+          Use the buttons above to inspect the live registration state.
+        </p>
+        <ul>
+          <li><code>MCP List</code> runs <code>mcporter list HA</code>.</li>
+          <li><code>MCP Config</code> prints <code>/config/.mcporter/mcporter.json</code>.</li>
+          <li>The diagnostics panel only shows current runtime state to keep the page fast.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>Backup And Restore</summary>
+      <div class="details-body">
+        <p>
+          Runtime state is stored under <code>/config/.openclaw</code> and <code>/config/.mcporter</code>.
+          The backup copy lives under <code>/share/openclaw-backup/latest</code>.
+        </p>
+        <ul>
+          <li><code>Backup Dir</code> shows the backup target directory.</li>
+          <li><code>Backup State</code> syncs the current runtime state into the backup directory.</li>
+          <li>For reinstall recovery, copy the backup back into <code>/config</code> before restarting the add-on.</li>
+        </ul>
+      </div>
+    </details>
   </div>
 
   <script>
@@ -429,6 +550,17 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       return `https://${{location.hostname}}:${{httpsPort}}/`;
     }}
 
+    function focusTerminal() {{
+      const shell = document.querySelector(".terminal-shell");
+      if (shell) {{
+        shell.scrollIntoView({{ behavior: "smooth", block: "start" }});
+      }}
+      const frame = document.getElementById("termFrame");
+      if (frame && frame.contentWindow) {{
+        frame.contentWindow.postMessage({{ type: "openclaw-focus-terminal" }}, "*");
+      }}
+    }}
+
     function ensureTerminalLoaded() {{
       if (terminalState.loaded || terminalState.loading) return;
       const stage = document.getElementById("terminalStage");
@@ -441,6 +573,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       const finish = function () {{
         terminalState.loading = false;
         terminalState.loaded = true;
+        focusTerminal();
         if (terminalState.pendingCommand) {{
           const next = terminalState.pendingCommand;
           terminalState.pendingCommand = null;
@@ -495,6 +628,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
 
     window.ocLoadTerminal = function () {{
       ensureTerminalLoaded();
+      window.setTimeout(focusTerminal, 120);
     }};
 
     window.ocRunCommand = function (command) {{
@@ -507,7 +641,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
   </script>
 </body>
 </html>"#,
-        version = config.openclaw_version,
+        addon_version = config.addon_version,
         gateway_url = gateway_url,
         https_port = config.https_port,
     ))
@@ -528,7 +662,8 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
 <div class="kvs">
   <div class="kv"><span class="key">Access Mode</span><span class="value">{access}</span></div>
   <div class="kv"><span class="key">Gateway Mode</span><span class="value">{gateway_mode}</span></div>
-  <div class="kv"><span class="key">Version</span><span class="value">{version}</span></div>
+  <div class="kv"><span class="key">Add-on Version</span><span class="value">{addon_version}</span></div>
+  <div class="kv"><span class="key">OpenClaw Version</span><span class="value">{openclaw_version}</span></div>
   <div class="kv">
     <span class="key">PID</span>
     <span class="badges">
@@ -541,7 +676,8 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
 </div>"#,
         access = config.access_mode,
         gateway_mode = config.gateway_mode,
-        version = config.openclaw_version,
+        addon_version = config.addon_version,
+        openclaw_version = config.openclaw_version,
         gw = display_gateway_pid,
         ingress = pid_value("ingressd"),
         ui = pid_value("haos-ui"),
