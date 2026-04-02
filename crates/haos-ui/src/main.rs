@@ -724,10 +724,6 @@ fn logs_content() -> String {
         <h2>日志与诊断</h2>
         <p class="muted">把日志拆成独立页面后，首页和命令页都会轻很多。这里适合持续跟踪运行日志、doctor 输出和诊断结果。</p>
       </div>
-      <div class="header-actions">
-        {open_window}
-        <button class="btn" type="button" onclick="ocRunCommand('openclaw logs --follow')">开始跟随日志</button>
-      </div>
     </div>
 
     <div class="toolbar-grid">
@@ -747,7 +743,6 @@ fn logs_content() -> String {
 
   {terminal}
 </div>"#,
-        open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
         log_actions = log_actions,
         terminal = terminal_card(
             "日志终端",
