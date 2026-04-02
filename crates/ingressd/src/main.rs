@@ -161,7 +161,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenClaw 终端</title>
+  <title>OpenClaw 完整终端</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -241,7 +241,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
 <body>
   <div class="shell">
     <div class="head">
-      <strong>OpenClaw 终端</strong>
+      <strong>OpenClaw 完整终端</strong>
       <span class="muted">主页面按钮发来的命令会直接在这里执行。</span>
     </div>
     <pre id="screen" class="screen"></pre>
@@ -258,13 +258,183 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     const wsUrl = new URL("./ws", location.href);
     wsUrl.protocol = scheme + ":";
     const pending = [];
+    const maxRows = 2000;
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";
+    const decoder = new TextDecoder();
 
-    function append(text) {
-      screen.textContent += text;
-      screen.scrollTop = screen.scrollHeight;
-    }
+    const term = {
+      rows: [[]],
+      cursorRow: 0,
+      cursorCol: 0,
+      savedRow: 0,
+      savedCol: 0,
+      ensureRow(index) {
+        while (this.rows.length <= index) this.rows.push([]);
+      },
+      trimRows() {
+        if (this.rows.length <= maxRows) return;
+        const remove = this.rows.length - maxRows;
+        this.rows.splice(0, remove);
+        this.cursorRow = Math.max(0, this.cursorRow - remove);
+        this.savedRow = Math.max(0, this.savedRow - remove);
+      },
+      setCell(row, col, ch) {
+        this.ensureRow(row);
+        this.rows[row][col] = ch;
+      },
+      putChar(ch) {
+        this.setCell(this.cursorRow, this.cursorCol, ch);
+        this.cursorCol += 1;
+      },
+      newline() {
+        this.cursorRow += 1;
+        this.cursorCol = 0;
+        this.ensureRow(this.cursorRow);
+        this.trimRows();
+      },
+      carriageReturn() {
+        this.cursorCol = 0;
+      },
+      backspace() {
+        this.cursorCol = Math.max(0, this.cursorCol - 1);
+      },
+      clearLine(mode) {
+        this.ensureRow(this.cursorRow);
+        const line = this.rows[this.cursorRow];
+        if (mode === 1) {
+          for (let i = 0; i <= this.cursorCol; i += 1) line[i] = " ";
+          return;
+        }
+        if (mode === 2) {
+          this.rows[this.cursorRow] = [];
+          return;
+        }
+        line.length = Math.min(line.length, this.cursorCol);
+      },
+      clearScreen(mode) {
+        if (mode === 1) {
+          for (let row = 0; row < this.cursorRow; row += 1) this.rows[row] = [];
+          this.clearLine(1);
+          return;
+        }
+        if (mode === 2) {
+          this.rows = [[]];
+          this.cursorRow = 0;
+          this.cursorCol = 0;
+          return;
+        }
+        this.clearLine(0);
+        this.rows.length = this.cursorRow + 1;
+      },
+      moveCursor(row, col) {
+        this.cursorRow = Math.max(0, row);
+        this.cursorCol = Math.max(0, col);
+        this.ensureRow(this.cursorRow);
+      },
+      handleCsi(finalChar, params, privateMode) {
+        const numbers = params.length ? params.map((part) => part === "" ? 0 : Number(part)) : [0];
+        switch (finalChar) {
+          case "A":
+            this.cursorRow = Math.max(0, this.cursorRow - (numbers[0] || 1));
+            break;
+          case "B":
+            this.moveCursor(this.cursorRow + (numbers[0] || 1), this.cursorCol);
+            break;
+          case "C":
+            this.cursorCol += numbers[0] || 1;
+            break;
+          case "D":
+            this.cursorCol = Math.max(0, this.cursorCol - (numbers[0] || 1));
+            break;
+          case "G":
+            this.cursorCol = Math.max(0, (numbers[0] || 1) - 1);
+            break;
+          case "H":
+          case "f":
+            this.moveCursor((numbers[0] || 1) - 1, (numbers[1] || 1) - 1);
+            break;
+          case "J":
+            this.clearScreen(numbers[0] || 0);
+            break;
+          case "K":
+            this.clearLine(numbers[0] || 0);
+            break;
+          case "s":
+            this.savedRow = this.cursorRow;
+            this.savedCol = this.cursorCol;
+            break;
+          case "u":
+            this.moveCursor(this.savedRow, this.savedCol);
+            break;
+          case "h":
+          case "l":
+          case "m":
+            if (privateMode === "?") return;
+            break;
+        }
+      },
+      write(text) {
+        let i = 0;
+        while (i < text.length) {
+          const ch = text[i];
+          if (ch === "\u001b") {
+            const next = text[i + 1];
+            if (next === "[") {
+              let cursor = i + 2;
+              let privateMode = "";
+              if (text[cursor] === "?") {
+                privateMode = "?";
+                cursor += 1;
+              }
+              let seq = "";
+              while (cursor < text.length) {
+                const current = text[cursor];
+                if (current >= "@" && current <= "~") {
+                  const params = seq ? seq.split(";") : [];
+                  this.handleCsi(current, params, privateMode);
+                  i = cursor + 1;
+                  break;
+                }
+                seq += current;
+                cursor += 1;
+              }
+              if (cursor >= text.length) break;
+              continue;
+            }
+            if (next === "]") {
+              const bell = text.indexOf("\u0007", i + 2);
+              if (bell === -1) break;
+              i = bell + 1;
+              continue;
+            }
+            i += 1;
+            continue;
+          }
+          if (ch === "\r") {
+            this.carriageReturn();
+            i += 1;
+            continue;
+          }
+          if (ch === "\n") {
+            this.newline();
+            i += 1;
+            continue;
+          }
+          if (ch === "\b") {
+            this.backspace();
+            i += 1;
+            continue;
+          }
+          this.putChar(ch);
+          i += 1;
+        }
+      },
+      render() {
+        screen.textContent = this.rows.map((line) => line.join("")).join("\n");
+        screen.scrollTop = screen.scrollHeight;
+      },
+    };
 
     function flushPending() {
       while (pending.length && socket.readyState === WebSocket.OPEN) {
@@ -272,9 +442,8 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       }
     }
 
-    function sendCommand(command, echo = true) {
+    function sendCommand(command) {
       if (!command) return;
-      if (echo) append(`$ ${command}\n`);
       const payload = command + "\n";
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(payload);
@@ -282,29 +451,32 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       }
       pending.push(payload);
       if (socket.readyState === WebSocket.CONNECTING) return;
-      append("[终端尚未就绪，命令已排队]\n");
+      term.write("[terminal not ready, command queued]\n");
+      term.render();
     }
 
     socket.addEventListener("open", () => {
-      append("[终端已连接]\n");
+      term.write("[terminal connected]\n");
+      term.render();
       flushPending();
     });
 
     socket.addEventListener("message", (event) => {
-      if (typeof event.data === "string") {
-        append(event.data);
-        return;
-      }
-      const decoded = new TextDecoder().decode(new Uint8Array(event.data));
-      append(decoded);
+      const decoded = typeof event.data === "string"
+        ? event.data
+        : decoder.decode(new Uint8Array(event.data), { stream: true });
+      term.write(decoded);
+      term.render();
     });
 
     socket.addEventListener("close", () => {
-      append("\n[终端已断开]\n");
+      term.write("\n[terminal disconnected]\n");
+      term.render();
     });
 
     socket.addEventListener("error", () => {
-      append("\n[终端 WebSocket 错误]\n");
+      term.write("\n[terminal websocket error]\n");
+      term.render();
     });
 
     window.injectCommand = function (command) {
