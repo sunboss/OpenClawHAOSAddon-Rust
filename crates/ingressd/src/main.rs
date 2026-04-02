@@ -161,7 +161,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenClaw Terminal</title>
+  <title>OpenClaw 终端</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -241,13 +241,13 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
 <body>
   <div class="shell">
     <div class="head">
-      <strong>OpenClaw Terminal</strong>
-      <span class="muted">Commands from the main page are sent here directly.</span>
+      <strong>OpenClaw 终端</strong>
+      <span class="muted">主页面按钮发来的命令会直接在这里执行。</span>
     </div>
     <pre id="screen" class="screen"></pre>
     <div class="bar">
-      <input id="cmd" class="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="Type a command and press Enter">
-      <button id="send" class="btn" type="button">Run</button>
+      <input id="cmd" class="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="输入命令后按回车">
+      <button id="send" class="btn" type="button">运行</button>
     </div>
   </div>
   <script>
@@ -282,11 +282,11 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       }
       pending.push(payload);
       if (socket.readyState === WebSocket.CONNECTING) return;
-      append("[terminal not ready, command queued]\n");
+      append("[终端尚未就绪，命令已排队]\n");
     }
 
     socket.addEventListener("open", () => {
-      append("[terminal connected]\n");
+      append("[终端已连接]\n");
       flushPending();
     });
 
@@ -300,11 +300,11 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     });
 
     socket.addEventListener("close", () => {
-      append("\n[terminal closed]\n");
+      append("\n[终端已断开]\n");
     });
 
     socket.addEventListener("error", () => {
-      append("\n[terminal websocket error]\n");
+      append("\n[终端 WebSocket 错误]\n");
     });
 
     window.injectCommand = function (command) {
