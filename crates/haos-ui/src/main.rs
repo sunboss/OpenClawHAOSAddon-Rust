@@ -255,6 +255,10 @@ fn secondary_button(label: &str, onclick: &str) -> String {
     format!(r#"<button class="btn secondary" type="button" onclick="{onclick}">{label}</button>"#)
 }
 
+fn ghost_button(label: &str, onclick: &str) -> String {
+    format!(r#"<button class="btn" type="button" onclick="{onclick}">{label}</button>"#)
+}
+
 fn kv_row(label: &str, value: &str) -> String {
     format!(
         r#"<div class="kv-row"><span class="kv-label">{label}</span><span class="kv-value">{value}</span></div>"#
@@ -324,6 +328,17 @@ fn terminal_card(title: &str, subtitle: &str, button_label: &str) -> String {
     </div>
   </div>
 </section>"#
+    )
+}
+
+fn pid_row(gateway_pid: &str, ingress_pid: &str, ui_pid: &str, action_pid: &str) -> String {
+    format!(
+        r#"<div class="pid-grid pid-grid-row">
+  <span class="pid-chip">Gateway {gateway_pid}</span>
+  <span class="pid-chip">Ingress {ingress_pid}</span>
+  <span class="pid-chip">UI {ui_pid}</span>
+  <span class="pid-chip">Action {action_pid}</span>
+</div>"#
     )
 }
 
@@ -414,21 +429,11 @@ fn home_content(config: &PageConfig) -> String {
         </div>
       </div>
       <div class="panel-right">
-        <div class="pid-grid">
-          <span class="pid-chip">Gateway {gateway_pid}</span>
-          <span class="pid-chip">Ingress {ingress_pid}</span>
-          <span class="pid-chip">UI {ui_pid}</span>
-          <span class="pid-chip">Action {action_pid}</span>
-        </div>
         <div class="note-box">如果原生网关提示证书错误，请先安装下载的 CA 证书，再重新打开 HTTPS 页面。</div>
       </div>
     </div>
+    {pid_row}
   </section>
-
-  <div class="two-col">
-    <section class="card" id="healthPanel"><p class="muted">正在加载运行摘要…</p></section>
-    <section class="card" id="diagPanel"><p class="muted">正在加载能力摘要…</p></section>
-  </div>
 
 </div>"#,
         health = summary_strip("总状态", health_text, health_sub, health_tone),
@@ -461,10 +466,7 @@ fn home_content(config: &PageConfig) -> String {
         mcp = display_value(&config.mcp_status),
         web = display_value(&config.web_status),
         memory = display_value(&config.memory_status),
-        gateway_pid = gateway_pid,
-        ingress_pid = ingress_pid,
-        ui_pid = ui_pid,
-        action_pid = action_pid,
+        pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid, &action_pid),
         resource_cpu = resource_card(
             "CPU 负载",
             &snapshot.cpu_load,
@@ -650,8 +652,9 @@ fn commands_content() -> String {
       </div>
       <div class="header-actions">
         {load_terminal}
+        {close_terminal}
         {open_window}
-        <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
+        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
       </div>
     </div>
 
@@ -673,6 +676,7 @@ fn commands_content() -> String {
   {terminal}
 </div>"#,
         load_terminal = primary_button("打开终端", "ocLoadTerminal()"),
+        close_terminal = ghost_button("关闭终端", "ocCloseTerminal()"),
         open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
         setup_actions = setup_actions,
         diagnostic_actions = diagnostic_actions,
@@ -705,7 +709,7 @@ fn logs_content() -> String {
       <div>
         <div class="eyebrow">日志</div>
         <h2>日志与诊断</h2>
-        <p class="muted">把日志拆成独立页面后，首页和命令页都会轻很多。这里适合持续跟踪运行日志、doctor 输出和诊断结果。</p>
+        <p class="muted">当你需要持续观察运行输出、排查报错、或者确认修复结果时，就来这一页。上面的按钮会把常用日志命令直接送到下面的日志终端里执行。</p>
       </div>
     </div>
 
@@ -719,17 +723,12 @@ fn logs_content() -> String {
     <div class="action-row">{log_actions}</div>
   </section>
 
-  <div class="two-col">
-    <section class="card" id="healthPanel"><p class="muted">正在加载运行摘要…</p></section>
-    <section class="card" id="diagPanel"><p class="muted">正在加载诊断摘要…</p></section>
-  </div>
-
   {terminal}
 </div>"#,
         log_actions = log_actions,
         terminal = terminal_card(
             "日志终端",
-            "推荐先点击上方日志按钮，再在这里继续观察输出。日志页的终端默认更适合长时间滚动查看。",
+            "先点击上面的日志按钮，再在这里继续观察输出。适合长时间盯日志、复制报错和回看修复后的变化。",
             "加载日志终端",
         ),
     )
@@ -757,8 +756,8 @@ fn render_shell(
   <title>OpenClawHAOSAddon-Rust</title>
   <style>
     :root {{
-      --panel:#ffffffee; --line:#dce7f7; --text:#183250; --muted:#68819f; --blue:#3768f2;
-      --blue-2:#5e72df; --teal:#1ca6a2; --shadow:0 22px 52px rgba(20,53,98,.09); --shell:#10192f;
+      --panel:#ffffff; --line:#d8e2ee; --text:#1f2f42; --muted:#5f748d; --blue:#1f8ceb;
+      --blue-2:#5c7cff; --teal:#14a3c7; --shadow:0 3px 14px rgba(31,47,66,.08); --shell:#10192f;
       --shell-line:#273451;
     }}
     * {{ box-sizing:border-box; }}
@@ -769,15 +768,16 @@ fn render_shell(
     }}
     .page-accent {{ height:40px; background:linear-gradient(90deg,#6072e4 0%,#6879ea 100%); }}
     .wrap {{ max-width:1460px; margin:0 auto; padding:0 24px 40px; }}
-    .top-shell {{ margin-top:-18px; background:rgba(255,255,255,.98); border:1px solid rgba(221,231,246,.95); border-radius:0 0 24px 24px; box-shadow:var(--shadow); overflow:hidden; }}
+    .masthead {{ margin-top:-18px; border:1px solid rgba(221,231,246,.95); border-radius:0 0 28px 28px; background:linear-gradient(180deg,rgba(255,255,255,.96) 0%,rgba(244,248,255,.92) 100%); box-shadow:var(--shadow); overflow:hidden; backdrop-filter:blur(8px); }}
+    .top-shell {{ background:rgba(255,255,255,.92); border-bottom:1px solid rgba(216,226,238,.95); overflow:hidden; }}
     .nav-tabs {{ display:flex; gap:2px; overflow-x:auto; }}
-    .nav-link {{ min-width:112px; min-height:60px; display:inline-flex; align-items:center; justify-content:center; padding:0 22px; text-decoration:none; color:#203c5c; font-size:15px; font-weight:800; border-bottom:3px solid transparent; background:#fff; }}
-    .nav-link:hover {{ color:var(--blue); background:#f7faff; }}
-    .nav-link.active {{ color:var(--blue); background:linear-gradient(180deg,#fff 0%,#f4f7ff 100%); border-bottom-color:var(--blue-2); }}
-    .hero {{ padding:28px 4px 18px; display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }}
-    .hero h1 {{ margin:0 0 10px; font-size:48px; line-height:1.04; letter-spacing:-.03em; font-weight:900; }}
-    .hero p {{ margin:0; max-width:900px; color:var(--muted); font-size:17px; line-height:1.82; }}
-    .hero-chip {{ flex:0 0 auto; min-height:54px; display:inline-flex; align-items:center; justify-content:center; padding:0 22px; border-radius:999px; border:1px solid #c8d8f1; background:linear-gradient(180deg,#fff 0%,#edf4ff 100%); color:#213f63; font-size:15px; font-weight:900; white-space:nowrap; }}
+    .nav-link {{ min-width:112px; min-height:58px; display:inline-flex; align-items:center; justify-content:center; padding:0 22px; text-decoration:none; color:#29415f; font-size:15px; font-weight:800; border-bottom:3px solid transparent; background:#fff; }}
+    .nav-link:hover {{ color:var(--blue); background:#f7fbff; }}
+    .nav-link.active {{ color:var(--blue); background:#f7fbff; border-bottom-color:var(--blue); }}
+    .hero {{ padding:30px 30px 24px; display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }}
+    .hero h1 {{ margin:0 0 12px; font-size:44px; line-height:1.06; letter-spacing:-.03em; font-weight:900; }}
+    .hero p {{ margin:0; max-width:920px; color:var(--muted); font-size:16px; line-height:1.78; }}
+    .hero-chip {{ flex:0 0 auto; min-height:52px; display:inline-flex; align-items:center; justify-content:center; padding:0 22px; border-radius:999px; border:1px solid #c8d8f1; background:linear-gradient(180deg,#fff 0%,#edf4ff 100%); color:#213f63; font-size:15px; font-weight:900; white-space:nowrap; box-shadow:0 8px 22px rgba(55,104,242,.10); }}
     .page-grid {{ display:grid; gap:20px; }}
     .summary-strip {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }}
     .two-col {{ display:grid; grid-template-columns:minmax(0,1.18fr) minmax(360px,.92fr); gap:20px; align-items:start; }}
@@ -785,17 +785,18 @@ fn render_shell(
     .split-grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }}
     .feature-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }}
     .resource-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }}
-    .card {{ border:1px solid var(--line); border-radius:28px; background:var(--panel); box-shadow:var(--shadow); padding:26px 28px; }}
+    .card {{ border:1px solid var(--line); border-radius:24px; background:var(--panel); box-shadow:var(--shadow); padding:26px 28px; }}
     .card h2 {{ margin:0 0 10px; font-size:30px; line-height:1.14; letter-spacing:-.02em; }}
     .card h3 {{ margin:0 0 10px; font-size:20px; line-height:1.2; }}
-    .summary-strip-card {{ position:relative; overflow:hidden; border:1px solid var(--line); border-radius:24px; background:linear-gradient(180deg,#ffffff 0%,#f4f8ff 100%); box-shadow:var(--shadow); padding:20px 22px; }}
-    .summary-strip-card::after {{ content:""; position:absolute; inset:auto 16px 0 auto; width:88px; height:88px; border-radius:999px; background:radial-gradient(circle, rgba(62,125,255,.10) 0%, rgba(62,125,255,0) 70%); pointer-events:none; }}
-    .summary-strip-card.tone-good {{ background:linear-gradient(180deg,#ffffff 0%,#eefcf7 100%); }}
-    .summary-strip-card.tone-warn {{ background:linear-gradient(180deg,#ffffff 0%,#fff8e9 100%); }}
-    .summary-strip-card.tone-danger {{ background:linear-gradient(180deg,#ffffff 0%,#fff1f1 100%); }}
-    .summary-strip-card.tone-blue {{ background:linear-gradient(180deg,#ffffff 0%,#f3f7ff 100%); }}
-    .summary-strip-card.tone-teal {{ background:linear-gradient(180deg,#ffffff 0%,#eefbfb 100%); }}
-    .summary-strip-card.tone-violet {{ background:linear-gradient(180deg,#ffffff 0%,#f5f2ff 100%); }}
+    .summary-strip-card {{ position:relative; overflow:hidden; border:1px solid var(--line); border-radius:20px; background:#fff; box-shadow:var(--shadow); padding:20px 22px; }}
+    .summary-strip-card::before {{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#c9d8ee; }}
+    .summary-strip-card::after {{ content:""; position:absolute; inset:0; background:linear-gradient(180deg, rgba(255,255,255,.1) 0%, rgba(244,248,255,.55) 100%); pointer-events:none; }}
+    .summary-strip-card.tone-good::before {{ background:#32b87a; }}
+    .summary-strip-card.tone-warn::before {{ background:#e2ad2b; }}
+    .summary-strip-card.tone-danger::before {{ background:#e16060; }}
+    .summary-strip-card.tone-blue::before {{ background:#1f8ceb; }}
+    .summary-strip-card.tone-teal::before {{ background:#14a3c7; }}
+    .summary-strip-card.tone-violet::before {{ background:#7357ff; }}
     .summary-strip-title {{ color:#6e84a3; font-size:12px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px; }}
     .summary-strip-value {{ font-size:26px; line-height:1.06; font-weight:900; letter-spacing:-.03em; margin-bottom:8px; }}
     .summary-strip-sub {{ color:#66809f; font-size:13px; line-height:1.65; }}
@@ -804,12 +805,12 @@ fn render_shell(
     .eyebrow {{ color:#6c83a4; font-size:12px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px; }}
     .muted {{ color:var(--muted); line-height:1.78; margin:0; }}
     .header-actions,.action-row,.pill-row,.toolbar-grid {{ display:flex; gap:12px; flex-wrap:wrap; }}
-    .btn {{ min-height:46px; display:inline-flex; align-items:center; justify-content:center; padding:10px 18px; border-radius:999px; border:1px solid #bfd2ef; background:linear-gradient(180deg,#fff 0%,#eef5ff 100%); color:var(--text); text-decoration:none; font-weight:800; cursor:pointer; transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease; }}
-    .btn:hover {{ transform:translateY(-1px); box-shadow:0 10px 24px rgba(55,104,242,.12); border-color:#9ab7e3; }}
-    .btn.primary {{ color:#fff; border-color:transparent; background:linear-gradient(135deg,var(--blue),var(--teal)); }}
-    .btn.secondary {{ color:#fff; border-color:transparent; background:linear-gradient(135deg,#6a4cf4,#9a45f4); }}
+    .btn {{ min-height:44px; display:inline-flex; align-items:center; justify-content:center; padding:10px 18px; border-radius:999px; border:1px solid #cfdcec; background:#fff; color:var(--text); text-decoration:none; font-weight:800; cursor:pointer; transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background-color .16s ease; }}
+    .btn:hover {{ transform:translateY(-1px); box-shadow:0 8px 18px rgba(31,140,235,.10); border-color:#a8c5e4; background:#f9fbff; }}
+    .btn.primary {{ color:#fff; border-color:transparent; background:linear-gradient(135deg,#1893f8,#0f76e8); }}
+    .btn.secondary {{ color:#fff; border-color:transparent; background:linear-gradient(135deg,#7357ff,#8a63ff); }}
     .stats-grid {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin:20px 0; }}
-    .stat-card, .info-tile, .soft-card, .resource-card {{ border:1px solid var(--line); border-radius:22px; background:linear-gradient(180deg,#fff 0%,#f8fbff 100%); padding:18px; }}
+    .stat-card, .info-tile, .soft-card, .resource-card {{ border:1px solid var(--line); border-radius:20px; background:#fff; padding:18px; }}
     .stat-card {{ min-height:146px; display:flex; flex-direction:column; justify-content:space-between; }}
     .stat-label,.resource-label {{ color:var(--muted); font-size:13px; font-weight:800; }}
     .stat-value, .resource-value {{ font-size:24px; font-weight:900; line-height:1.1; letter-spacing:-.03em; word-break:break-word; }}
@@ -819,9 +820,10 @@ fn render_shell(
     .live-dot {{ width:10px; height:10px; border-radius:999px; background:#22b572; box-shadow:0 0 0 6px rgba(34,181,114,.12); }}
     .pill-inline,.pid-chip,.pill {{ display:inline-flex; align-items:center; gap:8px; border-radius:999px; padding:8px 14px; background:#eef3ff; color:#2a54d8; font-weight:800; }}
     .pill {{ justify-content:space-between; min-width:150px; }}
-    .panel-left,.panel-right {{ border:1px solid var(--line); border-radius:24px; background:linear-gradient(180deg,#ffffff 0%,#f9fbff 100%); padding:20px; }}
-    .pid-grid {{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }}
-    .note-box {{ padding:14px 16px; border-radius:18px; background:#f1f6ff; color:#4d6784; line-height:1.75; }}
+    .panel-left,.panel-right {{ border:1px solid var(--line); border-radius:20px; background:#fff; padding:20px; }}
+    .pid-grid {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }}
+    .pid-grid-row {{ border:1px dashed #d5e2f2; border-radius:18px; padding:14px 16px; background:#fbfdff; }}
+    .note-box {{ padding:14px 16px; border-radius:16px; background:#f6f9fc; color:#4d6784; line-height:1.75; }}
     .resource-card {{ display:flex; flex-direction:column; gap:12px; }}
     .resource-top {{ display:flex; justify-content:space-between; gap:12px; align-items:center; }}
     .resource-percent {{ color:#27466a; font-size:13px; font-weight:900; }}
@@ -856,7 +858,7 @@ fn render_shell(
       .summary-strip,.two-col,.three-up,.split-grid,.stats-grid,.feature-grid,.status-panel,.resource-grid {{ grid-template-columns:1fr; }}
     }}
     @media (max-width:760px) {{
-      .wrap {{ padding:0 14px 30px; }} .hero {{ flex-direction:column; }} .hero h1 {{ font-size:34px; }}
+      .wrap {{ padding:0 14px 30px; }} .hero {{ flex-direction:column; padding:24px 20px 20px; }} .hero h1 {{ font-size:34px; }}
       .nav-link {{ min-width:92px; padding:0 16px; }} .card {{ padding:20px; }}
       .terminal-stage,.terminal-placeholder,iframe {{ min-height:440px; }}
     }}
@@ -865,10 +867,12 @@ fn render_shell(
 <body>
   <div class="page-accent"></div>
   <div class="wrap">
-    <section class="top-shell"><nav class="nav-tabs">{nav_home}{nav_config}{nav_commands}{nav_logs}</nav></section>
-    <section class="hero">
-      <div><h1>{title}</h1><p>{subtitle}</p></div>
-      <div class="hero-chip">插件 {addon_version}</div>
+    <section class="masthead">
+      <section class="top-shell"><nav class="nav-tabs">{nav_home}{nav_config}{nav_commands}{nav_logs}</nav></section>
+      <section class="hero">
+        <div><h1>{title}</h1><p>{subtitle}</p></div>
+        <div class="hero-chip">插件 {addon_version}</div>
+      </section>
     </section>
     {content}
   </div>
@@ -876,6 +880,7 @@ fn render_shell(
     const configuredGatewayUrl = {gateway_url};
     const httpsPort = {https_port};
     const terminalState = {{ loaded:false, loading:false, pendingCommand:null }};
+    const initialTerminalStageHtml = document.getElementById("terminalStage") ? document.getElementById("terminalStage").innerHTML : "";
     function appUrl(relativePath) {{ return new URL(relativePath, location.href).toString(); }}
     async function loadPanel(url, targetId) {{
       const target = document.getElementById(targetId);
@@ -932,6 +937,14 @@ fn render_shell(
       if (!frame || !frame.contentWindow) return;
       frame.contentWindow.postMessage({{ type: "openclaw-run-command", command }}, "*");
     }}
+    window.ocCloseTerminal = function () {{
+      const stage = document.getElementById("terminalStage");
+      if (!stage) return;
+      stage.innerHTML = initialTerminalStageHtml;
+      terminalState.loaded = false;
+      terminalState.loading = false;
+      terminalState.pendingCommand = null;
+    }};
     window.ocOpenGateway = function () {{ window.open(nativeGatewayUrl(), "_blank", "noopener,noreferrer"); }};
     window.ocOpenTerminalWindow = function () {{ window.open(appUrl("./terminal/"), "_blank", "noopener,noreferrer"); }};
     window.ocLoadTerminal = function () {{ ensureTerminalLoaded(); window.setTimeout(focusTerminal, 120); }};
