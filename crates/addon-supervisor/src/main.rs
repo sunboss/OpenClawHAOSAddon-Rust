@@ -302,12 +302,33 @@ fn bootstrap_openclaw_config(
     settings: &RuntimeSettings,
 ) -> std::io::Result<()> {
     if args.openclaw_config_path.exists() {
+        let existing = fs::read_to_string(&args.openclaw_config_path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+        if let Some(mut config) = existing {
+            let mut changed = false;
+            if config.get("workspaceDir").is_some() {
+                if let Some(object) = config.as_object_mut() {
+                    object.remove("workspaceDir");
+                    changed = true;
+                }
+            }
+            if changed {
+                ensure_workspace_path(&mut config, args);
+                fs::write(
+                    &args.openclaw_config_path,
+                    format!(
+                        "{}\n",
+                        serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string())
+                    ),
+                )?;
+            }
+        }
         return Ok(());
     }
 
     let token = generate_gateway_token();
-    let config = serde_json::json!({
-        "workspaceDir": args.openclaw_workspace_dir.display().to_string(),
+    let mut config = serde_json::json!({
         "gateway": {
             "mode": "local",
             "bind": "loopback",
@@ -326,6 +347,7 @@ fn bootstrap_openclaw_config(
             }
         }
     });
+    ensure_workspace_path(&mut config, args);
 
     if let Some(parent) = args.openclaw_config_path.parent() {
         fs::create_dir_all(parent)?;
@@ -338,6 +360,34 @@ fn bootstrap_openclaw_config(
         ),
     )?;
     Ok(())
+}
+
+fn ensure_workspace_path(config: &mut serde_json::Value, args: &HaosEntryArgs) {
+    if !config.is_object() {
+        *config = serde_json::json!({});
+    }
+
+    let root = config.as_object_mut().expect("config object");
+    let agents = root
+        .entry("agents".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !agents.is_object() {
+        *agents = serde_json::json!({});
+    }
+
+    let defaults = agents
+        .as_object_mut()
+        .expect("agents object")
+        .entry("defaults".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !defaults.is_object() {
+        *defaults = serde_json::json!({});
+    }
+
+    defaults.as_object_mut().expect("defaults object").insert(
+        "workspace".to_string(),
+        serde_json::Value::String(args.openclaw_workspace_dir.display().to_string()),
+    );
 }
 
 fn generate_gateway_token() -> String {

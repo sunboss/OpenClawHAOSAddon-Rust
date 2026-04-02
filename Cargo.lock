@@ -806,6 +806,7 @@ dependencies = [
  "http-body-util",
  "portable-pty",
  "reqwest",
+ "rustls",
  "tokio",
  "tokio-tungstenite",
 ]

@@ -13,6 +13,7 @@ use axum_server::tls_rustls::RustlsConfig;
 use futures_util::{SinkExt, StreamExt};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use reqwest::Client;
+use rustls::crypto::aws_lc_rs;
 use std::{
     env, fs,
     io::{Read, Write},
@@ -41,6 +42,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
+    let _ = aws_lc_rs::default_provider().install_default();
+
     let ingress_port = env::var("INGRESS_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
