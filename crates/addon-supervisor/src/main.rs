@@ -177,6 +177,11 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         return ExitCode::from(1);
     }
 
+    if let Err(err) = ensure_home_symlinks(&args) {
+        eprintln!("addon-supervisor: failed to prepare home links: {err}");
+        return ExitCode::from(1);
+    }
+
     if let Err(err) = bootstrap_openclaw_config(&args, &settings) {
         eprintln!("addon-supervisor: failed to bootstrap OpenClaw config: {err}");
         return ExitCode::from(1);
@@ -286,7 +291,13 @@ fn runtime_settings(options: &AddonOptions) -> RuntimeSettings {
 fn prepare_directories(args: &HaosEntryArgs) -> std::io::Result<()> {
     for path in [
         &args.openclaw_config_dir,
+        &args.openclaw_config_dir.join("agents"),
+        &args.openclaw_config_dir.join("agents/main"),
+        &args.openclaw_config_dir.join("agents/main/sessions"),
+        &args.openclaw_config_dir.join("agents/main/agent"),
+        &args.openclaw_config_dir.join("identity"),
         &args.openclaw_workspace_dir,
+        &args.openclaw_workspace_dir.join("memory"),
         &args.mcporter_home_dir,
         &args.cert_dir,
         &args.backup_dir,
@@ -294,6 +305,45 @@ fn prepare_directories(args: &HaosEntryArgs) -> std::io::Result<()> {
     ] {
         fs::create_dir_all(path)?;
     }
+    Ok(())
+}
+
+fn ensure_home_symlinks(args: &HaosEntryArgs) -> std::io::Result<()> {
+    let root_openclaw = Path::new("/root/.openclaw");
+    if root_openclaw.exists() {
+        let metadata = fs::symlink_metadata(root_openclaw)?;
+        if metadata.file_type().is_symlink() {
+            let current = fs::read_link(root_openclaw)?;
+            if current != args.openclaw_config_dir {
+                fs::remove_file(root_openclaw)?;
+                create_dir_symlink(&args.openclaw_config_dir, root_openclaw)?;
+            }
+        } else if metadata.is_dir() {
+            for entry in fs::read_dir(root_openclaw)? {
+                let entry = entry?;
+                let target = args.openclaw_config_dir.join(entry.file_name());
+                if !target.exists() {
+                    if entry.file_type()?.is_dir() {
+                        fs::create_dir_all(&target)?;
+                    } else {
+                        let _ = fs::copy(entry.path(), &target);
+                    }
+                }
+            }
+        }
+    } else {
+        create_dir_symlink(&args.openclaw_config_dir, root_openclaw)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_dir_symlink(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(src, dst)
+}
+
+#[cfg(not(unix))]
+fn create_dir_symlink(_src: &Path, _dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
@@ -397,10 +447,13 @@ fn generate_gateway_token() -> String {
 
 fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
     unsafe {
+        env::set_var("HOME", "/config");
         env::set_var("TZ", &settings.timezone);
         env::set_var("OPENCLAW_CONFIG_DIR", &args.openclaw_config_dir);
         env::set_var("OPENCLAW_CONFIG_PATH", &args.openclaw_config_path);
         env::set_var("OPENCLAW_WORKSPACE_DIR", &args.openclaw_workspace_dir);
+        env::set_var("XDG_CONFIG_HOME", "/config");
+        env::set_var("OPENCLAW_NO_RESPAWN", "1");
         env::set_var("MCPORTER_HOME_DIR", &args.mcporter_home_dir);
         env::set_var("MCPORTER_CONFIG", &args.mcporter_config);
         env::set_var("ACTION_SERVER_PORT", args.action_server_port.to_string());
@@ -472,6 +525,7 @@ fn write_gateway_token_file(args: &HaosEntryArgs, token: &str) -> bool {
         );
         return false;
     }
+    let _ = set_mode_600(&path);
     true
 }
 
@@ -511,7 +565,20 @@ fn ensure_certificate_files(args: &HaosEntryArgs) -> bool {
         );
         return false;
     }
+    let _ = set_mode_600(&gateway_key);
+    let _ = set_mode_600(&args.openclaw_config_path);
     true
+}
+
+#[cfg(unix)]
+fn set_mode_600(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, PermissionsExt::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn set_mode_600(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 fn detect_openclaw_version(gateway_bin: &str) -> String {
