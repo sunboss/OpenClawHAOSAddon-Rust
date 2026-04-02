@@ -513,7 +513,7 @@ fn config_content(config: &PageConfig) -> String {
       <div>
         <div class="eyebrow">基础配置</div>
         <h2>配置边界与当前状态</h2>
-        <p class="muted">这一页不替代 Home Assistant 原生配置页，而是专门解释谁负责什么、数据放在哪里、哪些能力由插件初始化，哪些能力留给 OpenClaw 自己管理。</p>
+        <p class="muted">如果你想确认当前访问方式、数据保存位置、备份目录和能力开关，就看这一页。这里更适合核对状态和理解配置含义，不需要在命令行里来回查找。</p>
       </div>
       <div class="header-actions">
         <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
@@ -990,7 +990,7 @@ async fn config_page(State(state): State<AppState>) -> impl IntoResponse {
         config,
         NavPage::Config,
         "基础配置",
-        "这里集中展示插件参数、目录结构和职责边界，方便快速核对，不再把命令和配置混在一个页面里。",
+        "这一页用来查看插件当前怎么运行、数据保存在什么位置，以及哪些能力已经启用。需要核对配置时先看这里，会比直接翻日志和命令更直观。",
         &config_content(config),
     )
 }
