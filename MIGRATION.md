@@ -13,11 +13,17 @@ This project is the Rust rewrite for the non-upstream parts of the add-on.
 - `openclaw_assistant/render_nginx.py`
   - split between:
     - `crates/haos-ui`
-    - future nginx/runtime config generation in `crates/addon-supervisor`
+    - `crates/ingressd`
 
 - `openclaw_assistant/landing.html.tpl`
   - `crates/haos-ui`
   - archived legacy copy remains in the original repo
+
+- `nginx`
+  - `crates/ingressd`
+
+- `ttyd`
+  - `crates/ingressd`
 
 - `openclaw_assistant/run.sh`
   - primary startup path is now `crates/addon-supervisor`
@@ -41,4 +47,5 @@ This project is the Rust rewrite for the non-upstream parts of the add-on.
 - `actiond`: baseline working
 - `oc-config`: baseline working
 - `haos-ui`: prototype working
-- `addon-supervisor`: startup bootstrap, nginx render path, backup sync, local process supervision, OpenClaw runtime launch, startup doctor, and auto-approve helper now handled in Rust
+- `addon-supervisor`: startup bootstrap, backup sync, local process supervision, OpenClaw runtime launch, startup doctor, and auto-approve helper now handled in Rust
+- `ingressd`: replaces `nginx` and `ttyd` for ingress routing, static helper files, and browser terminal transport

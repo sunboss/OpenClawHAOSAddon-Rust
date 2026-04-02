@@ -11,6 +11,7 @@ continuing to consume upstream `openclaw` and `mcporter`.
 - `haos-ui`: Rust + htmx control page
 - `actiond`: local action API for gateway and diagnostics
 - `oc-config`: JSON config helper for `openclaw.json`
+- `ingressd`: Rust ingress and browser terminal service replacing `nginx` + `ttyd`
 - `addon-supervisor`: runtime orchestrator replacing shell startup glue
 
 ## Status
@@ -18,7 +19,7 @@ continuing to consume upstream `openclaw` and `mcporter`.
 - UI prototype: working baseline
 - Action server: working baseline
 - Config helper: working baseline
-- Supervisor: now handles startup bootstrap, nginx config rendering, certificate/token prep, backup sync, `openclaw gateway run` / `openclaw node run`, and supervision of `haos-ui`, `actiond`, `ttyd`, and `nginx`
+- Supervisor: now handles startup bootstrap, certificate/token prep, backup sync, `openclaw gateway run` / `openclaw node run`, and supervision of `haos-ui`, `actiond`, and `ingressd`
 - Add-on wrapper: `Dockerfile`, `config.yaml`, `build.yaml`, and a thin fallback `run.sh` remain, but the container default entry now goes straight to `addon-supervisor haos-entry`
 
 ## Repository shape

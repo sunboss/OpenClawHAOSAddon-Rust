@@ -32,12 +32,8 @@ enum Commands {
         ui_bin: String,
         #[arg(long, default_value = "actiond")]
         action_bin: String,
-        #[arg(long, default_value = "ttyd")]
-        ttyd_bin: String,
-        #[arg(long, default_value = "nginx")]
-        nginx_bin: String,
-        #[arg(long, default_value = "/etc/nginx/nginx.conf")]
-        nginx_conf: PathBuf,
+        #[arg(long, default_value = "ingressd")]
+        ingress_bin: String,
         #[arg(long, default_value = "local")]
         gateway_mode: String,
         #[arg(long, default_value = "")]
@@ -89,10 +85,8 @@ struct HaosEntryArgs {
     ui_bin: String,
     #[arg(long, default_value = "actiond")]
     action_bin: String,
-    #[arg(long, default_value = "ttyd")]
-    ttyd_bin: String,
-    #[arg(long, default_value = "nginx")]
-    nginx_bin: String,
+    #[arg(long, default_value = "ingressd")]
+    ingress_bin: String,
     #[arg(long, default_value = "/etc/nginx/nginx.conf")]
     nginx_conf: PathBuf,
 }
@@ -147,9 +141,7 @@ fn main() -> ExitCode {
             gateway_bin,
             ui_bin,
             action_bin,
-            ttyd_bin,
-            nginx_bin,
-            nginx_conf,
+            ingress_bin,
             gateway_mode,
             gateway_remote_url,
             auto_approve_pairing,
@@ -160,9 +152,7 @@ fn main() -> ExitCode {
             gateway_bin,
             ui_bin,
             action_bin,
-            ttyd_bin,
-            nginx_bin,
-            nginx_conf,
+            ingress_bin,
             gateway_mode,
             gateway_remote_url,
             auto_approve_pairing,
@@ -249,9 +239,7 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         args.gateway_bin,
         args.ui_bin,
         args.action_bin,
-        args.ttyd_bin,
-        args.nginx_bin,
-        args.nginx_conf,
+        args.ingress_bin,
         settings.gateway_mode,
         settings.gateway_remote_url,
         settings.auto_approve_pairing,
@@ -367,10 +355,19 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("MCPORTER_CONFIG", &args.mcporter_config);
         env::set_var("ACTION_SERVER_PORT", args.action_server_port.to_string());
         env::set_var("UI_PORT", args.ui_port.to_string());
+        env::set_var("INGRESS_PORT", "48099");
         env::set_var("ACCESS_MODE", &settings.access_mode);
         env::set_var("GATEWAY_MODE", &settings.gateway_mode);
         env::set_var("GW_PUBLIC_URL", &settings.gateway_public_url);
         env::set_var("HTTPS_PORT", settings.https_port.to_string());
+        env::set_var(
+            "ENABLE_TERMINAL",
+            if settings.enable_terminal {
+                "true"
+            } else {
+                "false"
+            },
+        );
         env::set_var("ENABLE_HTTPS_PROXY", "true");
         env::set_var("HTTPS_PROXY_PORT", settings.https_port.to_string());
         env::set_var(
@@ -722,15 +719,13 @@ fn run_services(
     gateway_bin: String,
     ui_bin: String,
     action_bin: String,
-    ttyd_bin: String,
-    nginx_bin: String,
-    nginx_conf: PathBuf,
+    ingress_bin: String,
     gateway_mode: String,
     gateway_remote_url: String,
     auto_approve_pairing: bool,
     run_doctor_on_start: bool,
-    terminal_port: u16,
-    enable_terminal: bool,
+    _terminal_port: u16,
+    _enable_terminal: bool,
 ) -> ExitCode {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     rt.block_on(async move {
@@ -743,8 +738,7 @@ fn run_services(
             "openclaw-node",
             "haos-ui",
             "actiond",
-            "ttyd",
-            "nginx",
+            "ingressd",
         ] {
             remove_pid_file(name);
         }
@@ -773,27 +767,8 @@ fn run_services(
             ProcessSpec::new("actiond", action_bin, vec![]),
             shutdown_rx.clone(),
         )));
-        if enable_terminal {
-            handles.push(tokio::spawn(run_managed_process(
-                ProcessSpec::new(
-                    "ttyd",
-                    ttyd_bin,
-                    vec![
-                        "-W".to_string(),
-                        "-i".to_string(),
-                        "127.0.0.1".to_string(),
-                        "-p".to_string(),
-                        terminal_port.to_string(),
-                        "-b".to_string(),
-                        "/terminal".to_string(),
-                        "bash".to_string(),
-                    ],
-                ),
-                shutdown_rx.clone(),
-            )));
-        }
         handles.push(tokio::spawn(run_managed_process(
-            ProcessSpec::nginx(nginx_bin, nginx_conf),
+            ProcessSpec::new("ingressd", ingress_bin, vec![]),
             shutdown_rx,
         )));
 
@@ -884,15 +859,6 @@ impl ProcessSpec {
             program,
             args,
             render_nginx_conf: None,
-        }
-    }
-
-    fn nginx(program: String, conf: PathBuf) -> Self {
-        Self {
-            name: "nginx".to_string(),
-            program,
-            args: vec!["-g".to_string(), "daemon off;".to_string()],
-            render_nginx_conf: Some(conf),
         }
     }
 }

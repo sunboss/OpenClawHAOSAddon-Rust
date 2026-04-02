@@ -52,7 +52,7 @@ fn pid_value(name: &str) -> String {
 }
 
 fn terminal_available() -> bool {
-    Path::new("/run/openclaw-rs/ttyd.pid").exists()
+    Path::new("/run/openclaw-rs/ingressd.pid").exists()
 }
 
 fn display_value(value: &str) -> &str {
@@ -466,6 +466,11 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
 
       const frame = document.getElementById("termFrame");
       if (!frame || !frame.contentWindow) return;
+      if (typeof frame.contentWindow.injectCommand === "function") {{
+        frame.contentWindow.injectCommand(command);
+        return;
+      }}
+
       const doc = frame.contentWindow.document;
       const input = doc.querySelector(".xterm-helper-textarea, textarea.xterm-helper-textarea, textarea");
 
@@ -524,12 +529,7 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
     } else {
         node_pid
     };
-    let nginx_pid = pid_value("nginx");
-    let ttyd_pid = if terminal_available() {
-        pid_value("ttyd")
-    } else {
-        "-".to_string()
-    };
+    let ingress_pid = pid_value("ingressd");
     let action_pid = pid_value("actiond");
 
     Html(format!(
@@ -538,14 +538,18 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
   <div class="kv"><span class="key">访问模式</span><span class="value">{access}</span></div>
   <div class="kv"><span class="key">网关模式</span><span class="value">{gateway_mode}</span></div>
   <div class="kv"><span class="key">版本</span><span class="value">{version}</span></div>
-  <div class="kv"><span class="key">PID</span><span class="badges"><span class="badge">Gateway {gw}</span><span class="badge">nginx {nginx}</span><span class="badge">ttyd {ttyd}</span><span class="badge">Action {action}</span></span></div>
+  <div class="kv"><span class="key">PID</span><span class="badges"><span class="badge">Gateway {gw}</span><span class="badge">Ingress {ingress}</span><span class="badge">UI {ui}</span><span class="badge">Action {action}</span></span></div>
 </div>"##,
         access = config.access_mode,
         gateway_mode = config.gateway_mode,
         version = config.openclaw_version,
         gw = display_gateway_pid,
-        nginx = nginx_pid,
-        ttyd = ttyd_pid,
+        ingress = if terminal_available() {
+            ingress_pid
+        } else {
+            "-".to_string()
+        },
+        ui = pid_value("haos-ui"),
         action = action_pid
     ))
 }
