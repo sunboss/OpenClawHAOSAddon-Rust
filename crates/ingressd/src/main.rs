@@ -2,7 +2,7 @@ use axum::{
     Router,
     body::{Body, Bytes, to_bytes},
     extract::{
-        Path, Request, State,
+        ConnectInfo, Path, Request, State,
         ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode},
@@ -91,9 +91,12 @@ async fn main() {
     println!("ingressd: HA ingress listening on http://{ingress_addr}");
 
     let ingress_server = tokio::spawn(async move {
-        axum::serve(ingress_listener, ingress_app)
-            .await
-            .expect("serve ingress app");
+        axum::serve(
+            ingress_listener,
+            ingress_app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .expect("serve ingress app");
     });
 
     if enable_https {
@@ -107,7 +110,7 @@ async fn main() {
 
         let gateway_server = tokio::spawn(async move {
             axum_server::bind_rustls(https_addr, tls_config)
-                .serve(gateway_app.into_make_service())
+                .serve(gateway_app.into_make_service_with_connect_info::<SocketAddr>())
                 .await
                 .expect("serve gateway app");
         });
@@ -159,55 +162,146 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenClaw Terminal</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.min.css">
   <style>
-    html, body {{ margin: 0; height: 100%; background: #0f172a; }}
-    #terminal {{ height: 100vh; width: 100vw; padding: 10px; box-sizing: border-box; }}
+    :root {{
+      --bg: #0f172a;
+      --bg2: #111c33;
+      --line: #223252;
+      --text: #dbe8ff;
+      --muted: #8ea5c8;
+      --accent: #2563eb;
+    }}
+    html, body {{
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Consolas, "SFMono-Regular", "Microsoft YaHei", monospace;
+    }}
+    .shell {{
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+    }}
+    .head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.02);
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    }}
+    .screen {{
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+    }}
+    .bar {{
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      padding: 10px;
+      border-top: 1px solid var(--line);
+      background: rgba(255,255,255,.02);
+    }}
+    .cmd {{
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid #2f4468;
+      background: #0b1324;
+      color: var(--text);
+      outline: none;
+      font: inherit;
+    }}
+    .btn {{
+      min-width: 92px;
+      min-height: 42px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    }}
+    .muted {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
   </style>
 </head>
 <body>
-  <div id="terminal"></div>
-  <script src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <div class="shell">
+    <div class="head">
+      <strong>OpenClaw Terminal</strong>
+      <span class="muted">Commands from the main page are sent here directly.</span>
+    </div>
+    <pre id="screen" class="screen"></pre>
+    <div class="bar">
+      <input id="cmd" class="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="Type a command and press Enter">
+      <button id="send" class="btn" type="button">Run</button>
+    </div>
+  </div>
   <script>
-    const term = new Terminal({{
-      cursorBlink: true,
-      fontFamily: "Consolas, 'SFMono-Regular', monospace",
-      theme: {{
-        background: "#0f172a",
-        foreground: "#dbe8ff"
-      }}
-    }});
-    term.open(document.getElementById("terminal"));
-
+    const screen = document.getElementById("screen");
+    const input = document.getElementById("cmd");
+    const send = document.getElementById("send");
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     const socket = new WebSocket(`${{scheme}}://${{location.host}}/terminal/ws`);
     socket.binaryType = "arraybuffer";
 
-    socket.addEventListener("message", (event) => {{
-      if (typeof event.data === "string") {{
-        term.write(event.data);
-        return;
-      }}
-      const decoded = new TextDecoder().decode(new Uint8Array(event.data));
-      term.write(decoded);
-    }});
+    function append(text) {{
+      screen.textContent += text;
+      screen.scrollTop = screen.scrollHeight;
+    }}
 
-    socket.addEventListener("close", () => {{
-      term.write("\r\n[terminal closed]\r\n");
-    }});
-
-    term.onData((data) => {{
-      if (socket.readyState === WebSocket.OPEN) {{
-        socket.send(data);
-      }}
-    }});
-
-    window.injectCommand = function (command) {{
+    function sendCommand(command, echo = true) {{
       if (!command) return;
+      if (echo) append(`$ ${{command}}\n`);
       if (socket.readyState === WebSocket.OPEN) {{
         socket.send(command + "\n");
       }}
+    }}
+
+    socket.addEventListener("message", (event) => {{
+      if (typeof event.data === "string") {{
+        append(event.data);
+        return;
+      }}
+      const decoded = new TextDecoder().decode(new Uint8Array(event.data));
+      append(decoded);
+    }});
+
+    socket.addEventListener("close", () => {{
+      append("\n[terminal closed]\n");
+    }});
+
+    window.injectCommand = function (command) {{
+      sendCommand(command);
     }};
+
+    send.addEventListener("click", () => {{
+      const value = input.value.trim();
+      if (!value) return;
+      sendCommand(value);
+      input.value = "";
+      input.focus();
+    }});
+
+    input.addEventListener("keydown", (event) => {{
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      send.click();
+    }});
+
+    input.focus();
   </script>
 </body>
 </html>"##
@@ -309,7 +403,7 @@ async fn handle_terminal_socket(socket: WebSocket) {
 }
 
 async fn proxy_health(State(state): State<AppState>, request: Request) -> impl IntoResponse {
-    proxy_http_request(&state.client, &state.action_base, request, false).await
+    proxy_http_request(&state.client, &state.action_base, request, false, None).await
 }
 
 async fn proxy_action(
@@ -318,12 +412,12 @@ async fn proxy_action(
     request: Request,
 ) -> impl IntoResponse {
     let _ = action;
-    proxy_http_request(&state.client, &state.action_base, request, false).await
+    proxy_http_request(&state.client, &state.action_base, request, false, None).await
 }
 
 async fn proxy_ui(State(state): State<AppState>, request: Request) -> impl IntoResponse {
     let path = request.uri().path().to_string();
-    let response = proxy_http_request(&state.client, &state.ui_base, request, false).await;
+    let response = proxy_http_request(&state.client, &state.ui_base, request, false, None).await;
     if response.status() != StatusCode::BAD_GATEWAY {
         return response;
     }
@@ -346,6 +440,7 @@ async fn proxy_ui(State(state): State<AppState>, request: Request) -> impl IntoR
 
 async fn proxy_gateway(
     State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     ws: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
     request: Request,
 ) -> impl IntoResponse {
@@ -354,10 +449,19 @@ async fn proxy_gateway(
         let query = request.uri().query().map(|q| q.to_string());
         let headers = request.headers().clone();
         return ws
-            .on_upgrade(move |socket| proxy_gateway_ws(state, socket, path, query, headers))
+            .on_upgrade(move |socket| {
+                proxy_gateway_ws(state, socket, path, query, headers, peer_addr)
+            })
             .into_response();
     }
-    proxy_http_request(&state.client, &state.gateway_http_base, request, true).await
+    proxy_http_request(
+        &state.client,
+        &state.gateway_http_base,
+        request,
+        true,
+        Some(peer_addr),
+    )
+    .await
 }
 
 async fn proxy_gateway_ws(
@@ -366,6 +470,7 @@ async fn proxy_gateway_ws(
     path: String,
     query: Option<String>,
     headers: HeaderMap,
+    peer_addr: SocketAddr,
 ) {
     let mut target = format!("{}{}", state.gateway_ws_base, path);
     if let Some(query) = query {
@@ -393,6 +498,23 @@ async fn proxy_gateway_ws(
             );
         }
     }
+    if let Ok(value) = HeaderValue::from_str(&peer_addr.ip().to_string()) {
+        upstream_request
+            .headers_mut()
+            .insert(HeaderName::from_static("x-forwarded-for"), value.clone());
+        upstream_request
+            .headers_mut()
+            .insert(HeaderName::from_static("x-real-ip"), value);
+    }
+    if let Some(host) = headers.get("host") {
+        upstream_request
+            .headers_mut()
+            .insert(HeaderName::from_static("x-forwarded-host"), host.clone());
+    }
+    upstream_request.headers_mut().insert(
+        HeaderName::from_static("x-forwarded-proto"),
+        HeaderValue::from_static("https"),
+    );
 
     let Ok((upstream, _)) = connect_async(upstream_request).await else {
         return;
@@ -485,6 +607,7 @@ async fn proxy_http_request(
     base: &str,
     request: Request,
     preserve_host: bool,
+    peer_addr: Option<SocketAddr>,
 ) -> Response<Body> {
     let (parts, body) = request.into_parts();
     let mut target = format!("{base}{}", parts.uri.path());
@@ -509,6 +632,10 @@ async fn proxy_http_request(
         builder = builder.header("x-forwarded-proto", "https");
         if let Some(host) = parts.headers.get("host") {
             builder = builder.header("x-forwarded-host", host);
+        }
+        if let Some(peer_addr) = peer_addr {
+            builder = builder.header("x-forwarded-for", peer_addr.ip().to_string());
+            builder = builder.header("x-real-ip", peer_addr.ip().to_string());
         }
     }
 
