@@ -1,0 +1,49 @@
+configuration:
+  timezone:
+    name: Timezone
+    description: Timezone used inside the add-on container.
+  enable_terminal:
+    name: Enable Web Terminal
+    description: Expose the embedded ttyd terminal in Home Assistant ingress.
+  terminal_port:
+    name: Terminal Port
+    description: Port used by ttyd inside the add-on.
+  gateway_mode:
+    name: Gateway Mode
+    description: Run a local gateway or connect to a remote one.
+    options:
+      local: Local
+      remote: Remote
+  gateway_remote_url:
+    name: Remote Gateway URL
+    description: WebSocket URL used when gateway mode is remote.
+  gateway_public_url:
+    name: Gateway Public URL
+    description: Public URL used by the "Open Gateway" button in the UI.
+  gateway_port:
+    name: Gateway HTTPS Port
+    description: External HTTPS proxy port used by the add-on.
+  access_mode:
+    name: Access Mode
+    description: Access preset reflected in the Rust UI.
+    options:
+      custom: Custom
+      local_only: Local Only
+      lan_https: LAN HTTPS
+      lan_reverse_proxy: LAN Reverse Proxy
+      tailnet_https: Tailnet HTTPS
+  enable_openai_api:
+    name: Enable OpenAI API
+    description: Enable the OpenAI-compatible chat completions endpoint.
+  auto_configure_mcp:
+    name: Enable Native Home Assistant MCP
+    description: Register Home Assistant's MCP endpoint through mcporter at startup.
+  homeassistant_token:
+    name: Home Assistant Token
+    description: Long-lived Home Assistant token used for MCP registration.
+  auto_approve_device_pairing:
+    name: Auto-Approve Device Pairing
+    description: Periodically approve the latest pending device pairing request.
+  run_doctor_on_start:
+    name: Run Doctor On Start
+    description: Run openclaw doctor shortly after startup for diagnostics.
