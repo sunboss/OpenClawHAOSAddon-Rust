@@ -59,9 +59,11 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-latest
             suffix: amd64
+            hass_arch: amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             suffix: arm64
+            hass_arch: aarch64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -86,6 +88,11 @@ jobs:
           push: true
           platforms: ${{ matrix.platform }}
           provenance: false
+          build-args: |
+            BUILD_VERSION=${{ needs.meta.outputs.version }}
+            BUILD_ARCH=${{ matrix.hass_arch }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.run_id }}
+            BUILD_REF=${{ github.sha }}
           tags: |
             ${{ needs.meta.outputs.image }}:${{ needs.meta.outputs.version }}-${{ matrix.suffix }}
             ${{ needs.meta.outputs.image }}:latest-${{ matrix.suffix }}

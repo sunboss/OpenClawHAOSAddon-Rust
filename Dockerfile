@@ -9,6 +9,22 @@ FROM node:24-bookworm-slim
 
 ARG TARGETARCH
 ARG OPENCLAW_VERSION=2026.4.1
+ARG BUILD_VERSION=dev
+ARG BUILD_ARCH=amd64
+ARG BUILD_DATE=unknown
+ARG BUILD_REF=unknown
+
+LABEL \
+  io.hass.type="addon" \
+  io.hass.version="${BUILD_VERSION}" \
+  io.hass.arch="${BUILD_ARCH}" \
+  io.hass.name="OpenClawHAOSAddon-Rust" \
+  io.hass.description="Rust rewrite of the local HAOS add-on layer while keeping upstream OpenClaw runtimes unchanged." \
+  org.opencontainers.image.title="OpenClawHAOSAddon-Rust" \
+  org.opencontainers.image.description="Rust rewrite of the local HAOS add-on layer while keeping upstream OpenClaw runtimes unchanged." \
+  org.opencontainers.image.version="${BUILD_VERSION}" \
+  org.opencontainers.image.created="${BUILD_DATE}" \
+  org.opencontainers.image.revision="${BUILD_REF}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
