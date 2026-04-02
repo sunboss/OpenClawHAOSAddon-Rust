@@ -1,5 +1,5 @@
 name: OpenClawHAOSAddon-Rust
-version: "2026.04.02.24"
+version: "2026.04.02.25"
 slug: openclaw_assistant_rust
 description: Rust rewrite of the local HAOS add-on layer while keeping upstream OpenClaw runtimes unchanged.
 url: https://github.com/sunboss/OpenClawHAOSAddon-Rust

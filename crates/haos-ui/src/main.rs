@@ -30,6 +30,7 @@ struct SystemSnapshot {
     memory_used: String,
     disk_used: String,
     uptime: String,
+    openclaw_uptime: String,
     cpu_percent: u8,
     memory_percent: u8,
     disk_percent: u8,
@@ -123,6 +124,24 @@ fn format_duration(seconds: u64) -> String {
     }
 }
 
+fn process_uptime(pid: &str) -> Option<String> {
+    if pid.trim().is_empty() || pid == "-" {
+        return None;
+    }
+    let output = Command::new("ps")
+        .args(["-p", pid, "-o", "etimes="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let seconds = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u64>()
+        .ok()?;
+    Some(format_duration(seconds))
+}
+
 fn disk_snapshot() -> String {
     let output = Command::new("df").args(["-h", "/config"]).output();
     if let Ok(output) = output {
@@ -196,11 +215,16 @@ fn collect_system_snapshot() -> SystemSnapshot {
         })
         .unwrap_or_else(|| "不可用".to_string());
 
+    let openclaw_uptime = process_uptime(&pid_value("openclaw-gateway"))
+        .or_else(|| process_uptime(&pid_value("openclaw-node")))
+        .unwrap_or_else(|| "不可用".to_string());
+
     SystemSnapshot {
         cpu_load,
         memory_used,
         disk_used: disk_snapshot(),
         uptime,
+        openclaw_uptime,
         cpu_percent,
         memory_percent,
         disk_percent: disk_percent_snapshot().unwrap_or(0),
@@ -241,10 +265,6 @@ fn stat_tile(label: &str, value: &str, sub: &str) -> String {
     format!(
         r#"<article class="stat-card"><div class="stat-label">{label}</div><div class="stat-value">{value}</div><div class="stat-sub">{sub}</div></article>"#
     )
-}
-
-fn info_tile(title: &str, body: &str) -> String {
-    format!(r#"<article class="info-tile"><h3>{title}</h3><p>{body}</p></article>"#)
 }
 
 fn summary_strip(title: &str, value: &str, sub: &str, tone: &str) -> String {
@@ -337,7 +357,23 @@ fn home_content(config: &PageConfig) -> String {
     {health}
     {runtime}
     {https}
-    {openclaw}
+    {openclaw_runtime}
+  </section>
+
+  <section class="card">
+    <div class="card-head compact">
+      <div>
+        <div class="eyebrow">资源监控</div>
+        <h2>系统资源概览</h2>
+      </div>
+    </div>
+    <div class="resource-grid">
+      {resource_cpu}
+      {resource_memory}
+      {resource_disk}
+      {resource_uptime}
+      {resource_openclaw_uptime}
+    </div>
   </section>
 
   <section class="card hero-card">
@@ -359,10 +395,6 @@ fn home_content(config: &PageConfig) -> String {
       {stat_mode}
       {stat_addon}
       {stat_openclaw}
-      {stat_cpu}
-      {stat_memory}
-      {stat_disk}
-      {stat_uptime}
     </div>
 
     <div class="status-panel">
@@ -398,50 +430,6 @@ fn home_content(config: &PageConfig) -> String {
     <section class="card" id="diagPanel"><p class="muted">正在加载能力摘要…</p></section>
   </div>
 
-  <section class="card">
-    <div class="card-head compact">
-      <div>
-        <div class="eyebrow">资源监控</div>
-        <h2>系统资源概览</h2>
-      </div>
-    </div>
-    <div class="resource-grid">
-      {resource_cpu}
-      {resource_memory}
-      {resource_disk}
-      {resource_uptime}
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="card-head compact">
-      <div>
-        <div class="eyebrow">页面分工</div>
-        <h2>工作区结构</h2>
-      </div>
-    </div>
-    <div class="feature-grid">
-      {tile_home}
-      {tile_config}
-      {tile_commands}
-      {tile_logs}
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="card-head compact">
-      <div>
-        <div class="eyebrow">高频入口</div>
-        <h2>常用操作</h2>
-      </div>
-    </div>
-    <div class="feature-grid">
-      {quick_gateway}
-      {quick_commands}
-      {quick_logs}
-      {quick_terminal}
-    </div>
-  </section>
 </div>"#,
         health = summary_strip("总状态", health_text, health_sub, health_tone),
         runtime = summary_strip(
@@ -456,10 +444,10 @@ fn home_content(config: &PageConfig) -> String {
             "原生网关默认监听端口",
             "tone-teal"
         ),
-        openclaw = summary_strip(
-            "上游版本",
-            &config.openclaw_version,
-            "用于判断文档和运行时是否一致",
+        openclaw_runtime = summary_strip(
+            "OpenClaw 时长",
+            &snapshot.openclaw_uptime,
+            "基于 Gateway 或 Node 主进程存活时间",
             "tone-violet"
         ),
         open_gateway = primary_button("打开网关", "ocOpenGateway()"),
@@ -469,10 +457,6 @@ fn home_content(config: &PageConfig) -> String {
         stat_mode = stat_tile("网关模式", &config.gateway_mode, "当前 OpenClaw 网关运行模式"),
         stat_addon = stat_tile("Add-on 版本", &config.addon_version, "插件发布版本"),
         stat_openclaw = stat_tile("OpenClaw 版本", &config.openclaw_version, "上游运行时版本"),
-        stat_cpu = stat_tile("CPU 负载", &snapshot.cpu_load, "读取 1 分钟平均负载"),
-        stat_memory = stat_tile("内存占用", &snapshot.memory_used, "基于 MemTotal / MemAvailable"),
-        stat_disk = stat_tile("磁盘占用", &snapshot.disk_used, "读取 /config 所在卷"),
-        stat_uptime = stat_tile("系统运行时长", &snapshot.uptime, "基于 /proc/uptime"),
         https_port = config.https_port,
         mcp = display_value(&config.mcp_status),
         web = display_value(&config.web_status),
@@ -509,14 +493,13 @@ fn home_content(config: &PageConfig) -> String {
             "tone-violet",
             "适合判断是否刚重启、是否发生过异常恢复。"
         ),
-        tile_home = info_tile("首页", "聚焦运行状态、版本、资源监控和高频入口，保证首屏清爽。"),
-        tile_config = info_tile("基础配置", "集中解释插件参数、目录结构和职责边界，避免配置混乱。"),
-        tile_commands = info_tile("命令行", "所有高频控制动作统一在这里执行，保持首页轻量。"),
-        tile_logs = info_tile("日志", "把长输出拆出去，排查问题时更专注，不再拖慢主页面。"),
-        quick_gateway = info_tile("打开原生网关", "用于确认原生控制台是否正常连接，也是最终操作入口。"),
-        quick_commands = info_tile("进入命令行页", "命令按钮和嵌入终端都集中在这里，便于持续操作。"),
-        quick_logs = info_tile("进入日志页", "查看日志和诊断摘要时更清晰，不会跟命令行相互挤占。"),
-        quick_terminal = info_tile("新窗口终端", "长时间监控输出或持续操作时，建议直接独立打开终端。"),
+        resource_openclaw_uptime = resource_card(
+            "OpenClaw 运行时长",
+            &snapshot.openclaw_uptime,
+            100,
+            "tone-blue",
+            "适合判断 Gateway 是否刚重启，或是否发生过短暂掉线。"
+        ),
     )
 }
 
@@ -796,15 +779,17 @@ fn render_shell(
     .hero p {{ margin:0; max-width:900px; color:var(--muted); font-size:17px; line-height:1.82; }}
     .hero-chip {{ flex:0 0 auto; min-height:54px; display:inline-flex; align-items:center; justify-content:center; padding:0 22px; border-radius:999px; border:1px solid #c8d8f1; background:linear-gradient(180deg,#fff 0%,#edf4ff 100%); color:#213f63; font-size:15px; font-weight:900; white-space:nowrap; }}
     .page-grid {{ display:grid; gap:20px; }}
-    .summary-strip {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }}
+    .summary-strip {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }}
     .two-col {{ display:grid; grid-template-columns:minmax(0,1.18fr) minmax(360px,.92fr); gap:20px; align-items:start; }}
     .three-up {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }}
     .split-grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }}
-    .feature-grid, .resource-grid {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }}
+    .feature-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }}
+    .resource-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }}
     .card {{ border:1px solid var(--line); border-radius:28px; background:var(--panel); box-shadow:var(--shadow); padding:26px 28px; }}
     .card h2 {{ margin:0 0 10px; font-size:30px; line-height:1.14; letter-spacing:-.02em; }}
     .card h3 {{ margin:0 0 10px; font-size:20px; line-height:1.2; }}
-    .summary-strip-card {{ border:1px solid var(--line); border-radius:22px; background:linear-gradient(180deg,#ffffff 0%,#f4f8ff 100%); box-shadow:var(--shadow); padding:18px 20px; }}
+    .summary-strip-card {{ position:relative; overflow:hidden; border:1px solid var(--line); border-radius:24px; background:linear-gradient(180deg,#ffffff 0%,#f4f8ff 100%); box-shadow:var(--shadow); padding:20px 22px; }}
+    .summary-strip-card::after {{ content:""; position:absolute; inset:auto 16px 0 auto; width:88px; height:88px; border-radius:999px; background:radial-gradient(circle, rgba(62,125,255,.10) 0%, rgba(62,125,255,0) 70%); pointer-events:none; }}
     .summary-strip-card.tone-good {{ background:linear-gradient(180deg,#ffffff 0%,#eefcf7 100%); }}
     .summary-strip-card.tone-warn {{ background:linear-gradient(180deg,#ffffff 0%,#fff8e9 100%); }}
     .summary-strip-card.tone-danger {{ background:linear-gradient(180deg,#ffffff 0%,#fff1f1 100%); }}
