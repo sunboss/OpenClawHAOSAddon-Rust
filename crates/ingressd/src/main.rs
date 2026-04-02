@@ -379,6 +379,7 @@ async fn proxy_gateway_ws(
     };
 
     for header in [
+        "host",
         "origin",
         "cookie",
         "authorization",
@@ -506,6 +507,9 @@ async fn proxy_http_request(
     builder = copy_request_headers(builder, &parts.headers, preserve_host);
     if preserve_host {
         builder = builder.header("x-forwarded-proto", "https");
+        if let Some(host) = parts.headers.get("host") {
+            builder = builder.header("x-forwarded-host", host);
+        }
     }
 
     let response = match builder.body(body).send().await {
