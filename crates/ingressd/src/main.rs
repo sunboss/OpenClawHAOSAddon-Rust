@@ -255,8 +255,10 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     const input = document.getElementById("cmd");
     const send = document.getElementById("send");
     const scheme = location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = new URL("./ws", location.href);
+    wsUrl.protocol = scheme + ":";
     const pending = [];
-    const socket = new WebSocket(`${scheme}://${location.host}/terminal/ws`);
+    const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";
 
     function append(text) {
