@@ -409,8 +409,8 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
 
     function refreshPanels() {{
       if (document.visibilityState !== "visible") return;
-      loadPanel("/partials/health", "healthPanel");
-      loadPanel("/partials/diag", "diagPanel");
+      loadPanel("./partials/health", "healthPanel");
+      loadPanel("./partials/diag", "diagPanel");
     }}
 
     function nativeGatewayUrl() {{
