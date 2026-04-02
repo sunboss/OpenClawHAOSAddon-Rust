@@ -996,6 +996,7 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
         }
 
         let mut command = Command::new(&spec.program);
+        apply_child_env(&mut command);
         command.args(&spec.args);
 
         let Ok(mut child) = command.spawn() else {
@@ -1053,10 +1054,9 @@ async fn run_pairing_auto_approver(
             break;
         }
 
-        let mut child = match Command::new(&gateway_bin)
-            .args(["devices", "approve", "--latest"])
-            .spawn()
-        {
+        let mut command = Command::new(&gateway_bin);
+        apply_child_env(&mut command);
+        let mut child = match command.args(["devices", "approve", "--latest"]).spawn() {
             Ok(child) => child,
             Err(err) => {
                 eprintln!("addon-supervisor: failed to start auto-approve helper: {err}");
@@ -1089,7 +1089,9 @@ async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receive
     }
 
     println!("--- openclaw doctor ---");
-    let mut child = match Command::new(&gateway_bin).arg("doctor").spawn() {
+    let mut command = Command::new(&gateway_bin);
+    apply_child_env(&mut command);
+    let mut child = match command.arg("doctor").spawn() {
         Ok(child) => child,
         Err(err) => {
             eprintln!("addon-supervisor: failed to start doctor: {err}");
@@ -1110,4 +1112,37 @@ async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receive
         }
     }
     println!("--- end doctor ---");
+}
+
+fn apply_child_env(command: &mut Command) {
+    for key in [
+        "HOME",
+        "TZ",
+        "OPENCLAW_CONFIG_DIR",
+        "OPENCLAW_CONFIG_PATH",
+        "OPENCLAW_WORKSPACE_DIR",
+        "XDG_CONFIG_HOME",
+        "OPENCLAW_NO_RESPAWN",
+        "MCPORTER_HOME_DIR",
+        "MCPORTER_CONFIG",
+        "ACTION_SERVER_PORT",
+        "UI_PORT",
+        "INGRESS_PORT",
+        "ACCESS_MODE",
+        "GATEWAY_MODE",
+        "GW_PUBLIC_URL",
+        "HTTPS_PORT",
+        "ENABLE_TERMINAL",
+        "ENABLE_HTTPS_PROXY",
+        "HTTPS_PROXY_PORT",
+        "GATEWAY_INTERNAL_PORT",
+        "OPENCLAW_VERSION",
+        "MCP_STATUS",
+        "WEB_SEARCH_PROVIDER",
+        "MEMORY_SEARCH_PROVIDER",
+    ] {
+        if let Ok(value) = env::var(key) {
+            command.env(key, value);
+        }
+    }
 }

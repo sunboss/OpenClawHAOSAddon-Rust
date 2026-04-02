@@ -4,7 +4,7 @@ use axum::{
     response::{Html, IntoResponse},
     routing::get,
 };
-use std::{env, fs, net::SocketAddr, path::Path, sync::Arc};
+use std::{env, fs, net::SocketAddr, sync::Arc};
 
 #[derive(Clone)]
 struct AppState {
@@ -51,16 +51,16 @@ fn pid_value(name: &str) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
-fn terminal_available() -> bool {
-    Path::new("/run/openclaw-rs/ingressd.pid").exists()
-}
-
 fn display_value(value: &str) -> &str {
     if value.trim().is_empty() {
         "disabled"
     } else {
         value
     }
+}
+
+fn js_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
 #[tokio::main]
@@ -89,45 +89,37 @@ async fn main() {
 
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let config = &state.config;
-    let gateway_url = if config.gateway_url.trim().is_empty() {
-        "#".to_string()
-    } else {
-        config.gateway_url.clone()
-    };
+    let gateway_url = js_string(&config.gateway_url);
 
     Html(format!(
-        r##"<!doctype html>
-<html lang="zh-CN">
+        r#"<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenClawHAOSAddon-Rust</title>
-  <script src="https://unpkg.com/htmx.org@2.0.6"></script>
   <style>
     :root {{
       --bg: #eef4ff;
-      --bg-2: #f7fbff;
+      --bg2: #f8fbff;
       --card: rgba(255, 255, 255, 0.96);
-      --line: #d8e4f4;
-      --text: #17314d;
-      --muted: #6a829a;
-      --accent: #2563eb;
-      --accent-2: #0f9f96;
-      --accent-soft: #edf5ff;
-      --ok: #0a8f63;
-      --warn: #c56d11;
+      --line: #d7e4f4;
+      --text: #18304d;
+      --muted: #667f99;
+      --blue: #2563eb;
+      --teal: #0f9f96;
+      --soft: #edf5ff;
       --shell: #0f172a;
-      --shell-line: #223252;
+      --shellLine: #223252;
     }}
     * {{ box-sizing: border-box; }}
-    html {{ scroll-behavior: smooth; }}
     body {{
       margin: 0;
       color: var(--text);
       font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       background:
-        radial-gradient(circle at top right, rgba(37, 99, 235, 0.10), transparent 26%),
-        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+        radial-gradient(circle at top right, rgba(37,99,235,.10), transparent 24%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
     }}
     .wrap {{
       max-width: 1380px;
@@ -137,8 +129,8 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     .hero {{
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
       gap: 18px;
+      align-items: flex-start;
       margin-bottom: 18px;
     }}
     .title {{
@@ -149,9 +141,9 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     }}
     .sub {{
       margin: 0;
-      max-width: 900px;
       color: var(--muted);
-      line-height: 1.75;
+      line-height: 1.7;
+      max-width: 920px;
     }}
     .chip {{
       display: inline-flex;
@@ -160,20 +152,18 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       padding: 10px 14px;
       border-radius: 999px;
       border: 1px solid #bdd2f0;
-      background: var(--accent-soft);
+      background: var(--soft);
       color: #23425f;
       font-weight: 700;
       white-space: nowrap;
     }}
     .layout {{
       display: grid;
-      grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.92fr);
+      grid-template-columns: minmax(0, 1.2fr) minmax(360px, .9fr);
       gap: 18px;
       align-items: start;
     }}
-    .stack > .card + .card {{
-      margin-top: 18px;
-    }}
+    .stack > .card + .card {{ margin-top: 18px; }}
     .card {{
       border: 1px solid var(--line);
       border-radius: 22px;
@@ -197,7 +187,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       border-radius: 16px;
       background: #f3f8ff;
       color: #45617b;
-      line-height: 1.65;
+      line-height: 1.6;
     }}
     .actions {{
       display: flex;
@@ -213,7 +203,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       padding: 10px 16px;
       border-radius: 999px;
       border: 1px solid #b8cef0;
-      background: var(--accent-soft);
+      background: var(--soft);
       color: var(--text);
       text-decoration: none;
       font-weight: 700;
@@ -222,17 +212,15 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     }}
     .btn:hover {{
       transform: translateY(-1px);
-      box-shadow: 0 6px 18px rgba(37, 99, 235, 0.12);
+      box-shadow: 0 6px 18px rgba(37,99,235,.12);
       border-color: #8fb2e4;
     }}
     .btn.primary {{
       color: #fff;
       border-color: transparent;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      background: linear-gradient(135deg, var(--blue), var(--teal));
     }}
-    .btn.ghost {{
-      background: #fff;
-    }}
+    .btn.ghost {{ background: #fff; }}
     .kvs {{
       display: grid;
       gap: 12px;
@@ -262,47 +250,42 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     .badges {{
       display: flex;
       flex-wrap: wrap;
-      justify-content: flex-end;
       gap: 8px;
+      justify-content: flex-end;
     }}
     .badge {{
       display: inline-flex;
       align-items: center;
-      padding: 7px 12px;
+      padding: 8px 12px;
       border-radius: 999px;
-      background: #eef4ff;
-      color: #2a486c;
+      border: 1px solid #b8cef0;
+      background: #f4f8ff;
+      color: #2e4a67;
       font-weight: 700;
     }}
     .terminal-shell {{
-      border-radius: 18px;
-      overflow: hidden;
-      border: 1px solid var(--shell-line);
+      margin-top: 14px;
+      border-radius: 20px;
+      border: 1px solid #243a5f;
       background: var(--shell);
-      color: #dce9ff;
-      min-height: 480px;
+      overflow: hidden;
+      min-height: 520px;
     }}
     .terminal-head {{
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 14px;
-      background: rgba(255, 255, 255, 0.03);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--shellLine);
+      color: #dbe8ff;
     }}
-    .terminal-stage {{
-      min-height: 420px;
-    }}
+    .terminal-stage {{ min-height: 468px; }}
     .terminal-placeholder {{
-      display: flex;
-      min-height: 420px;
+      min-height: 468px;
       padding: 28px;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
+      display: grid;
+      place-items: center;
       text-align: center;
-      gap: 16px;
       color: #c7d8f1;
     }}
     iframe {{
@@ -320,29 +303,15 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       color: #294565;
     }}
     @media (max-width: 1120px) {{
-      .layout {{
-        grid-template-columns: 1fr;
-      }}
+      .layout {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 720px) {{
-      .wrap {{
-        padding: 18px 14px 28px;
-      }}
-      .hero {{
-        flex-direction: column;
-      }}
-      .title {{
-        font-size: 26px;
-      }}
-      .terminal-shell {{
-        min-height: 360px;
-      }}
-      .terminal-placeholder {{
-        min-height: 320px;
-      }}
-      iframe {{
-        min-height: 380px;
-      }}
+      .wrap {{ padding: 18px 14px 28px; }}
+      .hero {{ flex-direction: column; }}
+      .title {{ font-size: 26px; }}
+      .terminal-shell {{ min-height: 360px; }}
+      .terminal-placeholder {{ min-height: 320px; }}
+      iframe {{ min-height: 380px; }}
     }}
   </style>
 </head>
@@ -352,73 +321,63 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       <div>
         <h1 class="title">OpenClawHAOSAddon-Rust</h1>
         <p class="sub">
-          这是我们这层的 Rust 重写版控制页。上游 <code>openclaw</code> 和 <code>mcporter</code>
-          保持不动，页面、动作服务、配置助手和本地监管器逐步改成 Rust。
-          这一版重点收掉旧模板里的乱码、重复脚本和首屏阻塞加载。
+          Rust rewrite of the local HAOS add-on layer. Upstream <code>openclaw</code> and
+          <code>mcporter</code> stay unchanged. This page is intentionally self-contained so it can
+          still open even when external JS CDNs are unavailable.
         </p>
       </div>
-      <div class="chip">版本 {version}</div>
+      <div class="chip">Version {version}</div>
     </section>
 
     <div class="layout">
       <div class="stack">
         <section class="card">
-          <h2>主操作</h2>
+          <h2>Main Actions</h2>
           <p class="hint">
-            这里保留最常用入口。所有快捷命令都会优先写入右侧终端，
-            不再额外弹中间提示层。
+            These buttons target the most common control paths. Terminal loading is deferred until
+            you actually need it.
           </p>
           <div class="actions">
-            <a class="btn primary" href="{gateway_url}" target="_blank" rel="noopener noreferrer">打开原生 Gateway</a>
-            <button class="btn" type="button" data-load-terminal="true">打开终端</button>
-            <a class="btn" href="https://127.0.0.1:{https_port}/openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
-            <button class="btn ghost" type="button" data-cmd="openclaw gateway status --deep">查看网关状态</button>
-            <button class="btn ghost" type="button" data-cmd="openclaw devices list">devices list</button>
-            <button class="btn ghost" type="button" data-cmd="openclaw doctor --fix">doctor --fix</button>
-            <button class="btn ghost" type="button" data-cmd="openclaw logs --follow">logs --follow</button>
+            <button class="btn primary" type="button" data-native-gateway="true">Open Native Gateway</button>
+            <button class="btn" type="button" data-load-terminal="true">Open Terminal</button>
+            <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">Download CA Cert</a>
+            <button class="btn ghost" type="button" data-cmd="openclaw gateway status --deep">Gateway Status</button>
+            <button class="btn ghost" type="button" data-cmd="openclaw devices list">Devices List</button>
+            <button class="btn ghost" type="button" data-cmd="openclaw doctor --fix">Doctor Fix</button>
+            <button class="btn ghost" type="button" data-cmd="openclaw logs --follow">Follow Logs</button>
           </div>
           <div class="note">
-            终端改成按需加载，页面首屏不会立刻创建 iframe。健康状态和诊断面板只会在页面可见时刷新，
-            避免旧版那种后台标签页持续轮询导致的卡顿。
+            If the native Gateway page reports a certificate error, trust the downloaded CA cert
+            first and then reopen the native HTTPS page.
           </div>
         </section>
 
-        <section
-          class="card"
-          id="healthPanel"
-          hx-get="/partials/health"
-          hx-trigger="load, refresh-health from:body"
-          hx-swap="innerHTML"
-        >
-          <p class="hint">正在加载服务状态…</p>
+        <section class="card" id="healthPanel">
+          <p class="hint">Loading service status...</p>
         </section>
       </div>
 
       <div class="stack">
-        <section
-          class="card"
-          id="diagPanel"
-          hx-get="/partials/diag"
-          hx-trigger="load, refresh-diag from:body"
-          hx-swap="innerHTML"
-        >
-          <p class="hint">正在加载快速诊断…</p>
+        <section class="card" id="diagPanel">
+          <p class="hint">Loading quick diagnostics...</p>
         </section>
 
         <section class="card">
-          <h2>内嵌终端</h2>
+          <h2>Embedded Terminal</h2>
           <div class="terminal-shell">
             <div class="terminal-head">
-              <strong>工作区终端</strong>
-              <span class="hint" style="color:#aac0df;margin:0;">点击左侧命令会自动拉起终端并执行</span>
+              <strong>Workspace Terminal</strong>
+              <span class="hint" style="color:#aac0df;margin:0;">Commands from the left panel are injected here.</span>
             </div>
             <div class="terminal-stage" id="terminalStage">
               <div class="terminal-placeholder" id="terminalPlaceholder">
-                <p>
-                  终端默认延迟加载，避免首屏卡顿。你可以手动打开，
-                  或者直接点击左侧快捷命令让页面自动载入终端。
-                </p>
-                <button class="btn primary" type="button" data-load-terminal="true">立即加载终端</button>
+                <div>
+                  <p>
+                    The terminal is lazy-loaded to keep first paint fast. You can open it now or
+                    just click any command button and it will auto-load.
+                  </p>
+                  <button class="btn primary" type="button" data-load-terminal="true">Load Terminal</button>
+                </div>
               </div>
             </div>
           </div>
@@ -428,11 +387,38 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
   </div>
 
   <script>
+    const configuredGatewayUrl = {gateway_url};
+    const httpsPort = {https_port};
     const terminalState = {{
       loaded: false,
       loading: false,
       pendingCommand: null,
     }};
+
+    async function loadPanel(url, targetId) {{
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      try {{
+        const response = await fetch(url, {{ credentials: "same-origin" }});
+        if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
+        target.innerHTML = await response.text();
+      }} catch (error) {{
+        target.innerHTML = `<p class="hint">Failed to load panel: ${{error.message}}</p>`;
+      }}
+    }}
+
+    function refreshPanels() {{
+      if (document.visibilityState !== "visible") return;
+      loadPanel("/partials/health", "healthPanel");
+      loadPanel("/partials/diag", "diagPanel");
+    }}
+
+    function nativeGatewayUrl() {{
+      if (configuredGatewayUrl && configuredGatewayUrl.trim() !== "") {{
+        return configuredGatewayUrl;
+      }}
+      return `https://${{location.hostname}}:${{httpsPort}}/`;
+    }}
 
     function ensureTerminalLoaded() {{
       if (terminalState.loaded || terminalState.loading) return;
@@ -440,7 +426,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       if (!stage) return;
 
       terminalState.loading = true;
-      stage.innerHTML = '<iframe id="termFrame" src="./terminal/" title="终端"></iframe>';
+      stage.innerHTML = '<iframe id="termFrame" src="./terminal/" title="terminal"></iframe>';
 
       const frame = document.getElementById("termFrame");
       const finish = function () {{
@@ -473,7 +459,6 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
 
       const doc = frame.contentWindow.document;
       const input = doc.querySelector(".xterm-helper-textarea, textarea.xterm-helper-textarea, textarea");
-
       if (!input) {{
         terminalState.pendingCommand = command;
         window.setTimeout(() => injectTerminalCommand(command), 180);
@@ -491,15 +476,14 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       }}));
     }}
 
-    function refreshPanels() {{
-      if (document.visibilityState !== "visible" || !window.htmx) return;
-      htmx.trigger("#healthPanel", "refresh-health");
-      htmx.trigger("#diagPanel", "refresh-diag");
-    }}
-
     document.addEventListener("click", function (event) {{
-      const trigger = event.target.closest("[data-cmd], [data-load-terminal]");
+      const trigger = event.target.closest("[data-cmd], [data-load-terminal], [data-native-gateway]");
       if (!trigger) return;
+
+      if (trigger.hasAttribute("data-native-gateway")) {{
+        window.open(nativeGatewayUrl(), "_blank", "noopener,noreferrer");
+        return;
+      }}
 
       if (trigger.hasAttribute("data-load-terminal")) {{
         ensureTerminalLoaded();
@@ -511,12 +495,13 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
 
     document.addEventListener("visibilitychange", refreshPanels);
     window.setInterval(refreshPanels, 45000);
+    refreshPanels();
   </script>
 </body>
-</html>"##,
+</html>"#,
         version = config.openclaw_version,
         gateway_url = gateway_url,
-        https_port = config.https_port
+        https_port = config.https_port,
     ))
 }
 
@@ -529,45 +514,47 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
     } else {
         node_pid
     };
-    let ingress_pid = pid_value("ingressd");
-    let action_pid = pid_value("actiond");
 
     Html(format!(
-        r##"<h2>服务状态</h2>
+        r#"<h2>Service Status</h2>
 <div class="kvs">
-  <div class="kv"><span class="key">访问模式</span><span class="value">{access}</span></div>
-  <div class="kv"><span class="key">网关模式</span><span class="value">{gateway_mode}</span></div>
-  <div class="kv"><span class="key">版本</span><span class="value">{version}</span></div>
-  <div class="kv"><span class="key">PID</span><span class="badges"><span class="badge">Gateway {gw}</span><span class="badge">Ingress {ingress}</span><span class="badge">UI {ui}</span><span class="badge">Action {action}</span></span></div>
-</div>"##,
+  <div class="kv"><span class="key">Access Mode</span><span class="value">{access}</span></div>
+  <div class="kv"><span class="key">Gateway Mode</span><span class="value">{gateway_mode}</span></div>
+  <div class="kv"><span class="key">Version</span><span class="value">{version}</span></div>
+  <div class="kv">
+    <span class="key">PID</span>
+    <span class="badges">
+      <span class="badge">Gateway {gw}</span>
+      <span class="badge">Ingress {ingress}</span>
+      <span class="badge">UI {ui}</span>
+      <span class="badge">Action {action}</span>
+    </span>
+  </div>
+</div>"#,
         access = config.access_mode,
         gateway_mode = config.gateway_mode,
         version = config.openclaw_version,
         gw = display_gateway_pid,
-        ingress = if terminal_available() {
-            ingress_pid
-        } else {
-            "-".to_string()
-        },
+        ingress = pid_value("ingressd"),
         ui = pid_value("haos-ui"),
-        action = action_pid
+        action = pid_value("actiond"),
     ))
 }
 
 async fn diag_partial(State(state): State<AppState>) -> impl IntoResponse {
     let config = &state.config;
     Html(format!(
-        r##"<h2>快速诊断</h2>
+        r#"<h2>Quick Diagnostics</h2>
 <div class="kvs">
   <div class="kv"><span class="key">MCP</span><span class="value">{mcp}</span></div>
   <div class="kv"><span class="key">Web Search</span><span class="value">{web}</span></div>
   <div class="kv"><span class="key">Memory Search</span><span class="value">{memory}</span></div>
 </div>
 <p class="hint" style="margin-top:14px;">
-  这里只显示当前运行时真正暴露出来的能力状态，避免旧模板里那种重复脚本、乱码文本和信息堆叠导致的卡顿。
-</p>"##,
+  This panel only shows current runtime state so the page stays fast and predictable.
+</p>"#,
         mcp = display_value(&config.mcp_status),
         web = display_value(&config.web_status),
-        memory = display_value(&config.memory_status)
+        memory = display_value(&config.memory_status),
     ))
 }
