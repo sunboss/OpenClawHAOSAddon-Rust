@@ -500,7 +500,7 @@ fn apply_status_env(
 }
 
 fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> bool {
-    run_status(
+    let applied = run_status(
         &args.oc_config_bin,
         &[
             "apply-gateway-settings",
@@ -516,7 +516,76 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
             "token",
             "127.0.0.1/32,::1/128",
         ],
+    );
+    if !applied {
+        return false;
+    }
+
+    let allowed_origins = build_control_ui_allowed_origins(settings);
+    let allowed_origins_json =
+        serde_json::to_string(&allowed_origins).unwrap_or_else(|_| "[]".to_string());
+
+    run_status(
+        &args.oc_config_bin,
+        &[
+            "set",
+            "gateway.controlUi.allowedOrigins",
+            &allowed_origins_json,
+            "--json",
+        ],
+    ) && run_status(
+        &args.oc_config_bin,
+        &[
+            "set",
+            "gateway.controlUi.allowInsecureAuth",
+            "false",
+            "--json",
+        ],
+    ) && run_status(
+        &args.oc_config_bin,
+        &[
+            "set",
+            "gateway.controlUi.dangerouslyDisableDeviceAuth",
+            "false",
+            "--json",
+        ],
     )
+}
+
+fn build_control_ui_allowed_origins(settings: &RuntimeSettings) -> Vec<String> {
+    let mut origins = Vec::<String>::new();
+    let https_port = settings.https_port;
+
+    if settings.access_mode == "lan_https" {
+        if let Some(ip) = detect_lan_ip() {
+            origins.push(format!("https://{ip}:{https_port}"));
+        }
+        origins.push(format!("https://homeassistant.local:{https_port}"));
+        origins.push(format!("https://homeassistant:{https_port}"));
+    }
+
+    if !settings.gateway_public_url.trim().is_empty()
+        && let Ok(parsed) = Url::parse(settings.gateway_public_url.trim())
+        && let Some(host) = parsed.host_str()
+    {
+        let origin = if let Some(port) = parsed.port() {
+            format!("{}://{}:{}", parsed.scheme(), host, port)
+        } else {
+            format!("{}://{}", parsed.scheme(), host)
+        };
+        origins.push(origin);
+    }
+
+    origins.sort();
+    origins.dedup();
+    origins
+}
+
+fn detect_lan_ip() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    let local = socket.local_addr().ok()?;
+    Some(local.ip().to_string())
 }
 
 fn write_gateway_token_file(args: &HaosEntryArgs, token: &str) -> bool {
