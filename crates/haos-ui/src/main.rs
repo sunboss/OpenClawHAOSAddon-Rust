@@ -461,6 +461,10 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
 
       const frame = document.getElementById("termFrame");
       if (!frame || !frame.contentWindow) return;
+      frame.contentWindow.postMessage({{
+        type: "openclaw-run-command",
+        command
+      }}, "*");
       if (typeof frame.contentWindow.injectCommand === "function") {{
         frame.contentWindow.injectCommand(command);
         return;

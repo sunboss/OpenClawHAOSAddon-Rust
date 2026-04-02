@@ -184,8 +184,8 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       height: 100vh;
     }}
     .head {{
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: 180px 1fr;
       gap: 12px;
       padding: 10px 14px;
       border-bottom: 1px solid var(--line);
@@ -234,6 +234,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     .muted {{
       color: var(--muted);
       font-size: 13px;
+      line-height: 1.5;
     }}
   </style>
 </head>
@@ -286,6 +287,14 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     window.injectCommand = function (command) {{
       sendCommand(command);
     }};
+
+    window.addEventListener("message", (event) => {{
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type !== "openclaw-run-command") return;
+      if (typeof data.command !== "string" || !data.command.trim()) return;
+      sendCommand(data.command);
+    }});
 
     send.addEventListener("click", () => {{
       const value = input.value.trim();
