@@ -125,7 +125,7 @@ fn build_ingress_router(state: AppState) -> Router {
     Router::new()
         .route("/terminal", get(terminal_redirect))
         .route("/terminal/", get(terminal_page))
-        .route("/terminal/ws", get(terminal_ws))
+        .route("/terminal/ws", any(terminal_ws))
         .route("/health", get(proxy_health))
         .route("/action/{action}", any(proxy_action))
         .route("/token", get(token_file))
@@ -345,10 +345,12 @@ async fn terminal_ws(State(state): State<AppState>, ws: WebSocketUpgrade) -> imp
     if !state.enable_terminal {
         return StatusCode::NOT_FOUND.into_response();
     }
+    println!("ingressd: terminal websocket upgrade requested");
     ws.on_upgrade(handle_terminal_socket).into_response()
 }
 
 async fn handle_terminal_socket(socket: WebSocket) {
+    println!("ingressd: terminal websocket connected");
     let pty_system = native_pty_system();
     let Ok(pair) = pty_system.openpty(PtySize {
         rows: 24,
@@ -356,21 +358,25 @@ async fn handle_terminal_socket(socket: WebSocket) {
         pixel_width: 0,
         pixel_height: 0,
     }) else {
+        eprintln!("ingressd: failed to open PTY");
         return;
     };
 
     let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
     let cmd = CommandBuilder::new(shell);
     let Ok(mut child) = pair.slave.spawn_command(cmd) else {
+        eprintln!("ingressd: failed to spawn shell in PTY");
         return;
     };
     drop(pair.slave);
 
     let Ok(mut reader) = pair.master.try_clone_reader() else {
+        eprintln!("ingressd: failed to clone PTY reader");
         let _ = child.kill();
         return;
     };
     let Ok(writer) = pair.master.take_writer() else {
+        eprintln!("ingressd: failed to take PTY writer");
         let _ = child.kill();
         return;
     };
@@ -431,6 +437,7 @@ async fn handle_terminal_socket(socket: WebSocket) {
     };
 
     let _ = tokio::join!(send_task, write_task);
+    println!("ingressd: terminal websocket disconnected");
     let _ = child.kill();
 }
 
