@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum.workspace = true
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 futures-util.workspace = true
 http.workspace = true
 http-body-util.workspace = true

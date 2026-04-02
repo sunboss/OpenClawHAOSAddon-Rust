@@ -48,4 +48,4 @@ This project is the Rust rewrite for the non-upstream parts of the add-on.
 - `oc-config`: baseline working
 - `haos-ui`: prototype working
 - `addon-supervisor`: startup bootstrap, backup sync, local process supervision, OpenClaw runtime launch, startup doctor, and auto-approve helper now handled in Rust
-- `ingressd`: replaces `nginx` and `ttyd` for ingress routing, static helper files, and browser terminal transport
+- `ingressd`: replaces `nginx` and `ttyd` for HA ingress routing, external HTTPS gateway proxying, static helper files, and browser terminal transport

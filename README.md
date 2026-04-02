@@ -11,7 +11,7 @@ continuing to consume upstream `openclaw` and `mcporter`.
 - `haos-ui`: Rust + htmx control page
 - `actiond`: local action API for gateway and diagnostics
 - `oc-config`: JSON config helper for `openclaw.json`
-- `ingressd`: Rust ingress and browser terminal service replacing `nginx` + `ttyd`
+- `ingressd`: Rust ingress, browser terminal, and external HTTPS gateway proxy replacing `nginx` + `ttyd`
 - `addon-supervisor`: runtime orchestrator replacing shell startup glue
 
 ## Status
