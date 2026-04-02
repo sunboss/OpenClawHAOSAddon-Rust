@@ -412,26 +412,6 @@ fn home_content(config: &PageConfig) -> String {
       {stat_openclaw}
     </div>
 
-    <div class="status-panel">
-      <div class="panel-left">
-        <div class="live-row"><span class="live-dot"></span><strong>服务运行中</strong><span class="pill-inline">HTTPS {https_port}</span></div>
-        <div class="pill-row">
-          <span class="pill"><span>MCP</span><strong>{mcp}</strong></span>
-          <span class="pill"><span>Web Search</span><strong>{web}</strong></span>
-          <span class="pill"><span>Memory Search</span><strong>{memory}</strong></span>
-        </div>
-        <div class="action-row">
-          <button class="btn primary" type="button" onclick="ocOpenGateway()">打开网关</button>
-          <a class="btn" href="./commands">打开命令行</a>
-          <button class="btn" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
-          <a class="btn" href="./logs">查看日志</a>
-          <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
-        </div>
-      </div>
-      <div class="panel-right">
-        <div class="note-box">如果原生网关提示证书错误，请先安装下载的 CA 证书，再重新打开 HTTPS 页面。</div>
-      </div>
-    </div>
     {pid_row}
   </section>
 
@@ -462,10 +442,6 @@ fn home_content(config: &PageConfig) -> String {
         stat_mode = stat_tile("网关模式", &config.gateway_mode, "当前 OpenClaw 网关运行模式"),
         stat_addon = stat_tile("Add-on 版本", &config.addon_version, "插件发布版本"),
         stat_openclaw = stat_tile("OpenClaw 版本", &config.openclaw_version, "上游运行时版本"),
-        https_port = config.https_port,
-        mcp = display_value(&config.mcp_status),
-        web = display_value(&config.web_status),
-        memory = display_value(&config.memory_status),
         pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid, &action_pid),
         resource_cpu = resource_card(
             "CPU 负载",
