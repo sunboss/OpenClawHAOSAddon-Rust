@@ -163,27 +163,27 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenClaw Terminal</title>
   <style>
-    :root {{
+    :root {
       --bg: #0f172a;
       --bg2: #111c33;
       --line: #223252;
       --text: #dbe8ff;
       --muted: #8ea5c8;
       --accent: #2563eb;
-    }}
-    html, body {{
+    }
+    html, body {
       margin: 0;
       height: 100%;
       background: var(--bg);
       color: var(--text);
       font-family: Consolas, "SFMono-Regular", "Microsoft YaHei", monospace;
-    }}
-    .shell {{
+    }
+    .shell {
       display: grid;
       grid-template-rows: auto 1fr auto;
       height: 100vh;
-    }}
-    .head {{
+    }
+    .head {
       display: grid;
       grid-template-columns: 180px 1fr;
       gap: 12px;
@@ -191,24 +191,24 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       border-bottom: 1px solid var(--line);
       background: rgba(255,255,255,.02);
       font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-    }}
-    .screen {{
+    }
+    .screen {
       margin: 0;
       padding: 14px;
       overflow: auto;
       white-space: pre-wrap;
       word-break: break-word;
       background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
-    }}
-    .bar {{
+    }
+    .bar {
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 10px;
       padding: 10px;
       border-top: 1px solid var(--line);
       background: rgba(255,255,255,.02);
-    }}
-    .cmd {{
+    }
+    .cmd {
       width: 100%;
       min-height: 42px;
       padding: 10px 12px;
@@ -218,8 +218,8 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       color: var(--text);
       outline: none;
       font: inherit;
-    }}
-    .btn {{
+    }
+    .btn {
       min-width: 92px;
       min-height: 42px;
       padding: 0 16px;
@@ -230,12 +230,12 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       font-weight: 700;
       cursor: pointer;
       font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-    }}
-    .muted {{
+    }
+    .muted {
       color: var(--muted);
       font-size: 13px;
       line-height: 1.5;
-    }}
+    }
   </style>
 </head>
 <body>
@@ -256,80 +256,80 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     const send = document.getElementById("send");
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     const pending = [];
-    const socket = new WebSocket(`${{scheme}}://${{location.host}}/terminal/ws`);
+    const socket = new WebSocket(`${scheme}://${location.host}/terminal/ws`);
     socket.binaryType = "arraybuffer";
 
-    function append(text) {{
+    function append(text) {
       screen.textContent += text;
       screen.scrollTop = screen.scrollHeight;
-    }}
+    }
 
-    function flushPending() {{
-      while (pending.length && socket.readyState === WebSocket.OPEN) {{
+    function flushPending() {
+      while (pending.length && socket.readyState === WebSocket.OPEN) {
         socket.send(pending.shift());
-      }}
-    }}
+      }
+    }
 
-    function sendCommand(command, echo = true) {{
+    function sendCommand(command, echo = true) {
       if (!command) return;
-      if (echo) append(`$ ${{command}}\n`);
+      if (echo) append(`$ ${command}\n`);
       const payload = command + "\n";
-      if (socket.readyState === WebSocket.OPEN) {{
+      if (socket.readyState === WebSocket.OPEN) {
         socket.send(payload);
         return;
-      }}
+      }
       pending.push(payload);
       if (socket.readyState === WebSocket.CONNECTING) return;
       append("[terminal not ready, command queued]\n");
-    }}
+    }
 
-    socket.addEventListener("open", () => {{
+    socket.addEventListener("open", () => {
       append("[terminal connected]\n");
       flushPending();
-    }});
+    });
 
-    socket.addEventListener("message", (event) => {{
-      if (typeof event.data === "string") {{
+    socket.addEventListener("message", (event) => {
+      if (typeof event.data === "string") {
         append(event.data);
         return;
-      }}
+      }
       const decoded = new TextDecoder().decode(new Uint8Array(event.data));
       append(decoded);
-    }});
+    });
 
-    socket.addEventListener("close", () => {{
+    socket.addEventListener("close", () => {
       append("\n[terminal closed]\n");
-    }});
+    });
 
-    socket.addEventListener("error", () => {{
+    socket.addEventListener("error", () => {
       append("\n[terminal websocket error]\n");
-    }});
+    });
 
-    window.injectCommand = function (command) {{
+    window.injectCommand = function (command) {
       sendCommand(command);
-    }};
+    };
 
-    window.addEventListener("message", (event) => {{
+    window.addEventListener("message", (event) => {
       const data = event.data;
       if (!data || typeof data !== "object") return;
       if (data.type !== "openclaw-run-command") return;
       if (typeof data.command !== "string" || !data.command.trim()) return;
       sendCommand(data.command);
-    }});
+    });
 
-    send.addEventListener("click", () => {{
+    send.addEventListener("click", () => {
       const value = input.value.trim();
       if (!value) return;
       sendCommand(value);
       input.value = "";
       input.focus();
-    }});
+    });
 
-    input.addEventListener("keydown", (event) => {{
+    input.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
       event.preventDefault();
       send.click();
-    }});
+    });
 
     input.focus();
   </script>
