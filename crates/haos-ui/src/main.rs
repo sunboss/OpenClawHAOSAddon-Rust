@@ -400,7 +400,6 @@ fn home_content(config: &PageConfig) -> String {
       </div>
       <div class="header-actions">
         {open_gateway}
-        {approve_latest}
         {goto_commands}
       </div>
     </div>
@@ -411,6 +410,8 @@ fn home_content(config: &PageConfig) -> String {
       {stat_addon}
       {stat_openclaw}
     </div>
+
+    <div class="note-box">如果你需要处理设备授权，请进入命令行页执行授权命令。常用命令是 <code>openclaw devices list</code> 和 <code>openclaw devices approve --latest</code>。</div>
 
     {pid_row}
   </section>
@@ -436,7 +437,6 @@ fn home_content(config: &PageConfig) -> String {
             "tone-violet"
         ),
         open_gateway = primary_button("打开网关", "ocOpenGateway()"),
-        approve_latest = secondary_button("批准授权", "ocRunCommand('openclaw devices approve --latest')"),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
         stat_mode = stat_tile("网关模式", &config.gateway_mode, "当前 OpenClaw 网关运行模式"),
