@@ -338,13 +338,13 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
             you actually need it.
           </p>
           <div class="actions">
-            <button class="btn primary" type="button" data-native-gateway="true">Open Native Gateway</button>
-            <button class="btn" type="button" data-load-terminal="true">Open Terminal</button>
+            <button class="btn primary" type="button" onclick="ocOpenGateway()">Open Native Gateway</button>
+            <button class="btn" type="button" onclick="ocLoadTerminal()">Open Terminal</button>
             <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">Download CA Cert</a>
-            <button class="btn ghost" type="button" data-cmd="openclaw gateway status --deep">Gateway Status</button>
-            <button class="btn ghost" type="button" data-cmd="openclaw devices list">Devices List</button>
-            <button class="btn ghost" type="button" data-cmd="openclaw doctor --fix">Doctor Fix</button>
-            <button class="btn ghost" type="button" data-cmd="openclaw logs --follow">Follow Logs</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw gateway status --deep')">Gateway Status</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw devices list')">Devices List</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw doctor --fix')">Doctor Fix</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw logs --follow')">Follow Logs</button>
           </div>
           <div class="note">
             If the native Gateway page reports a certificate error, trust the downloaded CA cert
@@ -376,7 +376,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
                     The terminal is lazy-loaded to keep first paint fast. You can open it now or
                     just click any command button and it will auto-load.
                   </p>
-                  <button class="btn primary" type="button" data-load-terminal="true">Load Terminal</button>
+                  <button class="btn primary" type="button" onclick="ocLoadTerminal()">Load Terminal</button>
                 </div>
               </div>
             </div>
@@ -395,6 +395,15 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       pendingCommand: null,
     }};
 
+    function appBaseHref() {{
+      const path = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
+      return new URL(path, location.origin);
+    }}
+
+    function appUrl(relativePath) {{
+      return new URL(relativePath, appBaseHref()).toString();
+    }}
+
     async function loadPanel(url, targetId) {{
       const target = document.getElementById(targetId);
       if (!target) return;
@@ -409,8 +418,8 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
 
     function refreshPanels() {{
       if (document.visibilityState !== "visible") return;
-      loadPanel("./partials/health", "healthPanel");
-      loadPanel("./partials/diag", "diagPanel");
+      loadPanel(appUrl("partials/health"), "healthPanel");
+      loadPanel(appUrl("partials/diag"), "diagPanel");
     }}
 
     function nativeGatewayUrl() {{
@@ -426,7 +435,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       if (!stage) return;
 
       terminalState.loading = true;
-      stage.innerHTML = '<iframe id="termFrame" src="./terminal/" title="terminal"></iframe>';
+      stage.innerHTML = `<iframe id="termFrame" src="${{appUrl('terminal/')}}" title="terminal"></iframe>`;
 
       const frame = document.getElementById("termFrame");
       const finish = function () {{
@@ -476,22 +485,17 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
       }}));
     }}
 
-    document.addEventListener("click", function (event) {{
-      const trigger = event.target.closest("[data-cmd], [data-load-terminal], [data-native-gateway]");
-      if (!trigger) return;
+    window.ocOpenGateway = function () {{
+      window.open(nativeGatewayUrl(), "_blank", "noopener,noreferrer");
+    }};
 
-      if (trigger.hasAttribute("data-native-gateway")) {{
-        window.open(nativeGatewayUrl(), "_blank", "noopener,noreferrer");
-        return;
-      }}
+    window.ocLoadTerminal = function () {{
+      ensureTerminalLoaded();
+    }};
 
-      if (trigger.hasAttribute("data-load-terminal")) {{
-        ensureTerminalLoaded();
-        return;
-      }}
-
-      injectTerminalCommand(trigger.getAttribute("data-cmd") || "");
-    }});
+    window.ocRunCommand = function (command) {{
+      injectTerminalCommand(command || "");
+    }};
 
     document.addEventListener("visibilitychange", refreshPanels);
     window.setInterval(refreshPanels, 45000);
