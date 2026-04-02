@@ -25,7 +25,7 @@ enum Command {
         remote_url: String,
         bind_mode: String,
         port: u16,
-        enable_openai_api: bool,
+        enable_openai_api: String,
         auth_mode: String,
         trusted_proxies_csv: String,
     },
@@ -67,6 +67,7 @@ fn main() -> ExitCode {
             auth_mode,
             trusted_proxies_csv,
         } => {
+            let enable_openai_api = parse_boolish(&enable_openai_api);
             apply_gateway_settings(
                 &mut cfg,
                 &mode,
@@ -149,6 +150,13 @@ fn set_path(cfg: &mut Value, path: &str, value: Value) {
         .as_object_mut()
         .expect("object")
         .insert(parts[parts.len() - 1].to_string(), value);
+}
+
+fn parse_boolish(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "y" | "on"
+    )
 }
 
 fn apply_gateway_settings(
