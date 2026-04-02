@@ -857,6 +857,7 @@ fn render_shell(
     const httpsPort = {https_port};
     const terminalState = {{ loaded:false, loading:false, pendingCommand:null }};
     const initialTerminalStageHtml = document.getElementById("terminalStage") ? document.getElementById("terminalStage").innerHTML : "";
+    let gatewayTokenValue = "";
     function appUrl(relativePath) {{ return new URL(relativePath, location.href).toString(); }}
     async function loadPanel(url, targetId) {{
       const target = document.getElementById(targetId);
@@ -877,6 +878,19 @@ fn render_shell(
     function nativeGatewayUrl() {{
       if (configuredGatewayUrl && configuredGatewayUrl.trim() !== "") return configuredGatewayUrl;
       return `https://${{location.hostname}}:${{httpsPort}}/`;
+    }}
+    function withTokenHash(url, token) {{
+      if (!url || !token) return url;
+      return String(url).replace(/#.*$/, '') + '#token=' + encodeURIComponent(token);
+    }}
+    async function fetchGatewayToken() {{
+      if (gatewayTokenValue) return gatewayTokenValue;
+      const response = await fetch(appUrl('./token'), {{ credentials: 'same-origin', cache: 'no-cache' }});
+      if (!response.ok) throw new Error(`token-${{response.status}}`);
+      const text = (await response.text()).trim();
+      if (!text) throw new Error('empty-token');
+      gatewayTokenValue = text;
+      return gatewayTokenValue;
     }}
     function focusTerminal() {{
       const shell = document.querySelector(".terminal-shell");
@@ -921,7 +935,16 @@ fn render_shell(
       terminalState.loading = false;
       terminalState.pendingCommand = null;
     }};
-    window.ocOpenGateway = function () {{ window.open(nativeGatewayUrl(), "_blank", "noopener,noreferrer"); }};
+    window.ocOpenGateway = function () {{
+      const targetUrl = nativeGatewayUrl();
+      fetchGatewayToken()
+        .then(function (token) {{
+          window.open(withTokenHash(targetUrl, token), "_blank", "noopener,noreferrer");
+        }})
+        .catch(function () {{
+          window.open(targetUrl, "_blank", "noopener,noreferrer");
+        }});
+    }};
     window.ocOpenTerminalWindow = function () {{ window.open(appUrl("./terminal/"), "_blank", "noopener,noreferrer"); }};
     window.ocLoadTerminal = function () {{ ensureTerminalLoaded(); window.setTimeout(focusTerminal, 120); }};
     window.ocRunCommand = function (command) {{ injectTerminalCommand(command || ""); }};
