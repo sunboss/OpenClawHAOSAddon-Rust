@@ -30,10 +30,10 @@ This project is the Rust rewrite for the non-upstream parts of the add-on.
   - remaining `run.sh` is only a thin compatibility wrapper
 
 - `openclaw_assistant/oc-cleanup.sh`
-  - planned future utility crate or subcommand under `addon-supervisor`
+  - not yet ported; cleanup remains an external helper concern if needed
 
 - `openclaw_assistant/brew-wrapper.sh`
-  - planned future wrapper binary
+  - not yet ported; upstream wrapper flow remains external to this repository
 
 ## Not planned for Rust rewrite
 
@@ -46,6 +46,6 @@ This project is the Rust rewrite for the non-upstream parts of the add-on.
 
 - `actiond`: baseline working
 - `oc-config`: baseline working
-- `haos-ui`: prototype working
+- `haos-ui`: working
 - `addon-supervisor`: startup bootstrap, backup sync, local process supervision, OpenClaw runtime launch, startup doctor, and auto-approve helper now handled in Rust
 - `ingressd`: replaces `nginx` and `ttyd` for HA ingress routing, external HTTPS gateway proxying, static helper files, and browser terminal transport

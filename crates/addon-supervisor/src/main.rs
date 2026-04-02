@@ -20,33 +20,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Plan,
-    HaosEntry(HaosEntryArgs),
-    RenderNginx {
-        #[arg(long, default_value = "/etc/nginx/nginx.conf")]
-        output: PathBuf,
-    },
-    RunServices {
-        #[arg(long, default_value = "openclaw")]
-        gateway_bin: String,
-        #[arg(long, default_value = "haos-ui")]
-        ui_bin: String,
-        #[arg(long, default_value = "actiond")]
-        action_bin: String,
-        #[arg(long, default_value = "ingressd")]
-        ingress_bin: String,
-        #[arg(long, default_value = "local")]
-        gateway_mode: String,
-        #[arg(long, default_value = "")]
-        gateway_remote_url: String,
-        #[arg(long, default_value_t = true)]
-        auto_approve_pairing: bool,
-        #[arg(long, default_value_t = true)]
-        run_doctor_on_start: bool,
-        #[arg(long, default_value_t = 7681)]
-        terminal_port: u16,
-        #[arg(long, default_value_t = true)]
-        enable_terminal: bool,
-    },
+    HaosEntry(Box<HaosEntryArgs>),
+    RenderNginx(RenderNginxArgs),
+    RunServices(Box<RunServicesArgs>),
 }
 
 #[derive(Args, Clone, Debug)]
@@ -91,6 +67,36 @@ struct HaosEntryArgs {
     nginx_conf: PathBuf,
 }
 
+#[derive(Args, Clone, Debug)]
+struct RenderNginxArgs {
+    #[arg(long, default_value = "/etc/nginx/nginx.conf")]
+    output: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
+struct RunServicesArgs {
+    #[arg(long, default_value = "openclaw")]
+    gateway_bin: String,
+    #[arg(long, default_value = "haos-ui")]
+    ui_bin: String,
+    #[arg(long, default_value = "actiond")]
+    action_bin: String,
+    #[arg(long, default_value = "ingressd")]
+    ingress_bin: String,
+    #[arg(long, default_value = "local")]
+    gateway_mode: String,
+    #[arg(long, default_value = "")]
+    gateway_remote_url: String,
+    #[arg(long, default_value_t = true)]
+    auto_approve_pairing: bool,
+    #[arg(long, default_value_t = true)]
+    run_doctor_on_start: bool,
+    #[arg(long, default_value_t = 7681)]
+    terminal_port: u16,
+    #[arg(long, default_value_t = true)]
+    enable_terminal: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 struct AddonOptions {
     timezone: Option<String>,
@@ -129,40 +135,21 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::Plan) => {
-            println!("Planned Rust replacements:");
-            println!("- shell bootstrap in run.sh");
-            println!("- nginx render pipeline");
-            println!("- process supervision for openclaw, ttyd, nginx, and UI services");
+            println!("Current Rust runtime responsibilities:");
+            println!("- bootstrap add-on directories, config, certs, and gateway token");
+            println!("- sync gateway settings and optional MCP configuration");
+            println!("- supervise openclaw, haos-ui, actiond, and ingressd");
+            println!("- run startup doctor and optional pairing auto-approval");
             ExitCode::SUCCESS
         }
-        Some(Commands::HaosEntry(args)) => haos_entry(args),
-        Some(Commands::RenderNginx { output }) => render_nginx(output),
-        Some(Commands::RunServices {
-            gateway_bin,
-            ui_bin,
-            action_bin,
-            ingress_bin,
-            gateway_mode,
-            gateway_remote_url,
-            auto_approve_pairing,
-            run_doctor_on_start,
-            terminal_port,
-            enable_terminal,
-        }) => run_services(
-            gateway_bin,
-            ui_bin,
-            action_bin,
-            ingress_bin,
-            gateway_mode,
-            gateway_remote_url,
-            auto_approve_pairing,
-            run_doctor_on_start,
-            terminal_port,
-            enable_terminal,
-        ),
+        Some(Commands::HaosEntry(args)) => haos_entry(*args),
+        Some(Commands::RenderNginx(args)) => render_nginx(args.output),
+        Some(Commands::RunServices(args)) => run_services(*args),
         None => {
-            println!("addon-supervisor scaffold ready");
-            println!("Next step: replace run.sh orchestration with Rust process control.");
+            println!("addon-supervisor is ready");
+            println!(
+                "Use --help to inspect commands or run `haos-entry` inside the add-on container."
+            );
             ExitCode::SUCCESS
         }
     }
@@ -242,18 +229,18 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
     );
     backup_state(&args);
 
-    run_services(
-        args.gateway_bin,
-        args.ui_bin,
-        args.action_bin,
-        args.ingress_bin,
-        settings.gateway_mode,
-        settings.gateway_remote_url,
-        settings.auto_approve_pairing,
-        settings.run_doctor_on_start,
-        settings.terminal_port,
-        settings.enable_terminal,
-    )
+    run_services(RunServicesArgs {
+        gateway_bin: args.gateway_bin,
+        ui_bin: args.ui_bin,
+        action_bin: args.action_bin,
+        ingress_bin: args.ingress_bin,
+        gateway_mode: settings.gateway_mode,
+        gateway_remote_url: settings.gateway_remote_url,
+        auto_approve_pairing: settings.auto_approve_pairing,
+        run_doctor_on_start: settings.run_doctor_on_start,
+        terminal_port: settings.terminal_port,
+        enable_terminal: settings.enable_terminal,
+    })
 }
 
 fn load_options(path: &Path) -> AddonOptions {
@@ -359,11 +346,11 @@ fn bootstrap_openclaw_config(
             .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
         if let Some(mut config) = existing {
             let mut changed = false;
-            if config.get("workspaceDir").is_some() {
-                if let Some(object) = config.as_object_mut() {
-                    object.remove("workspaceDir");
-                    changed = true;
-                }
+            if config.get("workspaceDir").is_some()
+                && let Some(object) = config.as_object_mut()
+            {
+                object.remove("workspaceDir");
+                changed = true;
             }
             if changed {
                 ensure_workspace_path(&mut config, args);
@@ -419,27 +406,30 @@ fn ensure_workspace_path(config: &mut serde_json::Value, args: &HaosEntryArgs) {
         *config = serde_json::json!({});
     }
 
-    let root = config.as_object_mut().expect("config object");
-    let agents = root
-        .entry("agents".to_string())
-        .or_insert_with(|| serde_json::json!({}));
-    if !agents.is_object() {
-        *agents = serde_json::json!({});
-    }
+    if let Some(root) = config.as_object_mut() {
+        let agents = root
+            .entry("agents".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        if !agents.is_object() {
+            *agents = serde_json::json!({});
+        }
 
-    let defaults = agents
-        .as_object_mut()
-        .expect("agents object")
-        .entry("defaults".to_string())
-        .or_insert_with(|| serde_json::json!({}));
-    if !defaults.is_object() {
-        *defaults = serde_json::json!({});
-    }
+        if let Some(agents_object) = agents.as_object_mut() {
+            let defaults = agents_object
+                .entry("defaults".to_string())
+                .or_insert_with(|| serde_json::json!({}));
+            if !defaults.is_object() {
+                *defaults = serde_json::json!({});
+            }
 
-    defaults.as_object_mut().expect("defaults object").insert(
-        "workspace".to_string(),
-        serde_json::Value::String(args.openclaw_workspace_dir.display().to_string()),
-    );
+            if let Some(defaults_object) = defaults.as_object_mut() {
+                defaults_object.insert(
+                    "workspace".to_string(),
+                    serde_json::Value::String(args.openclaw_workspace_dir.display().to_string()),
+                );
+            }
+        }
+    }
 }
 
 fn generate_gateway_token() -> String {
@@ -659,7 +649,11 @@ fn detect_openclaw_version(gateway_bin: &str) -> String {
         .and_then(|output| {
             output
                 .split_whitespace()
-                .map(|token| token.trim_matches(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-')))
+                .map(|token| {
+                    token.trim_matches(|c: char| {
+                        !(c.is_ascii_alphanumeric() || c == '.' || c == '-')
+                    })
+                })
                 .find(|token| {
                     let mut parts = token.split('.');
                     let first = parts.next().unwrap_or_default();
@@ -864,11 +858,11 @@ http {{
 "#
     );
 
-    if let Some(parent) = output.parent() {
-        if let Err(err) = fs::create_dir_all(parent) {
-            eprintln!("failed to create nginx output dir: {err}");
-            return ExitCode::from(1);
-        }
+    if let Some(parent) = output.parent()
+        && let Err(err) = fs::create_dir_all(parent)
+    {
+        eprintln!("failed to create nginx output dir: {err}");
+        return ExitCode::from(1);
     }
     if let Err(err) = fs::write(&output, conf) {
         eprintln!("failed to write nginx config: {err}");
@@ -909,32 +903,39 @@ fn write_pid_file(name: &str, pid: u32) {
 
 fn remove_pid_file(name: &str) {
     let path = pid_file_path(name);
-    if let Err(err) = fs::remove_file(&path) {
-        if err.kind() != std::io::ErrorKind::NotFound {
-            eprintln!(
-                "addon-supervisor: failed to remove pid file for {} at {}: {}",
-                name,
-                path.display(),
-                err
-            );
-        }
+    if let Err(err) = fs::remove_file(&path)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        eprintln!(
+            "addon-supervisor: failed to remove pid file for {} at {}: {}",
+            name,
+            path.display(),
+            err
+        );
     }
 }
 
-fn run_services(
-    gateway_bin: String,
-    ui_bin: String,
-    action_bin: String,
-    ingress_bin: String,
-    gateway_mode: String,
-    gateway_remote_url: String,
-    auto_approve_pairing: bool,
-    run_doctor_on_start: bool,
-    _terminal_port: u16,
-    _enable_terminal: bool,
-) -> ExitCode {
-    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+fn run_services(args: RunServicesArgs) -> ExitCode {
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(err) => {
+            eprintln!("addon-supervisor: failed to create tokio runtime: {err}");
+            return ExitCode::from(1);
+        }
+    };
     rt.block_on(async move {
+        unsafe {
+            env::set_var("TERMINAL_PORT", args.terminal_port.to_string());
+            env::set_var(
+                "ENABLE_TERMINAL",
+                if args.enable_terminal {
+                    "true"
+                } else {
+                    "false"
+                },
+            );
+        }
+
         if let Err(err) = ensure_runtime_dir() {
             eprintln!("addon-supervisor: failed to initialize runtime dir: {err}");
             return ExitCode::from(1);
@@ -952,46 +953,49 @@ fn run_services(
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let mut handles = Vec::new();
 
-        let gateway_spec =
-            match build_gateway_spec(gateway_bin.clone(), &gateway_mode, &gateway_remote_url) {
-                Ok(spec) => spec,
-                Err(err) => {
-                    eprintln!("addon-supervisor: invalid gateway runtime settings: {err}");
-                    return ExitCode::from(1);
-                }
-            };
+        let gateway_spec = match build_gateway_spec(
+            args.gateway_bin.clone(),
+            &args.gateway_mode,
+            &args.gateway_remote_url,
+        ) {
+            Ok(spec) => spec,
+            Err(err) => {
+                eprintln!("addon-supervisor: invalid gateway runtime settings: {err}");
+                return ExitCode::from(1);
+            }
+        };
 
         handles.push(tokio::spawn(run_managed_process(
             gateway_spec,
             shutdown_rx.clone(),
         )));
         handles.push(tokio::spawn(run_managed_process(
-            ProcessSpec::new("haos-ui", ui_bin, vec![]),
+            ProcessSpec::new("haos-ui", args.ui_bin, vec![]),
             shutdown_rx.clone(),
         )));
         handles.push(tokio::spawn(run_managed_process(
-            ProcessSpec::new("actiond", action_bin, vec![]),
+            ProcessSpec::new("actiond", args.action_bin, vec![]),
             shutdown_rx.clone(),
         )));
 
         tokio::time::sleep(Duration::from_millis(800)).await;
 
         handles.push(tokio::spawn(run_managed_process(
-            ProcessSpec::new("ingressd", ingress_bin, vec![]),
+            ProcessSpec::new("ingressd", args.ingress_bin, vec![]),
             shutdown_rx,
         )));
 
-        if auto_approve_pairing {
+        if args.auto_approve_pairing {
             handles.push(tokio::spawn(run_pairing_auto_approver(
-                gateway_bin.clone(),
-                gateway_mode.clone(),
+                args.gateway_bin.clone(),
+                args.gateway_mode.clone(),
                 shutdown_tx.subscribe(),
             )));
         }
 
-        if run_doctor_on_start {
+        if args.run_doctor_on_start {
             handles.push(tokio::spawn(run_startup_doctor(
-                gateway_bin.clone(),
+                args.gateway_bin.clone(),
                 shutdown_tx.subscribe(),
             )));
         }
@@ -1220,6 +1224,7 @@ fn apply_child_env(command: &mut Command) {
         "ACTION_SERVER_PORT",
         "UI_PORT",
         "INGRESS_PORT",
+        "TERMINAL_PORT",
         "ACCESS_MODE",
         "GATEWAY_MODE",
         "GW_PUBLIC_URL",

@@ -52,6 +52,6 @@ COPY --from=builder /src/target/release/oc-config /usr/local/bin/oc-config
 
 COPY config.yaml /etc/openclaw-addon-config.yaml
 
-RUN mkdir -p /run/nginx /etc/nginx/html /config /share
+RUN mkdir -p /run/openclaw-rs /etc/nginx/html /config /share
 
 CMD ["addon-supervisor", "haos-entry"]

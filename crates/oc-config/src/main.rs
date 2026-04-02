@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use serde_json::{Map, Value, json};
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
@@ -20,15 +20,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    ApplyGatewaySettings {
-        mode: String,
-        remote_url: String,
-        bind_mode: String,
-        port: u16,
-        enable_openai_api: String,
-        auth_mode: String,
-        trusted_proxies_csv: String,
-    },
+    ApplyGatewaySettings(ApplyGatewaySettingsArgs),
+}
+
+#[derive(Args)]
+struct ApplyGatewaySettingsArgs {
+    mode: String,
+    remote_url: String,
+    bind_mode: String,
+    port: u16,
+    enable_openai_api: String,
+    auth_mode: String,
+    trusted_proxies_csv: String,
 }
 
 fn main() -> ExitCode {
@@ -58,26 +61,8 @@ fn main() -> ExitCode {
             set_path(&mut cfg, &path, parsed);
             save_config(&config_file, &cfg)
         }
-        Command::ApplyGatewaySettings {
-            mode,
-            remote_url,
-            bind_mode,
-            port,
-            enable_openai_api,
-            auth_mode,
-            trusted_proxies_csv,
-        } => {
-            let enable_openai_api = parse_boolish(&enable_openai_api);
-            apply_gateway_settings(
-                &mut cfg,
-                &mode,
-                &remote_url,
-                &bind_mode,
-                port,
-                enable_openai_api,
-                &auth_mode,
-                &trusted_proxies_csv,
-            );
+        Command::ApplyGatewaySettings(args) => {
+            apply_gateway_settings(&mut cfg, &args);
             save_config(&config_file, &cfg)
         }
     }
@@ -97,11 +82,11 @@ fn load_config(path: &PathBuf) -> Value {
 }
 
 fn save_config(path: &PathBuf, cfg: &Value) -> ExitCode {
-    if let Some(parent) = path.parent() {
-        if let Err(err) = fs::create_dir_all(parent) {
-            eprintln!("ERROR: Failed to create config directory: {err}");
-            return ExitCode::from(1);
-        }
+    if let Some(parent) = path.parent()
+        && let Err(err) = fs::create_dir_all(parent)
+    {
+        eprintln!("ERROR: Failed to create config directory: {err}");
+        return ExitCode::from(1);
     }
     match serde_json::to_string_pretty(cfg) {
         Ok(text) => {
@@ -138,7 +123,9 @@ fn set_path(cfg: &mut Value, path: &str, value: Value) {
         if !current.is_object() {
             *current = Value::Object(Map::new());
         }
-        let object = current.as_object_mut().expect("object");
+        let Some(object) = current.as_object_mut() else {
+            return;
+        };
         current = object
             .entry((*part).to_string())
             .or_insert_with(|| Value::Object(Map::new()));
@@ -146,10 +133,9 @@ fn set_path(cfg: &mut Value, path: &str, value: Value) {
     if !current.is_object() {
         *current = Value::Object(Map::new());
     }
-    current
-        .as_object_mut()
-        .expect("object")
-        .insert(parts[parts.len() - 1].to_string(), value);
+    if let Some(object) = current.as_object_mut() {
+        object.insert(parts[parts.len() - 1].to_string(), value);
+    }
 }
 
 fn parse_boolish(value: &str) -> bool {
@@ -159,35 +145,27 @@ fn parse_boolish(value: &str) -> bool {
     )
 }
 
-fn apply_gateway_settings(
-    cfg: &mut Value,
-    mode: &str,
-    remote_url: &str,
-    bind_mode: &str,
-    port: u16,
-    enable_openai_api: bool,
-    auth_mode: &str,
-    trusted_proxies_csv: &str,
-) {
-    set_path(cfg, "gateway.mode", Value::String(mode.to_string()));
+fn apply_gateway_settings(cfg: &mut Value, args: &ApplyGatewaySettingsArgs) {
+    set_path(cfg, "gateway.mode", Value::String(args.mode.clone()));
     set_path(
         cfg,
         "gateway.remote.url",
-        Value::String(remote_url.to_string()),
+        Value::String(args.remote_url.clone()),
     );
-    set_path(cfg, "gateway.bind", Value::String(bind_mode.to_string()));
-    set_path(cfg, "gateway.port", Value::Number(port.into()));
+    set_path(cfg, "gateway.bind", Value::String(args.bind_mode.clone()));
+    set_path(cfg, "gateway.port", Value::Number(args.port.into()));
     set_path(
         cfg,
         "gateway.http.endpoints.chatCompletions.enabled",
-        Value::Bool(enable_openai_api),
+        Value::Bool(parse_boolish(&args.enable_openai_api)),
     );
     set_path(
         cfg,
         "gateway.auth.mode",
-        Value::String(auth_mode.to_string()),
+        Value::String(args.auth_mode.clone()),
     );
-    let proxies = trusted_proxies_csv
+    let proxies = args
+        .trusted_proxies_csv
         .split(',')
         .map(str::trim)
         .filter(|item| !item.is_empty())

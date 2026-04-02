@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    body::{Body, Bytes, to_bytes},
+    body::{Body, to_bytes},
     extract::{
         ConnectInfo, Path, Request, State,
         ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
@@ -41,7 +41,7 @@ struct AppState {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = aws_lc_rs::default_provider().install_default();
 
     let ingress_port = env::var("INGRESS_PORT")
@@ -72,10 +72,7 @@ async fn main() {
         .unwrap_or(true);
 
     let state = AppState {
-        client: Client::builder()
-            .http2_adaptive_window(true)
-            .build()
-            .expect("build reqwest client"),
+        client: Client::builder().http2_adaptive_window(true).build()?,
         ui_base: format!("http://127.0.0.1:{ui_port}"),
         action_base: format!("http://127.0.0.1:{action_port}"),
         gateway_http_base: format!("http://127.0.0.1:{gateway_internal_port}"),
@@ -85,9 +82,7 @@ async fn main() {
 
     let ingress_app = build_ingress_router(state.clone());
     let ingress_addr = SocketAddr::from(([0, 0, 0, 0], ingress_port));
-    let ingress_listener = tokio::net::TcpListener::bind(ingress_addr)
-        .await
-        .expect("bind ingress listener");
+    let ingress_listener = tokio::net::TcpListener::bind(ingress_addr).await?;
     println!("ingressd: HA ingress listening on http://{ingress_addr}");
 
     let ingress_server = tokio::spawn(async move {
@@ -95,8 +90,8 @@ async fn main() {
             ingress_listener,
             ingress_app.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .await
-        .expect("serve ingress app");
+        .await?;
+        Ok::<(), std::io::Error>(())
     });
 
     if enable_https {
@@ -104,21 +99,23 @@ async fn main() {
         let https_addr = SocketAddr::from(([0, 0, 0, 0], https_port));
         let tls_config =
             RustlsConfig::from_pem_file("/config/certs/gateway.crt", "/config/certs/gateway.key")
-                .await
-                .expect("load rustls config");
+                .await?;
         println!("ingressd: Gateway HTTPS listening on https://{https_addr}");
 
         let gateway_server = tokio::spawn(async move {
             axum_server::bind_rustls(https_addr, tls_config)
                 .serve(gateway_app.into_make_service_with_connect_info::<SocketAddr>())
-                .await
-                .expect("serve gateway app");
+                .await?;
+            Ok::<(), std::io::Error>(())
         });
 
-        let _ = tokio::join!(ingress_server, gateway_server);
+        let (ingress_result, gateway_result) = tokio::join!(ingress_server, gateway_server);
+        ingress_result??;
+        gateway_result??;
     } else {
-        let _ = ingress_server.await;
+        ingress_server.await??;
     }
+    Ok(())
 }
 
 fn build_ingress_router(state: AppState) -> Router {
@@ -157,11 +154,11 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
 
     Html(
         r##"<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenClaw 完整终端</title>
+  <title>OpenClaw Terminal</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -216,7 +213,6 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       border: 1px solid #2f4468;
       background: #0b1324;
       color: var(--text);
-      outline: none;
       font: inherit;
     }
     .btn {
@@ -230,24 +226,47 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       font-weight: 700;
       cursor: pointer;
       font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      transition: background-color .16s ease, transform .16s ease, box-shadow .16s ease;
+    }
+    .btn:hover {
+      background: #1d4ed8;
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(37,99,235,.22);
+    }
+    .btn:focus-visible, .cmd:focus-visible {
+      outline: 2px solid #8fc8ff;
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px rgba(143,200,255,.15);
     }
     .muted {
       color: var(--muted);
       font-size: 13px;
       line-height: 1.5;
     }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
   </style>
 </head>
 <body>
   <div class="shell">
     <div class="head">
-      <strong>OpenClaw 完整终端</strong>
-      <span class="muted">主页面按钮发来的命令会直接在这里执行。</span>
+      <strong>OpenClaw Terminal</strong>
+      <span class="muted">Commands launched from the add-on UI can continue running here.</span>
     </div>
     <pre id="screen" class="screen"></pre>
     <div class="bar">
-      <input id="cmd" class="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="输入命令后按回车">
-      <button id="send" class="btn" type="button">运行</button>
+      <label class="sr-only" for="cmd">Terminal command</label>
+      <input id="cmd" class="cmd" type="text" autocomplete="off" spellcheck="false" aria-label="Terminal command" placeholder="Type a command...">
+      <button id="send" class="btn" type="button">Run</button>
     </div>
   </div>
   <script>
@@ -269,9 +288,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       cursorCol: 0,
       savedRow: 0,
       savedCol: 0,
-      ensureRow(index) {
-        while (this.rows.length <= index) this.rows.push([]);
-      },
+      ensureRow(index) { while (this.rows.length <= index) this.rows.push([]); },
       trimRows() {
         if (this.rows.length <= maxRows) return;
         const remove = this.rows.length - maxRows;
@@ -279,99 +296,42 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
         this.cursorRow = Math.max(0, this.cursorRow - remove);
         this.savedRow = Math.max(0, this.savedRow - remove);
       },
-      setCell(row, col, ch) {
-        this.ensureRow(row);
-        this.rows[row][col] = ch;
-      },
-      putChar(ch) {
-        this.setCell(this.cursorRow, this.cursorCol, ch);
-        this.cursorCol += 1;
-      },
-      newline() {
-        this.cursorRow += 1;
-        this.cursorCol = 0;
-        this.ensureRow(this.cursorRow);
-        this.trimRows();
-      },
-      carriageReturn() {
-        this.cursorCol = 0;
-      },
-      backspace() {
-        this.cursorCol = Math.max(0, this.cursorCol - 1);
-      },
+      setCell(row, col, ch) { this.ensureRow(row); this.rows[row][col] = ch; },
+      putChar(ch) { this.setCell(this.cursorRow, this.cursorCol, ch); this.cursorCol += 1; },
+      newline() { this.cursorRow += 1; this.cursorCol = 0; this.ensureRow(this.cursorRow); this.trimRows(); },
+      carriageReturn() { this.cursorCol = 0; },
+      backspace() { this.cursorCol = Math.max(0, this.cursorCol - 1); },
       clearLine(mode) {
         this.ensureRow(this.cursorRow);
         const line = this.rows[this.cursorRow];
-        if (mode === 1) {
-          for (let i = 0; i <= this.cursorCol; i += 1) line[i] = " ";
-          return;
-        }
-        if (mode === 2) {
-          this.rows[this.cursorRow] = [];
-          return;
-        }
+        if (mode === 1) { for (let i = 0; i <= this.cursorCol; i += 1) line[i] = " "; return; }
+        if (mode === 2) { this.rows[this.cursorRow] = []; return; }
         line.length = Math.min(line.length, this.cursorCol);
       },
       clearScreen(mode) {
-        if (mode === 1) {
-          for (let row = 0; row < this.cursorRow; row += 1) this.rows[row] = [];
-          this.clearLine(1);
-          return;
-        }
-        if (mode === 2) {
-          this.rows = [[]];
-          this.cursorRow = 0;
-          this.cursorCol = 0;
-          return;
-        }
+        if (mode === 1) { for (let row = 0; row < this.cursorRow; row += 1) this.rows[row] = []; this.clearLine(1); return; }
+        if (mode === 2) { this.rows = [[]]; this.cursorRow = 0; this.cursorCol = 0; return; }
         this.clearLine(0);
         this.rows.length = this.cursorRow + 1;
       },
-      moveCursor(row, col) {
-        this.cursorRow = Math.max(0, row);
-        this.cursorCol = Math.max(0, col);
-        this.ensureRow(this.cursorRow);
-      },
+      moveCursor(row, col) { this.cursorRow = Math.max(0, row); this.cursorCol = Math.max(0, col); this.ensureRow(this.cursorRow); },
       handleCsi(finalChar, params, privateMode) {
         const numbers = params.length ? params.map((part) => part === "" ? 0 : Number(part)) : [0];
         switch (finalChar) {
-          case "A":
-            this.cursorRow = Math.max(0, this.cursorRow - (numbers[0] || 1));
-            break;
-          case "B":
-            this.moveCursor(this.cursorRow + (numbers[0] || 1), this.cursorCol);
-            break;
-          case "C":
-            this.cursorCol += numbers[0] || 1;
-            break;
-          case "D":
-            this.cursorCol = Math.max(0, this.cursorCol - (numbers[0] || 1));
-            break;
-          case "G":
-            this.cursorCol = Math.max(0, (numbers[0] || 1) - 1);
-            break;
+          case "A": this.cursorRow = Math.max(0, this.cursorRow - (numbers[0] || 1)); break;
+          case "B": this.moveCursor(this.cursorRow + (numbers[0] || 1), this.cursorCol); break;
+          case "C": this.cursorCol += numbers[0] || 1; break;
+          case "D": this.cursorCol = Math.max(0, this.cursorCol - (numbers[0] || 1)); break;
+          case "G": this.cursorCol = Math.max(0, (numbers[0] || 1) - 1); break;
           case "H":
-          case "f":
-            this.moveCursor((numbers[0] || 1) - 1, (numbers[1] || 1) - 1);
-            break;
-          case "J":
-            this.clearScreen(numbers[0] || 0);
-            break;
-          case "K":
-            this.clearLine(numbers[0] || 0);
-            break;
-          case "s":
-            this.savedRow = this.cursorRow;
-            this.savedCol = this.cursorCol;
-            break;
-          case "u":
-            this.moveCursor(this.savedRow, this.savedCol);
-            break;
+          case "f": this.moveCursor((numbers[0] || 1) - 1, (numbers[1] || 1) - 1); break;
+          case "J": this.clearScreen(numbers[0] || 0); break;
+          case "K": this.clearLine(numbers[0] || 0); break;
+          case "s": this.savedRow = this.cursorRow; this.savedCol = this.cursorCol; break;
+          case "u": this.moveCursor(this.savedRow, this.savedCol); break;
           case "h":
           case "l":
-          case "m":
-            if (privateMode === "?") return;
-            break;
+          case "m": if (privateMode === "?") return; break;
         }
       },
       write(text) {
@@ -383,10 +343,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
             if (next === "[") {
               let cursor = i + 2;
               let privateMode = "";
-              if (text[cursor] === "?") {
-                privateMode = "?";
-                cursor += 1;
-              }
+              if (text[cursor] === "?") { privateMode = "?"; cursor += 1; }
               let seq = "";
               while (cursor < text.length) {
                 const current = text[cursor];
@@ -411,21 +368,9 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
             i += 1;
             continue;
           }
-          if (ch === "\r") {
-            this.carriageReturn();
-            i += 1;
-            continue;
-          }
-          if (ch === "\n") {
-            this.newline();
-            i += 1;
-            continue;
-          }
-          if (ch === "\b") {
-            this.backspace();
-            i += 1;
-            continue;
-          }
+          if (ch === "\r") { this.carriageReturn(); i += 1; continue; }
+          if (ch === "\n") { this.newline(); i += 1; continue; }
+          if (ch === "\b") { this.backspace(); i += 1; continue; }
           this.putChar(ch);
           i += 1;
         }
@@ -479,17 +424,12 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       term.render();
     });
 
-    window.injectCommand = function (command) {
-      sendCommand(command);
-    };
+    window.injectCommand = function (command) { sendCommand(command); };
 
     window.addEventListener("message", (event) => {
       const data = event.data;
       if (!data || typeof data !== "object") return;
-      if (data.type === "openclaw-focus-terminal") {
-        input.focus();
-        return;
-      }
+      if (data.type === "openclaw-focus-terminal") { input.focus(); return; }
       if (data.type !== "openclaw-run-command") return;
       if (typeof data.command !== "string" || !data.command.trim()) return;
       sendCommand(data.command);
@@ -698,19 +638,19 @@ async fn proxy_gateway_ws(
         Err(_) => return,
     };
 
-    for header in [
-        "host",
-        "origin",
-        "cookie",
-        "authorization",
-        "user-agent",
-        "sec-websocket-protocol",
+    for (source, target) in [
+        ("host", HeaderName::from_static("host")),
+        ("origin", HeaderName::from_static("origin")),
+        ("cookie", HeaderName::from_static("cookie")),
+        ("authorization", HeaderName::from_static("authorization")),
+        ("user-agent", HeaderName::from_static("user-agent")),
+        (
+            "sec-websocket-protocol",
+            HeaderName::from_static("sec-websocket-protocol"),
+        ),
     ] {
-        if let Some(value) = headers.get(header) {
-            upstream_request.headers_mut().insert(
-                HeaderName::from_bytes(header.as_bytes()).expect("header name"),
-                value.clone(),
-            );
+        if let Some(value) = headers.get(source) {
+            upstream_request.headers_mut().insert(target, value.clone());
         }
     }
     if let Ok(value) = HeaderValue::from_str(&peer_addr.ip().to_string()) {
@@ -863,13 +803,15 @@ async fn proxy_http_request(
 
     let status = response.status();
     let headers = response.headers().clone();
-    let bytes = match response.bytes().await {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            return simple_response(StatusCode::BAD_GATEWAY, format!("proxy body failed: {err}"));
+    let stream = futures_util::stream::unfold(Some(response), |state| async move {
+        let mut response = state?;
+        match response.chunk().await {
+            Ok(Some(chunk)) => Some((Ok::<_, std::io::Error>(chunk), Some(response))),
+            Ok(None) => None,
+            Err(err) => Some((Err(std::io::Error::other(err)), None)),
         }
-    };
-    build_response(status, &headers, bytes)
+    });
+    build_response(status, &headers, Body::from_stream(stream))
 }
 
 fn copy_request_headers(
@@ -886,7 +828,7 @@ fn copy_request_headers(
     builder
 }
 
-fn build_response(status: reqwest::StatusCode, headers: &HeaderMap, body: Bytes) -> Response<Body> {
+fn build_response(status: reqwest::StatusCode, headers: &HeaderMap, body: Body) -> Response<Body> {
     let mut response = Response::builder().status(status);
     for (name, value) in headers {
         if should_skip_response_header(name) {
@@ -894,19 +836,19 @@ fn build_response(status: reqwest::StatusCode, headers: &HeaderMap, body: Bytes)
         }
         response = response.header(name, value);
     }
-    response.body(Body::from(body)).unwrap_or_else(|_| {
-        Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("response build failed"))
-            .expect("fallback response")
-    })
+    match response.body(body) {
+        Ok(response) => response,
+        Err(_) => simple_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "response build failed".to_string(),
+        ),
+    }
 }
 
 fn simple_response(status: StatusCode, message: String) -> Response<Body> {
-    Response::builder()
-        .status(status)
-        .body(Body::from(message))
-        .expect("simple response")
+    let mut response = Response::new(Body::from(message));
+    *response.status_mut() = status;
+    response
 }
 
 fn fallback_ui_response() -> Response<Body> {
