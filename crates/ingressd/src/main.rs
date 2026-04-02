@@ -84,7 +84,7 @@ async fn main() {
     };
 
     let ingress_app = build_ingress_router(state.clone());
-    let ingress_addr = SocketAddr::from(([127, 0, 0, 1], ingress_port));
+    let ingress_addr = SocketAddr::from(([0, 0, 0, 0], ingress_port));
     let ingress_listener = tokio::net::TcpListener::bind(ingress_addr)
         .await
         .expect("bind ingress listener");
