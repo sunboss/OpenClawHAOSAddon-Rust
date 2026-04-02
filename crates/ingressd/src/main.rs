@@ -255,6 +255,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     const input = document.getElementById("cmd");
     const send = document.getElementById("send");
     const scheme = location.protocol === "https:" ? "wss" : "ws";
+    const pending = [];
     const socket = new WebSocket(`${{scheme}}://${{location.host}}/terminal/ws`);
     socket.binaryType = "arraybuffer";
 
@@ -263,13 +264,29 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       screen.scrollTop = screen.scrollHeight;
     }}
 
+    function flushPending() {{
+      while (pending.length && socket.readyState === WebSocket.OPEN) {{
+        socket.send(pending.shift());
+      }}
+    }}
+
     function sendCommand(command, echo = true) {{
       if (!command) return;
       if (echo) append(`$ ${{command}}\n`);
+      const payload = command + "\n";
       if (socket.readyState === WebSocket.OPEN) {{
-        socket.send(command + "\n");
+        socket.send(payload);
+        return;
       }}
+      pending.push(payload);
+      if (socket.readyState === WebSocket.CONNECTING) return;
+      append("[terminal not ready, command queued]\n");
     }}
+
+    socket.addEventListener("open", () => {{
+      append("[terminal connected]\n");
+      flushPending();
+    }});
 
     socket.addEventListener("message", (event) => {{
       if (typeof event.data === "string") {{
@@ -282,6 +299,10 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
 
     socket.addEventListener("close", () => {{
       append("\n[terminal closed]\n");
+    }});
+
+    socket.addEventListener("error", () => {{
+      append("\n[terminal websocket error]\n");
     }});
 
     window.injectCommand = function (command) {{

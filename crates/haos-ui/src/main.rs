@@ -341,7 +341,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
             <button class="btn primary" type="button" onclick="ocOpenGateway()">Open Native Gateway</button>
             <button class="btn" type="button" onclick="ocLoadTerminal()">Open Terminal</button>
             <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">Download CA Cert</a>
-            <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw gateway status --deep')">Gateway Status</button>
+            <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw status --deep')">Gateway Status</button>
             <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw devices list')">Devices List</button>
             <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw doctor --fix')">Doctor Fix</button>
             <button class="btn ghost" type="button" onclick="ocRunCommand('openclaw logs --follow')">Follow Logs</button>
