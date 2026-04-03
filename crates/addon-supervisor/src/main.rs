@@ -1215,30 +1215,62 @@ async fn run_pairing_auto_approver(
 
         let mut command = Command::new(&gateway_bin);
         apply_child_env(&mut command);
-        let mut child = match command.args(["devices", "approve", "--latest"]).spawn() {
-            Ok(child) => child,
-            Err(err) => {
-                eprintln!("addon-supervisor: failed to start auto-approve helper: {err}");
-                sleep(Duration::from_secs(6)).await;
-                continue;
+        command.args(["devices", "approve", "--latest"]);
+        let delay = tokio::select! {
+            _ = shutdown_rx.changed() => {
+                break;
+            }
+            result = command.output() => {
+                match result {
+                    Ok(output) => handle_auto_approve_output(output),
+                    Err(err) => {
+                        eprintln!("addon-supervisor: failed to start auto-approve helper: {err}");
+                        Duration::from_secs(15)
+                    }
+                }
             }
         };
 
-        tokio::select! {
-            _ = shutdown_rx.changed() => {
-                let _ = child.kill().await;
-                let _ = child.wait().await;
-                break;
-            }
-            result = child.wait() => {
-                if let Err(err) = result {
-                    eprintln!("addon-supervisor: auto-approve helper failed: {err}");
-                }
-            }
-        }
-
-        sleep(Duration::from_secs(6)).await;
+        sleep(delay).await;
     }
+}
+
+fn handle_auto_approve_output(output: std::process::Output) -> Duration {
+    let stdout = normalize_command_output(&output.stdout);
+    let stderr = normalize_command_output(&output.stderr);
+    let combined = if !stderr.is_empty() {
+        stderr.clone()
+    } else {
+        stdout.clone()
+    };
+
+    if output.status.success() {
+        if combined.is_empty() || is_no_pending_pairing_output(&combined) {
+            return Duration::from_secs(30);
+        }
+        println!("{combined}");
+        return Duration::from_secs(6);
+    }
+
+    let detail = if combined.is_empty() {
+        "unknown failure".to_string()
+    } else {
+        combined
+    };
+    eprintln!(
+        "addon-supervisor: auto-approve helper exited with {:?}: {}",
+        output.status.code(),
+        detail
+    );
+    Duration::from_secs(15)
+}
+
+fn normalize_command_output(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).trim().to_string()
+}
+
+fn is_no_pending_pairing_output(output: &str) -> bool {
+    output.contains("No pending device pairing requests to approve")
 }
 
 async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receiver<bool>) {
@@ -1386,5 +1418,48 @@ mod tests {
     #[test]
     fn certificate_renew_window_is_thirty_days() {
         assert_eq!(certificate_renew_before_seconds(), 2_592_000);
+    }
+
+    #[test]
+    fn no_pending_pairing_output_is_suppressed() {
+        assert!(is_no_pending_pairing_output(
+            "No pending device pairing requests to approve"
+        ));
+    }
+
+    #[test]
+    fn successful_auto_approve_waits_longer_when_idle() {
+        let output = std::process::Output {
+            status: exit_status(0),
+            stdout: b"No pending device pairing requests to approve\n".to_vec(),
+            stderr: Vec::new(),
+        };
+
+        assert_eq!(handle_auto_approve_output(output), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn successful_auto_approve_rechecks_quickly_after_approval() {
+        let output = std::process::Output {
+            status: exit_status(0),
+            stdout: b"Approved abc123\n".to_vec(),
+            stderr: Vec::new(),
+        };
+
+        assert_eq!(handle_auto_approve_output(output), Duration::from_secs(6));
+    }
+
+    fn exit_status(code: i32) -> std::process::ExitStatus {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(code)
+        }
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(code as u32)
+        }
     }
 }
