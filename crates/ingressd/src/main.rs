@@ -201,8 +201,18 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
       outline: none;
     }
-    .screen:focus {
+    .screen.is-focused {
       box-shadow: inset 0 0 0 1px rgba(37,99,235,.65);
+    }
+    .input-proxy {
+      position: fixed;
+      left: -9999px;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+      resize: none;
     }
     .foot {
       display: flex;
@@ -233,6 +243,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       <span class="muted">主页面按钮发来的命令会直接在这里执行。</span>
     </div>
     <pre id="screen" class="screen" tabindex="0"></pre>
+    <textarea id="inputProxy" class="input-proxy" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
     <div class="foot">
       <span class="muted">点击终端后可直接输入，支持粘贴与常见控制键。</span>
       <span id="status" class="status">connecting</span>
@@ -240,6 +251,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
   </div>
   <script>
     const screen = document.getElementById("screen");
+    const inputProxy = document.getElementById("inputProxy");
     const statusEl = document.getElementById("status");
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     const wsUrl = new URL("./ws", location.href);
@@ -454,6 +466,22 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       sendPayload(payload);
     }
 
+    function focusTerminalInput() {
+      inputProxy.focus();
+      screen.classList.add("is-focused");
+    }
+
+    function blurTerminalInput() {
+      screen.classList.remove("is-focused");
+    }
+
+    function flushInputProxy() {
+      const value = inputProxy.value;
+      if (!value) return;
+      sendKeyPayload(value);
+      inputProxy.value = "";
+    }
+
     function ctrlChar(key) {
       const upper = key.toUpperCase();
       if (upper >= "A" && upper <= "Z") {
@@ -468,7 +496,6 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     }
 
     function keyToSequence(event) {
-      if (event.metaKey || event.altKey) return "";
       if (event.ctrlKey && event.key.length === 1) return ctrlChar(event.key);
       switch (event.key) {
         case "Enter": return "\r";
@@ -524,7 +551,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       const data = event.data;
       if (!data || typeof data !== "object") return;
       if (data.type === "openclaw-focus-terminal") {
-        screen.focus();
+        focusTerminalInput();
         return;
       }
       if (data.type !== "openclaw-run-command") return;
@@ -532,7 +559,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       sendCommand(data.command);
     });
 
-    screen.addEventListener("keydown", (event) => {
+    inputProxy.addEventListener("keydown", (event) => {
       if ((event.metaKey || event.ctrlKey) && ["c", "v", "x", "a"].includes(event.key.toLowerCase())) {
         return;
       }
@@ -542,16 +569,19 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       sendKeyPayload(payload);
     });
 
-    screen.addEventListener("paste", (event) => {
-      const text = event.clipboardData ? event.clipboardData.getData("text") : "";
-      if (!text) return;
-      event.preventDefault();
-      sendKeyPayload(text);
+    inputProxy.addEventListener("input", () => {
+      flushInputProxy();
     });
 
-    screen.addEventListener("click", () => screen.focus());
-    window.addEventListener("focus", () => screen.focus());
-    screen.focus();
+    inputProxy.addEventListener("focus", focusTerminalInput);
+    inputProxy.addEventListener("blur", blurTerminalInput);
+    screen.addEventListener("click", focusTerminalInput);
+    screen.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      focusTerminalInput();
+    });
+    window.addEventListener("focus", focusTerminalInput);
+    focusTerminalInput();
   </script>
 </body>
 </html>"##
