@@ -199,42 +199,30 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       white-space: pre-wrap;
       word-break: break-word;
       background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+      outline: none;
     }
-    .bar {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
+    .screen:focus {
+      box-shadow: inset 0 0 0 1px rgba(37,99,235,.65);
+    }
+    .foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
       padding: 10px;
       border-top: 1px solid var(--line);
       background: rgba(255,255,255,.02);
-    }
-    .cmd {
-      width: 100%;
-      min-height: 42px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      border: 1px solid #2f4468;
-      background: #0b1324;
-      color: var(--text);
-      outline: none;
-      font: inherit;
-    }
-    .btn {
-      min-width: 92px;
-      min-height: 42px;
-      padding: 0 16px;
-      border: 0;
-      border-radius: 12px;
-      background: var(--accent);
-      color: #fff;
-      font-weight: 700;
-      cursor: pointer;
-      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     }
     .muted {
       color: var(--muted);
       font-size: 13px;
       line-height: 1.5;
+    }
+    .status {
+      color: #9bc1ff;
+      font-size: 12px;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -244,16 +232,15 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       <strong>OpenClaw 完整终端</strong>
       <span class="muted">主页面按钮发来的命令会直接在这里执行。</span>
     </div>
-    <pre id="screen" class="screen"></pre>
-    <div class="bar">
-      <input id="cmd" class="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="输入命令后按回车">
-      <button id="send" class="btn" type="button">运行</button>
+    <pre id="screen" class="screen" tabindex="0"></pre>
+    <div class="foot">
+      <span class="muted">点击终端后可直接输入，支持粘贴与常见控制键。</span>
+      <span id="status" class="status">connecting</span>
     </div>
   </div>
   <script>
     const screen = document.getElementById("screen");
-    const input = document.getElementById("cmd");
-    const send = document.getElementById("send");
+    const statusEl = document.getElementById("status");
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     const wsUrl = new URL("./ws", location.href);
     wsUrl.protocol = scheme + ":";
@@ -442,20 +429,68 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       }
     }
 
-    function sendCommand(command) {
-      if (!command) return;
-      const payload = command + "\n";
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function sendPayload(payload) {
+      if (!payload) return;
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(payload);
         return;
       }
       pending.push(payload);
       if (socket.readyState === WebSocket.CONNECTING) return;
-      term.write("[terminal not ready, command queued]\n");
+      term.write("[terminal not ready, payload queued]\n");
       term.render();
     }
 
+    function sendCommand(command) {
+      if (!command) return;
+      sendPayload(command + "\n");
+    }
+
+    function sendKeyPayload(payload) {
+      sendPayload(payload);
+    }
+
+    function ctrlChar(key) {
+      const upper = key.toUpperCase();
+      if (upper >= "A" && upper <= "Z") {
+        return String.fromCharCode(upper.charCodeAt(0) - 64);
+      }
+      if (key === "[") return "\u001b";
+      if (key === "\\") return "\u001c";
+      if (key === "]") return "\u001d";
+      if (key === "^") return "\u001e";
+      if (key === "_") return "\u001f";
+      return "";
+    }
+
+    function keyToSequence(event) {
+      if (event.metaKey || event.altKey) return "";
+      if (event.ctrlKey && event.key.length === 1) return ctrlChar(event.key);
+      switch (event.key) {
+        case "Enter": return "\r";
+        case "Backspace": return "\u007f";
+        case "Tab": return "\t";
+        case "Escape": return "\u001b";
+        case "ArrowUp": return "\u001b[A";
+        case "ArrowDown": return "\u001b[B";
+        case "ArrowRight": return "\u001b[C";
+        case "ArrowLeft": return "\u001b[D";
+        case "Home": return "\u001b[H";
+        case "End": return "\u001b[F";
+        case "Delete": return "\u001b[3~";
+        case "PageUp": return "\u001b[5~";
+        case "PageDown": return "\u001b[6~";
+        default:
+          return event.key.length === 1 ? event.key : "";
+      }
+    }
+
     socket.addEventListener("open", () => {
+      setStatus("connected");
       term.write("[terminal connected]\n");
       term.render();
       flushPending();
@@ -470,11 +505,13 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     });
 
     socket.addEventListener("close", () => {
+      setStatus("disconnected");
       term.write("\n[terminal disconnected]\n");
       term.render();
     });
 
     socket.addEventListener("error", () => {
+      setStatus("error");
       term.write("\n[terminal websocket error]\n");
       term.render();
     });
@@ -487,7 +524,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       const data = event.data;
       if (!data || typeof data !== "object") return;
       if (data.type === "openclaw-focus-terminal") {
-        input.focus();
+        screen.focus();
         return;
       }
       if (data.type !== "openclaw-run-command") return;
@@ -495,21 +532,26 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       sendCommand(data.command);
     });
 
-    send.addEventListener("click", () => {
-      const value = input.value.trim();
-      if (!value) return;
-      sendCommand(value);
-      input.value = "";
-      input.focus();
-    });
-
-    input.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
+    screen.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && ["c", "v", "x", "a"].includes(event.key.toLowerCase())) {
+        return;
+      }
+      const payload = keyToSequence(event);
+      if (!payload) return;
       event.preventDefault();
-      send.click();
+      sendKeyPayload(payload);
     });
 
-    input.focus();
+    screen.addEventListener("paste", (event) => {
+      const text = event.clipboardData ? event.clipboardData.getData("text") : "";
+      if (!text) return;
+      event.preventDefault();
+      sendKeyPayload(text);
+    });
+
+    screen.addEventListener("click", () => screen.focus());
+    window.addEventListener("focus", () => screen.focus());
+    screen.focus();
   </script>
 </body>
 </html>"##

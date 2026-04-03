@@ -14,6 +14,8 @@ Read this before making UI, runtime, or release changes.
 - Add-on version format must be `YYYY.MM.DD.N`.
 - Every pushed fix increments `N`.
 - Always tell the user the version number and commit hash when pushing.
+- When reporting a push, include the validation log summary too.
+  - At minimum: what checks ran and whether they passed.
 
 ## Current runtime architecture
 
@@ -115,6 +117,9 @@ Read this before making UI, runtime, or release changes.
 - The embedded terminal previously rendered ANSI/TUI output poorly.
 - The terminal was upgraded to handle more complete ANSI/TUI behavior.
 - If output becomes garbled again, check terminal rendering before blaming Chinese text.
+- `新窗口打开终端` should behave like a native terminal page.
+  - Do not depend on a separate input box at the bottom.
+  - The page itself should take focus and accept direct keyboard input and paste.
 
 ## Workflow note
 
