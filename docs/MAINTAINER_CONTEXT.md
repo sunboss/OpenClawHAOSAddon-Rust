@@ -125,3 +125,14 @@ Read this before making UI, runtime, or release changes.
 
 - Temporary preview HTML files should not stay in the repo root.
 - Keep handoff memory in this document instead of relying on conversation history.
+- Keep a push-ready operation log in `docs/OPERATION_LOG.md`.
+  - Before every push, append a new entry with:
+    - date/time
+    - user request / conversation intent
+    - files changed
+    - commands/checks run
+    - version + commit hash if already created
+    - push target / result
+    - next handoff note for the next AI
+  - This log is the durable bridge for future AI handoff and external tool calls.
+  - Do not rely on chat history being available later.

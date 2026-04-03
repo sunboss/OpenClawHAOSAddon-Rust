@@ -1317,7 +1317,7 @@ mod tests {
     #[test]
     fn render_shell_includes_fixed_aspect_brand_logo() {
         let config = PageConfig {
-            addon_version: "2026.04.03.7".to_string(),
+            addon_version: "2026.04.03.8".to_string(),
             access_mode: "lan_https".to_string(),
             gateway_mode: "local".to_string(),
             gateway_url: String::new(),
