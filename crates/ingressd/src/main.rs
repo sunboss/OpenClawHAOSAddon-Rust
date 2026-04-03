@@ -14,6 +14,7 @@ use futures_util::{SinkExt, StreamExt};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use reqwest::Client;
 use rustls::crypto::aws_lc_rs;
+use serde::Deserialize;
 use std::{
     env, fs,
     io::{Read, Write},
@@ -38,6 +39,13 @@ struct AppState {
     gateway_http_base: String,
     gateway_ws_base: String,
     enable_terminal: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum TerminalClientMessage {
+    Input { data: String },
+    Resize { cols: u16, rows: u16 },
 }
 
 #[tokio::main]
@@ -126,6 +134,12 @@ fn build_ingress_router(state: AppState) -> Router {
         .route("/terminal", get(terminal_redirect))
         .route("/terminal/", get(terminal_page))
         .route("/terminal/ws", any(terminal_ws))
+        .route("/terminal/assets/xterm.js", get(terminal_xterm_js))
+        .route("/terminal/assets/xterm.css", get(terminal_xterm_css))
+        .route(
+            "/terminal/assets/addon-fit.js",
+            get(terminal_xterm_addon_fit_js),
+        )
         .route("/health", get(proxy_health))
         .route("/action/{action}", any(proxy_action))
         .route("/token", get(token_file))
@@ -161,7 +175,8 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenClaw 完整终端</title>
+  <title>OpenClaw Terminal</title>
+  <link rel="stylesheet" href="./assets/xterm.css">
   <style>
     :root {
       --bg: #0f172a;
@@ -192,27 +207,23 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       background: rgba(255,255,255,.02);
       font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     }
-    .screen {
-      margin: 0;
+    .terminal-wrap {
+      position: relative;
+      min-height: 0;
       padding: 14px;
-      overflow: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
       background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
-      outline: none;
     }
-    .screen.is-focused {
-      box-shadow: inset 0 0 0 1px rgba(37,99,235,.65);
+    .terminal-shell {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(62, 84, 126, .9);
+      box-shadow: inset 0 0 0 1px rgba(12, 20, 38, .8);
     }
-    .input-proxy {
-      position: fixed;
-      left: -9999px;
-      top: 0;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
-      pointer-events: none;
-      resize: none;
+    .terminal-shell.is-focused {
+      box-shadow: inset 0 0 0 1px rgba(37,99,235,.65), 0 0 0 1px rgba(37,99,235,.18);
     }
     .foot {
       display: flex;
@@ -234,206 +245,85 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
       white-space: nowrap;
     }
+    .actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid #39537d;
+      border-radius: 999px;
+      background: rgba(17,28,51,.85);
+      color: #dbe8ff;
+      font: inherit;
+      cursor: pointer;
+    }
+    .btn:hover {
+      background: rgba(33, 52, 90, .95);
+    }
+    .xterm, .xterm-viewport, .xterm-screen {
+      height: 100%;
+    }
+    .xterm .xterm-viewport {
+      background-color: transparent !important;
+    }
   </style>
 </head>
 <body>
   <div class="shell">
     <div class="head">
-      <strong>OpenClaw 完整终端</strong>
-      <span class="muted">主页面按钮发来的命令会直接在这里执行。</span>
+      <strong>OpenClaw Terminal</strong>
+      <span class="muted">Commands sent from the home page run directly in this terminal window.</span>
     </div>
-    <pre id="screen" class="screen" tabindex="0"></pre>
-    <textarea id="inputProxy" class="input-proxy" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+    <div class="terminal-wrap">
+      <div id="terminalShell" class="terminal-shell"></div>
+    </div>
     <div class="foot">
-      <span class="muted">点击终端后可直接输入，支持粘贴与常见控制键。</span>
-      <span id="status" class="status">connecting</span>
+      <span class="muted">Selection, copy, paste, IME input, ANSI/TUI rendering, and terminal resize sync are supported.</span>
+      <span class="actions">
+        <button id="copyBtn" class="btn" type="button">Copy Selection</button>
+        <button id="pasteBtn" class="btn" type="button">Paste</button>
+        <span id="status" class="status">connecting</span>
+      </span>
     </div>
   </div>
+  <script src="./assets/xterm.js"></script>
+  <script src="./assets/addon-fit.js"></script>
   <script>
-    const screen = document.getElementById("screen");
-    const inputProxy = document.getElementById("inputProxy");
+    const terminalShell = document.getElementById("terminalShell");
     const statusEl = document.getElementById("status");
+    const copyBtn = document.getElementById("copyBtn");
+    const pasteBtn = document.getElementById("pasteBtn");
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     const wsUrl = new URL("./ws", location.href);
     wsUrl.protocol = scheme + ":";
     const pending = [];
-    const maxRows = 2000;
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";
     const decoder = new TextDecoder();
-
-    const term = {
-      rows: [[]],
-      cursorRow: 0,
-      cursorCol: 0,
-      savedRow: 0,
-      savedCol: 0,
-      ensureRow(index) {
-        while (this.rows.length <= index) this.rows.push([]);
-      },
-      trimRows() {
-        if (this.rows.length <= maxRows) return;
-        const remove = this.rows.length - maxRows;
-        this.rows.splice(0, remove);
-        this.cursorRow = Math.max(0, this.cursorRow - remove);
-        this.savedRow = Math.max(0, this.savedRow - remove);
-      },
-      setCell(row, col, ch) {
-        this.ensureRow(row);
-        this.rows[row][col] = ch;
-      },
-      putChar(ch) {
-        this.setCell(this.cursorRow, this.cursorCol, ch);
-        this.cursorCol += 1;
-      },
-      newline() {
-        this.cursorRow += 1;
-        this.cursorCol = 0;
-        this.ensureRow(this.cursorRow);
-        this.trimRows();
-      },
-      carriageReturn() {
-        this.cursorCol = 0;
-      },
-      backspace() {
-        this.cursorCol = Math.max(0, this.cursorCol - 1);
-      },
-      clearLine(mode) {
-        this.ensureRow(this.cursorRow);
-        const line = this.rows[this.cursorRow];
-        if (mode === 1) {
-          for (let i = 0; i <= this.cursorCol; i += 1) line[i] = " ";
-          return;
-        }
-        if (mode === 2) {
-          this.rows[this.cursorRow] = [];
-          return;
-        }
-        line.length = Math.min(line.length, this.cursorCol);
-      },
-      clearScreen(mode) {
-        if (mode === 1) {
-          for (let row = 0; row < this.cursorRow; row += 1) this.rows[row] = [];
-          this.clearLine(1);
-          return;
-        }
-        if (mode === 2) {
-          this.rows = [[]];
-          this.cursorRow = 0;
-          this.cursorCol = 0;
-          return;
-        }
-        this.clearLine(0);
-        this.rows.length = this.cursorRow + 1;
-      },
-      moveCursor(row, col) {
-        this.cursorRow = Math.max(0, row);
-        this.cursorCol = Math.max(0, col);
-        this.ensureRow(this.cursorRow);
-      },
-      handleCsi(finalChar, params, privateMode) {
-        const numbers = params.length ? params.map((part) => part === "" ? 0 : Number(part)) : [0];
-        switch (finalChar) {
-          case "A":
-            this.cursorRow = Math.max(0, this.cursorRow - (numbers[0] || 1));
-            break;
-          case "B":
-            this.moveCursor(this.cursorRow + (numbers[0] || 1), this.cursorCol);
-            break;
-          case "C":
-            this.cursorCol += numbers[0] || 1;
-            break;
-          case "D":
-            this.cursorCol = Math.max(0, this.cursorCol - (numbers[0] || 1));
-            break;
-          case "G":
-            this.cursorCol = Math.max(0, (numbers[0] || 1) - 1);
-            break;
-          case "H":
-          case "f":
-            this.moveCursor((numbers[0] || 1) - 1, (numbers[1] || 1) - 1);
-            break;
-          case "J":
-            this.clearScreen(numbers[0] || 0);
-            break;
-          case "K":
-            this.clearLine(numbers[0] || 0);
-            break;
-          case "s":
-            this.savedRow = this.cursorRow;
-            this.savedCol = this.cursorCol;
-            break;
-          case "u":
-            this.moveCursor(this.savedRow, this.savedCol);
-            break;
-          case "h":
-          case "l":
-          case "m":
-            if (privateMode === "?") return;
-            break;
-        }
-      },
-      write(text) {
-        let i = 0;
-        while (i < text.length) {
-          const ch = text[i];
-          if (ch === "\u001b") {
-            const next = text[i + 1];
-            if (next === "[") {
-              let cursor = i + 2;
-              let privateMode = "";
-              if (text[cursor] === "?") {
-                privateMode = "?";
-                cursor += 1;
-              }
-              let seq = "";
-              while (cursor < text.length) {
-                const current = text[cursor];
-                if (current >= "@" && current <= "~") {
-                  const params = seq ? seq.split(";") : [];
-                  this.handleCsi(current, params, privateMode);
-                  i = cursor + 1;
-                  break;
-                }
-                seq += current;
-                cursor += 1;
-              }
-              if (cursor >= text.length) break;
-              continue;
-            }
-            if (next === "]") {
-              const bell = text.indexOf("\u0007", i + 2);
-              if (bell === -1) break;
-              i = bell + 1;
-              continue;
-            }
-            i += 1;
-            continue;
-          }
-          if (ch === "\r") {
-            this.carriageReturn();
-            i += 1;
-            continue;
-          }
-          if (ch === "\n") {
-            this.newline();
-            i += 1;
-            continue;
-          }
-          if (ch === "\b") {
-            this.backspace();
-            i += 1;
-            continue;
-          }
-          this.putChar(ch);
-          i += 1;
-        }
-      },
-      render() {
-        screen.textContent = this.rows.map((line) => line.join("")).join("\n");
-        screen.scrollTop = screen.scrollHeight;
-      },
-    };
+    let statusResetTimer = null;
+    let resizeTimer = null;
+    const term = new Terminal({
+      allowTransparency: true,
+      convertEol: true,
+      cursorBlink: true,
+      fontFamily: 'Cascadia Mono, Consolas, "SFMono-Regular", Menlo, Monaco, "PingFang SC", monospace',
+      fontSize: 14,
+      lineHeight: 1.2,
+      scrollback: 5000,
+      theme: {
+        background: "#111c33",
+        foreground: "#dbe8ff",
+        cursor: "#9bc1ff",
+        selectionBackground: "rgba(96, 165, 250, 0.30)"
+      }
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(terminalShell);
 
     function flushPending() {
       while (pending.length && socket.readyState === WebSocket.OPEN) {
@@ -445,6 +335,13 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       statusEl.textContent = text;
     }
 
+    function resetStatusSoon() {
+      if (statusResetTimer) window.clearTimeout(statusResetTimer);
+      statusResetTimer = window.setTimeout(() => {
+        setStatus(socket.readyState === WebSocket.OPEN ? "connected" : "disconnected");
+      }, 1200);
+    }
+
     function sendPayload(payload) {
       if (!payload) return;
       if (socket.readyState === WebSocket.OPEN) {
@@ -453,74 +350,52 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       }
       pending.push(payload);
       if (socket.readyState === WebSocket.CONNECTING) return;
-      term.write("[terminal not ready, payload queued]\n");
-      term.render();
+      term.writeln("[terminal not ready, payload queued]");
+    }
+
+    function sendTerminalInput(data) {
+      if (!data) return;
+      sendPayload(JSON.stringify({ type: "input", data }));
+    }
+
+    function sendResize() {
+      if (!term.cols || !term.rows) return;
+      sendPayload(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     }
 
     function sendCommand(command) {
       if (!command) return;
-      sendPayload(command + "\n");
+      sendTerminalInput(command + "\n");
     }
 
-    function sendKeyPayload(payload) {
-      sendPayload(payload);
-    }
-
-    function focusTerminalInput() {
-      inputProxy.focus();
-      screen.classList.add("is-focused");
-    }
-
-    function blurTerminalInput() {
-      screen.classList.remove("is-focused");
-    }
-
-    function flushInputProxy() {
-      const value = inputProxy.value;
-      if (!value) return;
-      sendKeyPayload(value);
-      inputProxy.value = "";
-    }
-
-    function ctrlChar(key) {
-      const upper = key.toUpperCase();
-      if (upper >= "A" && upper <= "Z") {
-        return String.fromCharCode(upper.charCodeAt(0) - 64);
+    function fitTerminal() {
+      try {
+        fitAddon.fit();
+      } catch (_) {
+        return;
       }
-      if (key === "[") return "\u001b";
-      if (key === "\\") return "\u001c";
-      if (key === "]") return "\u001d";
-      if (key === "^") return "\u001e";
-      if (key === "_") return "\u001f";
-      return "";
+      sendResize();
     }
 
-    function keyToSequence(event) {
-      if (event.ctrlKey && event.key.length === 1) return ctrlChar(event.key);
-      switch (event.key) {
-        case "Enter": return "\r";
-        case "Backspace": return "\u007f";
-        case "Tab": return "\t";
-        case "Escape": return "\u001b";
-        case "ArrowUp": return "\u001b[A";
-        case "ArrowDown": return "\u001b[B";
-        case "ArrowRight": return "\u001b[C";
-        case "ArrowLeft": return "\u001b[D";
-        case "Home": return "\u001b[H";
-        case "End": return "\u001b[F";
-        case "Delete": return "\u001b[3~";
-        case "PageUp": return "\u001b[5~";
-        case "PageDown": return "\u001b[6~";
-        default:
-          return event.key.length === 1 ? event.key : "";
-      }
+    function scheduleFit() {
+      if (resizeTimer) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(fitTerminal, 40);
+    }
+
+    function focusTerminal() {
+      term.focus();
+      terminalShell.classList.add("is-focused");
+    }
+
+    function blurTerminal() {
+      terminalShell.classList.remove("is-focused");
     }
 
     socket.addEventListener("open", () => {
       setStatus("connected");
-      term.write("[terminal connected]\n");
-      term.render();
+      term.writeln("[terminal connected]");
       flushPending();
+      sendResize();
     });
 
     socket.addEventListener("message", (event) => {
@@ -528,19 +403,18 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
         ? event.data
         : decoder.decode(new Uint8Array(event.data), { stream: true });
       term.write(decoded);
-      term.render();
     });
 
     socket.addEventListener("close", () => {
       setStatus("disconnected");
-      term.write("\n[terminal disconnected]\n");
-      term.render();
+      term.writeln("");
+      term.writeln("[terminal disconnected]");
     });
 
     socket.addEventListener("error", () => {
       setStatus("error");
-      term.write("\n[terminal websocket error]\n");
-      term.render();
+      term.writeln("");
+      term.writeln("[terminal websocket error]");
     });
 
     window.injectCommand = function (command) {
@@ -551,7 +425,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       const data = event.data;
       if (!data || typeof data !== "object") return;
       if (data.type === "openclaw-focus-terminal") {
-        focusTerminalInput();
+        focusTerminal();
         return;
       }
       if (data.type !== "openclaw-run-command") return;
@@ -559,34 +433,124 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       sendCommand(data.command);
     });
 
-    inputProxy.addEventListener("keydown", (event) => {
-      if ((event.metaKey || event.ctrlKey) && ["c", "v", "x", "a"].includes(event.key.toLowerCase())) {
-        return;
+    term.onData((data) => {
+      sendTerminalInput(data);
+    });
+
+    term.onSelectionChange(() => {
+      copyBtn.disabled = term.getSelection().length === 0;
+    });
+
+    async function copySelection() {
+      const selected = term.getSelection();
+      if (!selected) return;
+      try {
+        await navigator.clipboard.writeText(selected);
+        setStatus("copied");
+        resetStatusSoon();
+      } catch (_) {
+        setStatus("copy-failed");
       }
-      const payload = keyToSequence(event);
-      if (!payload) return;
-      event.preventDefault();
-      sendKeyPayload(payload);
+    }
+
+    async function pasteClipboardText(text) {
+      if (!text) return;
+      sendTerminalInput(text);
+      setStatus("pasted");
+      resetStatusSoon();
+    }
+
+    async function pasteFromClipboard() {
+      try {
+        const text = await navigator.clipboard.readText();
+        await pasteClipboardText(text);
+      } catch (_) {
+        setStatus("paste-failed");
+      }
+    }
+
+    copyBtn.addEventListener("click", async () => {
+      await copySelection();
     });
 
-    inputProxy.addEventListener("input", () => {
-      flushInputProxy();
+    pasteBtn.addEventListener("click", async () => {
+      await pasteFromClipboard();
     });
 
-    inputProxy.addEventListener("focus", focusTerminalInput);
-    inputProxy.addEventListener("blur", blurTerminalInput);
-    screen.addEventListener("click", focusTerminalInput);
-    screen.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      focusTerminalInput();
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const key = event.key.toLowerCase();
+      const isAccel = event.ctrlKey || event.metaKey;
+      if (isAccel && event.shiftKey && key === "c" && term.getSelection()) {
+        void copySelection();
+        return false;
+      }
+      if (isAccel && event.shiftKey && key === "v") {
+        void pasteFromClipboard();
+        return false;
+      }
+      if (event.shiftKey && key === "insert") {
+        void pasteFromClipboard();
+        return false;
+      }
+      if (event.ctrlKey && key === "insert" && term.getSelection()) {
+        void copySelection();
+        return false;
+      }
+      return true;
     });
-    window.addEventListener("focus", focusTerminalInput);
-    focusTerminalInput();
+
+    terminalShell.addEventListener("paste", (event) => {
+      const text = event.clipboardData ? event.clipboardData.getData("text") : "";
+      if (!text) return;
+      event.preventDefault();
+      void pasteClipboardText(text);
+    });
+
+    terminalShell.addEventListener("click", focusTerminal);
+    terminalShell.addEventListener("focusin", focusTerminal);
+    terminalShell.addEventListener("focusout", blurTerminal);
+    window.addEventListener("focus", focusTerminal);
+    window.addEventListener("resize", scheduleFit);
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(scheduleFit).observe(terminalShell);
+    }
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(scheduleFit).catch(() => {});
+    }
+    copyBtn.disabled = true;
+    pasteBtn.disabled = false;
+    fitTerminal();
+    focusTerminal();
   </script>
 </body>
 </html>"##
             .to_string(),
     )
+}
+
+async fn terminal_xterm_js() -> impl IntoResponse {
+    file_response(
+        "/usr/local/lib/node_modules/@xterm/xterm/lib/xterm.js",
+        "application/javascript; charset=utf-8",
+    )
+    .await
+}
+
+async fn terminal_xterm_css() -> impl IntoResponse {
+    file_response(
+        "/usr/local/lib/node_modules/@xterm/xterm/css/xterm.css",
+        "text/css; charset=utf-8",
+    )
+    .await
+}
+
+async fn terminal_xterm_addon_fit_js() -> impl IntoResponse {
+    file_response(
+        "/usr/local/lib/node_modules/@xterm/addon-fit/lib/addon-fit.js",
+        "application/javascript; charset=utf-8",
+    )
+    .await
 }
 
 async fn terminal_ws(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl IntoResponse {
@@ -662,15 +626,21 @@ async fn handle_terminal_socket(socket: WebSocket) {
 
     let write_task = {
         let writer = writer.clone();
+        let master = pair.master;
         tokio::spawn(async move {
             while let Some(Ok(message)) = receiver.next().await {
                 match message {
-                    AxumWsMessage::Text(text) => {
-                        if let Ok(mut handle) = writer.lock() {
-                            let _ = handle.write_all(text.as_bytes());
-                            let _ = handle.flush();
+                    AxumWsMessage::Text(text) => match parse_terminal_client_text(&text) {
+                        TerminalClientAction::Input(data) => {
+                            if let Ok(mut handle) = writer.lock() {
+                                let _ = handle.write_all(&data);
+                                let _ = handle.flush();
+                            }
                         }
-                    }
+                        TerminalClientAction::Resize(size) => {
+                            let _ = master.resize(size);
+                        }
+                    },
                     AxumWsMessage::Binary(data) => {
                         if let Ok(mut handle) = writer.lock() {
                             let _ = handle.write_all(&data);
@@ -1101,6 +1071,30 @@ fn forwarded_header_value(
     HeaderValue::from_str(&forwarded).ok()
 }
 
+enum TerminalClientAction {
+    Input(Vec<u8>),
+    Resize(PtySize),
+}
+
+fn parse_terminal_client_text(text: &str) -> TerminalClientAction {
+    match serde_json::from_str::<TerminalClientMessage>(text) {
+        Ok(TerminalClientMessage::Input { data }) => TerminalClientAction::Input(data.into_bytes()),
+        Ok(TerminalClientMessage::Resize { cols, rows }) => {
+            TerminalClientAction::Resize(normalized_terminal_size(cols, rows))
+        }
+        Err(_) => TerminalClientAction::Input(text.as_bytes().to_vec()),
+    }
+}
+
+fn normalized_terminal_size(cols: u16, rows: u16) -> PtySize {
+    PtySize {
+        rows: rows.max(2),
+        cols: cols.max(10),
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
 fn should_skip_header(name: &HeaderName, preserve_host: bool) -> bool {
     let lower = name.as_str().to_ascii_lowercase();
     if preserve_host {
@@ -1141,5 +1135,28 @@ mod tests {
             forwarded.to_str().expect("forwarded str"),
             "for=192.168.1.142;proto=https;host=192.168.1.122:18789"
         );
+    }
+
+    #[test]
+    fn terminal_protocol_parses_resize_messages() {
+        let action = parse_terminal_client_text(r#"{"type":"resize","cols":132,"rows":43}"#);
+
+        match action {
+            TerminalClientAction::Resize(size) => {
+                assert_eq!(size.cols, 132);
+                assert_eq!(size.rows, 43);
+            }
+            TerminalClientAction::Input(_) => panic!("expected resize action"),
+        }
+    }
+
+    #[test]
+    fn terminal_protocol_keeps_plain_input_backward_compatible() {
+        let action = parse_terminal_client_text("echo hello\n");
+
+        match action {
+            TerminalClientAction::Input(data) => assert_eq!(data, b"echo hello\n"),
+            TerminalClientAction::Resize(_) => panic!("expected input action"),
+        }
     }
 }

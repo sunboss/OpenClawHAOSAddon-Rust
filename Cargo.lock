@@ -808,6 +808,8 @@ dependencies = [
  "portable-pty",
  "reqwest",
  "rustls",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-tungstenite",
 ]
