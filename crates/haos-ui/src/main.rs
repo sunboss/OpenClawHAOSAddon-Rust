@@ -82,6 +82,36 @@ fn js_string(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
+fn openclaw_brand_svg(class_name: &str) -> String {
+    format!(
+        r##"<svg class="{class_name}" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenClaw logo" preserveAspectRatio="xMidYMid meet">
+  <rect x="8" y="8" width="80" height="80" rx="24" fill="#10284c"/>
+  <rect x="14" y="14" width="68" height="68" rx="20" fill="#14355f"/>
+  <path d="M30 34 19 27 18 41 29 42Z" fill="#60cbff"/>
+  <path d="M66 34 77 27 78 41 67 42Z" fill="#60cbff"/>
+  <path d="M31 49c0-10 6-18 17-21" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M65 49c0-10-6-18-17-21" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M34 61c7 8 21 8 28 0" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="48" cy="49" r="10" fill="#eef7ff"/>
+  <circle cx="44" cy="46" r="2.6" fill="#14355f"/>
+  <circle cx="52" cy="46" r="2.6" fill="#14355f"/>
+</svg>"##
+    )
+}
+
+fn brand_lockup() -> String {
+    format!(
+        r#"<div class="brand-lockup">
+  <div class="brand-badge">{}</div>
+  <div class="brand-copy">
+    <span class="brand-eyebrow">OpenClaw Assistant</span>
+    <strong class="brand-name">HAOS Add-on</strong>
+  </div>
+</div>"#,
+        openclaw_brand_svg("brand-mark")
+    )
+}
+
 fn html_attr_escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -807,6 +837,13 @@ fn render_shell(
     .nav-link:hover {{ color:var(--blue); background:#f7fbff; }}
     .nav-link.active {{ color:var(--blue); background:#f7fbff; border-bottom-color:var(--blue); }}
     .hero {{ padding:30px 30px 24px; display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }}
+    .hero-copy {{ max-width:920px; }}
+    .brand-lockup {{ display:inline-flex; align-items:center; gap:14px; margin-bottom:18px; }}
+    .brand-badge {{ flex:0 0 auto; width:72px; height:72px; display:grid; place-items:center; border-radius:22px; background:linear-gradient(180deg,#163a65 0%,#10284c 100%); box-shadow:0 10px 24px rgba(19,53,95,.18); }}
+    .brand-mark {{ display:block; width:54px; height:54px; }}
+    .brand-copy {{ display:grid; gap:4px; min-width:0; }}
+    .brand-eyebrow {{ color:#6882a4; font-size:12px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }}
+    .brand-name {{ color:#1f3552; font-size:22px; line-height:1.1; letter-spacing:-.02em; }}
     .hero h1 {{ margin:0 0 12px; font-size:44px; line-height:1.06; letter-spacing:-.03em; font-weight:900; }}
     .hero p {{ margin:0; max-width:920px; color:var(--muted); font-size:16px; line-height:1.78; }}
     .hero-chip {{ flex:0 0 auto; min-height:52px; display:inline-flex; align-items:center; justify-content:center; padding:0 22px; border-radius:999px; border:1px solid #c8d8f1; background:linear-gradient(180deg,#fff 0%,#edf4ff 100%); color:#213f63; font-size:15px; font-weight:900; white-space:nowrap; box-shadow:0 8px 22px rgba(55,104,242,.10); }}
@@ -909,6 +946,7 @@ fn render_shell(
     @media (max-width:760px) {{
       .wrap {{ padding:0 14px 30px; }} .hero {{ flex-direction:column; padding:24px 20px 20px; }} .hero h1 {{ font-size:34px; }}
       .nav-link {{ min-width:92px; padding:0 16px; }} .card {{ padding:20px; }}
+      .brand-lockup {{ margin-bottom:16px; }} .brand-badge {{ width:64px; height:64px; }} .brand-mark {{ width:48px; height:48px; }}
       .terminal-stage,.terminal-placeholder,iframe {{ min-height:440px; }}
     }}
   </style>
@@ -919,7 +957,7 @@ fn render_shell(
     <section class="masthead">
       <section class="top-shell"><nav class="nav-tabs">{nav_home}{nav_config}{nav_commands}{nav_logs}</nav></section>
       <section class="hero">
-        <div><h1>{title}</h1><p>{subtitle}</p></div>
+        <div class="hero-copy">{brand_lockup}<h1>{title}</h1><p>{subtitle}</p></div>
         <div class="hero-chip">插件 {addon_version}</div>
       </section>
     </section>
@@ -1036,6 +1074,7 @@ fn render_shell(
         nav_config = nav_config,
         nav_commands = nav_commands,
         nav_logs = nav_logs,
+        brand_lockup = brand_lockup(),
         title = title,
         subtitle = subtitle,
         addon_version = config.addon_version,
@@ -1181,6 +1220,26 @@ mod tests {
         assert!(html.contains("npm view openclaw version"));
         assert!(html.contains("openclaw devices approve --latest"));
         assert!(!html.contains("https://registry.npmjs.org/openclaw/latest"));
+    }
+
+    #[test]
+    fn render_shell_includes_fixed_aspect_brand_logo() {
+        let config = PageConfig {
+            addon_version: "2026.04.03.4".to_string(),
+            access_mode: "lan_https".to_string(),
+            gateway_mode: "local".to_string(),
+            gateway_url: String::new(),
+            openclaw_version: "2026.4.2".to_string(),
+            https_port: "18789".to_string(),
+            mcp_status: "enabled".to_string(),
+            web_status: "firecrawl".to_string(),
+            memory_status: "x_search".to_string(),
+        };
+
+        let Html(html) = render_shell(&config, NavPage::Home, "title", "subtitle", "<div></div>");
+
+        assert!(html.contains("class=\"brand-mark\""));
+        assert!(html.contains("preserveAspectRatio=\"xMidYMid meet\""));
     }
 
     #[test]

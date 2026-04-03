@@ -161,6 +161,23 @@ async fn terminal_redirect() -> impl IntoResponse {
     Redirect::temporary("/terminal/")
 }
 
+fn openclaw_brand_svg(class_name: &str) -> String {
+    format!(
+        r##"<svg class="{class_name}" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenClaw logo" preserveAspectRatio="xMidYMid meet">
+  <rect x="8" y="8" width="80" height="80" rx="24" fill="#10284c"/>
+  <rect x="14" y="14" width="68" height="68" rx="20" fill="#14355f"/>
+  <path d="M30 34 19 27 18 41 29 42Z" fill="#60cbff"/>
+  <path d="M66 34 77 27 78 41 67 42Z" fill="#60cbff"/>
+  <path d="M31 49c0-10 6-18 17-21" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M65 49c0-10-6-18-17-21" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M34 61c7 8 21 8 28 0" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="48" cy="49" r="10" fill="#eef7ff"/>
+  <circle cx="44" cy="46" r="2.6" fill="#14355f"/>
+  <circle cx="52" cy="46" r="2.6" fill="#14355f"/>
+</svg>"##
+    )
+}
+
 async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     if !state.enable_terminal {
         return Html(
@@ -199,13 +216,53 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       height: 100vh;
     }
     .head {
-      display: grid;
-      grid-template-columns: 180px 1fr;
-      gap: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
       padding: 10px 14px;
       border-bottom: 1px solid var(--line);
       background: rgba(255,255,255,.02);
       font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .brand-badge {
+      width: 46px;
+      height: 46px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #163a65 0%, #10284c 100%);
+      box-shadow: 0 8px 18px rgba(7, 20, 40, .28);
+    }
+    .brand-mark {
+      display: block;
+      width: 34px;
+      height: 34px;
+    }
+    .brand-copy {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+    .brand-title {
+      display: block;
+      color: #f2f7ff;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -.02em;
+    }
+    .brand-sub {
+      color: #9fb5d7;
+      font-size: 13px;
+      line-height: 1.45;
     }
     .terminal-wrap {
       position: relative;
@@ -275,8 +332,13 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
 <body>
   <div class="shell">
     <div class="head">
-      <strong>OpenClaw Terminal</strong>
-      <span class="muted">Commands sent from the home page run directly in this terminal window.</span>
+      <div class="brand-row">
+        <div class="brand-badge">__BRAND_MARK__</div>
+        <div class="brand-copy">
+          <strong class="brand-title">OpenClaw Terminal</strong>
+          <span class="brand-sub">Commands sent from the home page run directly in this terminal window.</span>
+        </div>
+      </div>
     </div>
     <div class="terminal-wrap">
       <div id="terminalShell" class="terminal-shell"></div>
@@ -525,7 +587,7 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
   </script>
 </body>
 </html>"##
-            .to_string(),
+            .replace("__BRAND_MARK__", &openclaw_brand_svg("brand-mark")),
     )
 }
 
@@ -1158,5 +1220,13 @@ mod tests {
             TerminalClientAction::Input(data) => assert_eq!(data, b"echo hello\n"),
             TerminalClientAction::Resize(_) => panic!("expected input action"),
         }
+    }
+
+    #[test]
+    fn brand_logo_uses_fixed_aspect_svg() {
+        let svg = openclaw_brand_svg("brand-mark");
+
+        assert!(svg.contains("class=\"brand-mark\""));
+        assert!(svg.contains("preserveAspectRatio=\"xMidYMid meet\""));
     }
 }
