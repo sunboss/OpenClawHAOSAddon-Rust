@@ -705,6 +705,7 @@ async fn proxy_gateway_ws(
         "authorization",
         "user-agent",
         "sec-websocket-protocol",
+        "sec-websocket-extensions",
     ] {
         if let Some(value) = headers.get(header) {
             upstream_request.headers_mut().insert(
@@ -725,6 +726,16 @@ async fn proxy_gateway_ws(
         upstream_request
             .headers_mut()
             .insert(HeaderName::from_static("x-forwarded-host"), host.clone());
+        if let Some(port) = forwarded_port_from_host(host) {
+            upstream_request
+                .headers_mut()
+                .insert(HeaderName::from_static("x-forwarded-port"), port);
+        }
+        if let Some(forwarded) = forwarded_header_value(Some(host), peer_addr, "https") {
+            upstream_request
+                .headers_mut()
+                .insert(HeaderName::from_static("forwarded"), forwarded);
+        }
     }
     upstream_request.headers_mut().insert(
         HeaderName::from_static("x-forwarded-proto"),
@@ -847,6 +858,14 @@ async fn proxy_http_request(
         builder = builder.header("x-forwarded-proto", "https");
         if let Some(host) = parts.headers.get("host") {
             builder = builder.header("x-forwarded-host", host);
+            if let Some(port) = forwarded_port_from_host(host) {
+                builder = builder.header("x-forwarded-port", port);
+            }
+            if let Some(peer_addr) = peer_addr
+                && let Some(forwarded) = forwarded_header_value(Some(host), peer_addr, "https")
+            {
+                builder = builder.header("forwarded", forwarded);
+            }
         }
         if let Some(peer_addr) = peer_addr {
             builder = builder.header("x-forwarded-for", peer_addr.ip().to_string());
@@ -988,6 +1007,28 @@ fn fallback_ui_response() -> Response<Body> {
     .into_response()
 }
 
+fn forwarded_port_from_host(host: &HeaderValue) -> Option<HeaderValue> {
+    let host = host.to_str().ok()?;
+    let port = host.rsplit_once(':')?.1;
+    HeaderValue::from_str(port).ok()
+}
+
+fn forwarded_header_value(
+    host: Option<&HeaderValue>,
+    peer_addr: SocketAddr,
+    proto: &str,
+) -> Option<HeaderValue> {
+    let host = host
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let mut forwarded = format!("for={};proto={proto}", peer_addr.ip());
+    if !host.is_empty() {
+        forwarded.push_str(";host=");
+        forwarded.push_str(host);
+    }
+    HeaderValue::from_str(&forwarded).ok()
+}
+
 fn should_skip_header(name: &HeaderName, preserve_host: bool) -> bool {
     let lower = name.as_str().to_ascii_lowercase();
     if preserve_host {
@@ -1008,4 +1049,25 @@ fn should_skip_response_header(name: &HeaderName) -> bool {
         name.as_str().to_ascii_lowercase().as_str(),
         "content-length" | "connection" | "transfer-encoding"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forwarded_helpers_keep_host_and_port() {
+        let host = HeaderValue::from_static("192.168.1.122:18789");
+        let peer_addr: SocketAddr = "192.168.1.142:51234".parse().expect("socket addr");
+
+        let port = forwarded_port_from_host(&host).expect("forwarded port");
+        let forwarded =
+            forwarded_header_value(Some(&host), peer_addr, "https").expect("forwarded header");
+
+        assert_eq!(port.to_str().expect("port str"), "18789");
+        assert_eq!(
+            forwarded.to_str().expect("forwarded str"),
+            "for=192.168.1.142;proto=https;host=192.168.1.122:18789"
+        );
+    }
 }

@@ -557,9 +557,11 @@ fn build_control_ui_allowed_origins(settings: &RuntimeSettings) -> Vec<String> {
     let https_port = settings.https_port;
 
     if settings.access_mode == "lan_https" {
-        if let Some(ip) = detect_lan_ip() {
+        for ip in detect_lan_ips() {
             origins.push(format!("https://{ip}:{https_port}"));
         }
+        origins.push(format!("https://localhost:{https_port}"));
+        origins.push(format!("https://127.0.0.1:{https_port}"));
         origins.push(format!("https://homeassistant.local:{https_port}"));
         origins.push(format!("https://homeassistant:{https_port}"));
     }
@@ -579,6 +581,46 @@ fn build_control_ui_allowed_origins(settings: &RuntimeSettings) -> Vec<String> {
     origins.sort();
     origins.dedup();
     origins
+}
+
+fn detect_lan_ips() -> Vec<String> {
+    let mut ips = detect_lan_ips_from_ip_command();
+    if ips.is_empty()
+        && let Some(ip) = detect_lan_ip()
+    {
+        ips.push(ip);
+    }
+    ips.sort();
+    ips.dedup();
+    ips
+}
+
+fn detect_lan_ips_from_ip_command() -> Vec<String> {
+    let output = match StdCommand::new("ip")
+        .args(["-o", "-4", "addr", "show", "up", "scope", "global"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => return Vec::new(),
+    };
+
+    parse_ipv4_addrs_from_ip_addr_output(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_ipv4_addrs_from_ip_addr_output(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            while let Some(part) = parts.next() {
+                if part == "inet" {
+                    let cidr = parts.next()?;
+                    return cidr.split('/').next().map(|ip| ip.to_string());
+                }
+            }
+            None
+        })
+        .collect()
 }
 
 fn detect_lan_ip() -> Option<String> {
@@ -605,7 +647,10 @@ fn write_gateway_token_file(args: &HaosEntryArgs, token: &str) -> bool {
 fn ensure_certificate_files(args: &HaosEntryArgs) -> bool {
     let gateway_key = args.cert_dir.join("gateway.key");
     let gateway_crt = args.cert_dir.join("gateway.crt");
-    if !gateway_key.exists() || !gateway_crt.exists() {
+    if !gateway_key.exists()
+        || !gateway_crt.exists()
+        || certificate_needs_regeneration(&gateway_crt)
+    {
         let status = StdCommand::new("openssl")
             .args(["req", "-x509", "-nodes", "-newkey", "rsa:2048", "-keyout"])
             .arg(&gateway_key)
@@ -639,8 +684,26 @@ fn ensure_certificate_files(args: &HaosEntryArgs) -> bool {
         return false;
     }
     let _ = set_mode_600(&gateway_key);
+    let _ = set_mode_600(&ca_target);
     let _ = set_mode_600(&args.openclaw_config_path);
     true
+}
+
+fn certificate_renew_before_seconds() -> u64 {
+    30 * 24 * 60 * 60
+}
+
+fn certificate_needs_regeneration(cert_path: &Path) -> bool {
+    let renew_before = certificate_renew_before_seconds().to_string();
+    let status = StdCommand::new("openssl")
+        .args(["x509", "-checkend", &renew_before, "-noout", "-in"])
+        .arg(cert_path)
+        .status();
+
+    match status {
+        Ok(status) => !status.success(),
+        Err(_) => true,
+    }
 }
 
 #[cfg(unix)]
@@ -1304,5 +1367,24 @@ mod tests {
     #[test]
     fn startup_doctor_runs_in_fix_mode() {
         assert_eq!(startup_doctor_args(), ["doctor", "--fix"]);
+    }
+
+    #[test]
+    fn parse_ipv4_addrs_extracts_all_global_addresses() {
+        let output = "\
+2: end0    inet 192.168.1.122/24 brd 192.168.1.255 scope global dynamic end0\n\
+3: wlan0   inet 10.0.0.8/24 brd 10.0.0.255 scope global wlan0\n";
+
+        let ips = parse_ipv4_addrs_from_ip_addr_output(output);
+
+        assert_eq!(
+            ips,
+            vec!["192.168.1.122".to_string(), "10.0.0.8".to_string()]
+        );
+    }
+
+    #[test]
+    fn certificate_renew_window_is_thirty_days() {
+        assert_eq!(certificate_renew_before_seconds(), 2_592_000);
     }
 }
