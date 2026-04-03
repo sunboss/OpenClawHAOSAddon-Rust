@@ -591,10 +591,10 @@ fn commands_content() -> String {
         ("网关日志", "tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
         ("安全审计", "openclaw security audit --deep"),
         ("记忆状态", "openclaw memory status --deep"),
-        ("重启网关", "openclaw gateway restart"),
+        ("重启网关", "curl -fsS -X POST http://127.0.0.1:48100/action/restart"),
         (
             "检查 npm 版本",
-            "curl -fsSL https://registry.npmjs.org/openclaw/latest | jq -r '\"npm latest: \" + .version'",
+            "npm view openclaw version",
         ),
     ]
     .iter()
@@ -687,13 +687,6 @@ fn logs_content() -> String {
         <h2>日志与诊断</h2>
         <p class="muted">当你需要持续观察运行输出、排查报错、或者确认修复结果时，就来这一页。上面的按钮会把常用日志命令直接送到下面的日志终端里执行。</p>
       </div>
-    </div>
-
-    <div class="toolbar-grid">
-      <div class="ghost-field">来源：OpenClaw</div>
-      <div class="ghost-field">行数：200</div>
-      <div class="ghost-field">时间范围：全部</div>
-      <div class="ghost-field wide">关键字过滤…</div>
     </div>
 
     <div class="action-row">{log_actions}</div>

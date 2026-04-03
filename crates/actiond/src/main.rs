@@ -6,8 +6,9 @@ use axum::{
     routing::{get, post},
 };
 use serde::Serialize;
-use std::{collections::HashMap, env, net::SocketAddr, process::Stdio, sync::Arc};
+use std::{collections::HashMap, env, fs, net::SocketAddr, process::Stdio, sync::Arc};
 use tokio::process::Command;
+use tokio::time::{Duration, sleep};
 
 #[derive(Clone)]
 struct AppState {
@@ -63,6 +64,10 @@ async fn run_action(
     State(state): State<AppState>,
     Path(action): Path<String>,
 ) -> impl IntoResponse {
+    if action == "restart" {
+        return restart_managed_gateway().await;
+    }
+
     let Some(cmd) = state.commands.get(action.as_str()) else {
         return (
             StatusCode::NOT_FOUND,
@@ -79,6 +84,103 @@ async fn run_action(
 
     let timeout_secs = if action == "restart" { 60 } else { 20 };
     run_command(&action, cmd, timeout_secs).await
+}
+
+async fn restart_managed_gateway() -> (StatusCode, Json<ActionResponse>) {
+    let pid_path = "/run/openclaw-rs/openclaw-gateway.pid";
+    let old_pid = match fs::read_to_string(pid_path) {
+        Ok(value) => value.trim().to_string(),
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ActionResponse {
+                    ok: false,
+                    action: "restart".to_string(),
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error: Some(format!("missing_pid_file: {err}")),
+                }),
+            );
+        }
+    };
+
+    if old_pid.is_empty() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ActionResponse {
+                ok: false,
+                action: "restart".to_string(),
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error: Some("empty_gateway_pid".to_string()),
+            }),
+        );
+    }
+
+    let kill_output = match Command::new("kill").args(["-TERM", &old_pid]).output().await {
+        Ok(output) => output,
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ActionResponse {
+                    ok: false,
+                    action: "restart".to_string(),
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error: Some(err.to_string()),
+                }),
+            );
+        }
+    };
+
+    if !kill_output.status.success() {
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(ActionResponse {
+                ok: false,
+                action: "restart".to_string(),
+                exit_code: kill_output.status.code(),
+                stdout: String::from_utf8_lossy(&kill_output.stdout).trim().to_string(),
+                stderr: String::from_utf8_lossy(&kill_output.stderr).trim().to_string(),
+                error: Some("kill_failed".to_string()),
+            }),
+        );
+    }
+
+    for _ in 0..100 {
+        sleep(Duration::from_millis(200)).await;
+        if let Ok(value) = fs::read_to_string(pid_path) {
+            let new_pid = value.trim().to_string();
+            if !new_pid.is_empty() && new_pid != old_pid {
+                return (
+                    StatusCode::OK,
+                    Json(ActionResponse {
+                        ok: true,
+                        action: "restart".to_string(),
+                        exit_code: Some(0),
+                        stdout: format!("gateway restarted: {old_pid} -> {new_pid}"),
+                        stderr: String::new(),
+                        error: None,
+                    }),
+                );
+            }
+        }
+    }
+
+    (
+        StatusCode::GATEWAY_TIMEOUT,
+        Json(ActionResponse {
+            ok: false,
+            action: "restart".to_string(),
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some("restart_timeout".to_string()),
+        }),
+    )
 }
 
 async fn run_command(
