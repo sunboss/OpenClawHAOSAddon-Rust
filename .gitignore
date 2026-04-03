@@ -2,3 +2,5 @@
 **/*.rs.bk
 .idea/
 .vscode/
+preview-*.html
+docs/_scratch/

@@ -659,7 +659,11 @@ fn detect_openclaw_version(gateway_bin: &str) -> String {
         .and_then(|output| {
             output
                 .split_whitespace()
-                .map(|token| token.trim_matches(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-')))
+                .map(|token| {
+                    token.trim_matches(|c: char| {
+                        !(c.is_ascii_alphanumeric() || c == '.' || c == '-')
+                    })
+                })
                 .find(|token| {
                     let mut parts = token.split('.');
                     let first = parts.next().unwrap_or_default();
@@ -1180,10 +1184,10 @@ async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receive
         _ = sleep(Duration::from_secs(15)) => {}
     }
 
-    println!("--- openclaw doctor ---");
+    println!("--- openclaw doctor --fix ---");
     let mut command = Command::new(&gateway_bin);
     apply_child_env(&mut command);
-    let mut child = match command.arg("doctor").spawn() {
+    let mut child = match command.args(startup_doctor_args()).spawn() {
         Ok(child) => child,
         Err(err) => {
             eprintln!("addon-supervisor: failed to start doctor: {err}");
@@ -1204,6 +1208,10 @@ async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receive
         }
     }
     println!("--- end doctor ---");
+}
+
+fn startup_doctor_args() -> [&'static str; 2] {
+    ["doctor", "--fix"]
 }
 
 fn apply_child_env(command: &mut Command) {
@@ -1237,5 +1245,64 @@ fn apply_child_env(command: &mut Command) {
         if let Ok(value) = env::var(key) {
             command.env(key, value);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn sample_settings() -> RuntimeSettings {
+        RuntimeSettings {
+            timezone: "Asia/Shanghai".to_string(),
+            enable_terminal: true,
+            terminal_port: 7681,
+            gateway_mode: "gateway".to_string(),
+            gateway_remote_url: String::new(),
+            gateway_public_url: String::new(),
+            https_port: 9443,
+            access_mode: "lan_https".to_string(),
+            enable_openai_api: false,
+            auto_configure_mcp: true,
+            homeassistant_token: "token".to_string(),
+            auto_approve_pairing: false,
+            run_doctor_on_start: false,
+        }
+    }
+
+    #[test]
+    fn allowed_origins_include_expected_lan_and_public_hosts() {
+        let mut settings = sample_settings();
+        settings.gateway_public_url = "https://gateway.example.com/ui?x=1".to_string();
+
+        let origins = build_control_ui_allowed_origins(&settings);
+
+        assert!(origins.contains(&"https://gateway.example.com".to_string()));
+        assert!(origins.contains(&"https://homeassistant.local:9443".to_string()));
+        assert!(origins.contains(&"https://homeassistant:9443".to_string()));
+
+        let unique_count = origins.iter().collect::<HashSet<_>>().len();
+        assert_eq!(origins.len(), unique_count);
+
+        let mut sorted = origins.clone();
+        sorted.sort();
+        assert_eq!(origins, sorted);
+    }
+
+    #[test]
+    fn allowed_origins_ignore_invalid_public_url_without_lan_mode() {
+        let mut settings = sample_settings();
+        settings.access_mode = "remote_https".to_string();
+        settings.gateway_public_url = "not-a-url".to_string();
+
+        let origins = build_control_ui_allowed_origins(&settings);
+
+        assert!(origins.is_empty());
+    }
+
+    #[test]
+    fn startup_doctor_runs_in_fix_mode() {
+        assert_eq!(startup_doctor_args(), ["doctor", "--fix"]);
     }
 }

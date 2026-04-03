@@ -119,7 +119,11 @@ async fn restart_managed_gateway() -> (StatusCode, Json<ActionResponse>) {
         );
     }
 
-    let kill_output = match Command::new("kill").args(["-TERM", &old_pid]).output().await {
+    let kill_output = match Command::new("kill")
+        .args(["-TERM", &old_pid])
+        .output()
+        .await
+    {
         Ok(output) => output,
         Err(err) => {
             return (
@@ -143,8 +147,12 @@ async fn restart_managed_gateway() -> (StatusCode, Json<ActionResponse>) {
                 ok: false,
                 action: "restart".to_string(),
                 exit_code: kill_output.status.code(),
-                stdout: String::from_utf8_lossy(&kill_output.stdout).trim().to_string(),
-                stderr: String::from_utf8_lossy(&kill_output.stderr).trim().to_string(),
+                stdout: String::from_utf8_lossy(&kill_output.stdout)
+                    .trim()
+                    .to_string(),
+                stderr: String::from_utf8_lossy(&kill_output.stderr)
+                    .trim()
+                    .to_string(),
                 error: Some("kill_failed".to_string()),
             }),
         );

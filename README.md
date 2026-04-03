@@ -28,3 +28,4 @@ continuing to consume upstream `openclaw` and `mcporter`.
 - `config.yaml`: HA add-on manifest for the Rust rewrite project
 - `Dockerfile`: builds the Rust binaries and bundles upstream `openclaw`
 - `run.sh`: ultra-thin compatibility wrapper; no longer the primary startup path
+- `docs/MAINTAINER_CONTEXT.md`: persistent handoff notes for future edits and debugging

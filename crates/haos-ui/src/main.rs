@@ -190,16 +190,26 @@ fn collect_system_snapshot() -> SystemSnapshot {
         .unwrap_or_else(|| "不可用".to_string());
     let cpu_percent = load_percent_snapshot().unwrap_or(0);
 
-    let memory_used = match (parse_meminfo_kib("MemTotal:"), parse_meminfo_kib("MemAvailable:")) {
+    let memory_used = match (
+        parse_meminfo_kib("MemTotal:"),
+        parse_meminfo_kib("MemAvailable:"),
+    ) {
         (Some(total), Some(available)) if total > available => {
             let used = (total - available) * 1024;
             let total_bytes = total * 1024;
-            format!("{}/{}", format_bytes_gib(used), format_bytes_gib(total_bytes))
+            format!(
+                "{}/{}",
+                format_bytes_gib(used),
+                format_bytes_gib(total_bytes)
+            )
         }
         _ => "不可用".to_string(),
     };
 
-    let memory_percent = match (parse_meminfo_kib("MemTotal:"), parse_meminfo_kib("MemAvailable:")) {
+    let memory_percent = match (
+        parse_meminfo_kib("MemTotal:"),
+        parse_meminfo_kib("MemAvailable:"),
+    ) {
         (Some(total), Some(available)) if total > available && total > 0 => {
             (((total - available) * 100) / total).min(100) as u8
         }
@@ -331,14 +341,36 @@ fn terminal_card(title: &str, subtitle: &str, button_label: &str) -> String {
     )
 }
 
+fn service_badge(label: &str, pid: &str) -> String {
+    let (state_class, state_text, pid_text) = if pid != "-" {
+        ("is-online", "在线", format!("PID {pid}"))
+    } else {
+        ("is-offline", "待启动", "未检测到 PID".to_string())
+    };
+
+    format!(
+        r#"<article class="service-badge {state_class}">
+  <div class="service-badge-top">
+    <span class="service-name">{label}</span>
+    <span class="service-state">{state_text}</span>
+  </div>
+  <div class="service-meta">{pid_text}</div>
+</article>"#
+    )
+}
+
 fn pid_row(gateway_pid: &str, ingress_pid: &str, ui_pid: &str, action_pid: &str) -> String {
     format!(
-        r#"<div class="pid-grid pid-grid-row">
-  <span class="pid-chip">Gateway {gateway_pid}</span>
-  <span class="pid-chip">Ingress {ingress_pid}</span>
-  <span class="pid-chip">UI {ui_pid}</span>
-  <span class="pid-chip">Action {action_pid}</span>
-</div>"#
+        r#"<div class="service-grid">
+  {gateway}
+  {ingress}
+  {ui}
+  {action}
+</div>"#,
+        gateway = service_badge("Gateway", gateway_pid),
+        ingress = service_badge("Ingress", ingress_pid),
+        ui = service_badge("UI", ui_pid),
+        action = service_badge("Action", action_pid),
     )
 }
 
@@ -365,14 +397,64 @@ fn home_content(config: &PageConfig) -> String {
     } else {
         ("待检查", "关键进程数量不足", "tone-danger")
     };
+    let live_row_class = match health_tone {
+        "tone-good" => "is-good",
+        "tone-warn" => "is-warn",
+        _ => "is-danger",
+    };
 
     format!(
         r#"<div class="page-grid">
-  <section class="summary-strip">
-    {health}
-    {runtime}
-    {https}
-    {openclaw_runtime}
+  <section class="card hero-card">
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">首页</div>
+        <h2>运行状态总览</h2>
+        <p class="muted">首页只保留运行状态、版本信息、资源监控和高频入口。命令和日志拆出去后，首屏更轻，也更适合长期维护。</p>
+      </div>
+      <div class="header-actions">
+        {open_gateway}
+        {goto_commands}
+      </div>
+    </div>
+
+    <div class="status-panel">
+      <section class="panel-left">
+        <div class="live-row {live_row_class}">
+          <span class="live-dot"></span>
+          <div class="live-copy">
+            <strong>{health_text}</strong>
+            <p class="muted">{health_sub}</p>
+          </div>
+        </div>
+
+        <div class="summary-strip status-summary-strip">
+          {runtime}
+          {https}
+          {openclaw_runtime}
+        </div>
+
+        <div class="stats-grid status-stats-grid">
+          {stat_access}
+          {stat_mode}
+          {stat_addon}
+          {stat_openclaw}
+        </div>
+
+        <div class="note-box">如果你需要处理设备授权，请进入命令行页执行授权命令。常用命令是 <code>openclaw devices list</code> 和 <code>openclaw devices approve --latest</code>。</div>
+      </section>
+
+      <aside class="panel-right">
+        <div class="panel-title-row">
+          <div>
+            <div class="eyebrow">进程面板</div>
+            <h3>服务与 PID</h3>
+          </div>
+          {health}
+        </div>
+        {pid_row}
+      </aside>
+    </div>
   </section>
 
   <section class="card">
@@ -390,32 +472,6 @@ fn home_content(config: &PageConfig) -> String {
       {resource_openclaw_uptime}
     </div>
   </section>
-
-  <section class="card hero-card">
-    <div class="card-head">
-      <div>
-        <div class="eyebrow">首页</div>
-        <h2>运行状态总览</h2>
-        <p class="muted">首页只保留运行状态、版本信息、资源监控和高频入口。命令和日志拆出去后，首屏更轻，也更适合长期维护。</p>
-      </div>
-      <div class="header-actions">
-        {open_gateway}
-        {goto_commands}
-      </div>
-    </div>
-
-    <div class="stats-grid">
-      {stat_access}
-      {stat_mode}
-      {stat_addon}
-      {stat_openclaw}
-    </div>
-
-    <div class="note-box">如果你需要处理设备授权，请进入命令行页执行授权命令。常用命令是 <code>openclaw devices list</code> 和 <code>openclaw devices approve --latest</code>。</div>
-
-    {pid_row}
-  </section>
-
 </div>"#,
         health = summary_strip("总状态", health_text, health_sub, health_tone),
         runtime = summary_strip(
@@ -439,7 +495,11 @@ fn home_content(config: &PageConfig) -> String {
         open_gateway = primary_button("打开网关", "ocOpenGateway()"),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
-        stat_mode = stat_tile("网关模式", &config.gateway_mode, "当前 OpenClaw 网关运行模式"),
+        stat_mode = stat_tile(
+            "网关模式",
+            &config.gateway_mode,
+            "当前 OpenClaw 网关运行模式"
+        ),
         stat_addon = stat_tile("Add-on 版本", &config.addon_version, "插件发布版本"),
         stat_openclaw = stat_tile("OpenClaw 版本", &config.openclaw_version, "上游运行时版本"),
         pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid, &action_pid),
@@ -478,6 +538,9 @@ fn home_content(config: &PageConfig) -> String {
             "tone-blue",
             "适合判断 Gateway 是否刚重启，或是否发生过短暂掉线。"
         ),
+        live_row_class = live_row_class,
+        health_text = health_text,
+        health_sub = health_sub,
     )
 }
 
@@ -591,11 +654,11 @@ fn commands_content() -> String {
         ("网关日志", "tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
         ("安全审计", "openclaw security audit --deep"),
         ("记忆状态", "openclaw memory status --deep"),
-        ("重启网关", "curl -fsS -X POST http://127.0.0.1:48100/action/restart"),
         (
-            "检查 npm 版本",
-            "npm view openclaw version",
+            "重启网关",
+            "curl -fsS -X POST http://127.0.0.1:48100/action/restart",
         ),
+        ("检查 npm 版本", "npm view openclaw version"),
     ]
     .iter()
     .map(|(label, cmd)| action_button(label, cmd))
@@ -784,14 +847,31 @@ fn render_shell(
     .stat-label,.resource-label {{ color:var(--muted); font-size:13px; font-weight:800; }}
     .stat-value, .resource-value {{ font-size:24px; font-weight:900; line-height:1.1; letter-spacing:-.03em; word-break:break-word; }}
     .stat-sub, .resource-sub, .info-tile p, .soft-card p {{ color:#607a99; font-size:13px; line-height:1.7; margin:0; }}
-    .status-panel {{ display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:18px; align-items:start; }}
-    .live-row {{ display:flex; align-items:center; gap:12px; font-size:18px; margin-bottom:14px; }}
-    .live-dot {{ width:10px; height:10px; border-radius:999px; background:#22b572; box-shadow:0 0 0 6px rgba(34,181,114,.12); }}
+    .status-panel {{ display:grid; grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr); gap:18px; align-items:start; }}
+    .status-summary-strip {{ margin-bottom:16px; }}
+    .status-stats-grid {{ margin:0 0 16px; }}
+    .live-row {{ display:flex; align-items:flex-start; gap:14px; font-size:18px; margin-bottom:18px; padding:16px 18px; border-radius:18px; border:1px solid #dfe8f4; background:linear-gradient(180deg,#fbfdff 0%,#f4f8ff 100%); }}
+    .live-row strong {{ display:block; font-size:20px; line-height:1.2; margin-bottom:4px; }}
+    .live-copy p {{ margin:0; }}
+    .live-dot {{ width:10px; height:10px; border-radius:999px; background:#22b572; box-shadow:0 0 0 6px rgba(34,181,114,.12); margin-top:6px; flex:0 0 auto; }}
+    .live-row.is-warn .live-dot {{ background:#d39c1f; box-shadow:0 0 0 6px rgba(211,156,31,.14); }}
+    .live-row.is-danger .live-dot {{ background:#d85a5a; box-shadow:0 0 0 6px rgba(216,90,90,.14); }}
     .pill-inline,.pid-chip,.pill {{ display:inline-flex; align-items:center; gap:8px; border-radius:999px; padding:8px 14px; background:#eef3ff; color:#2a54d8; font-weight:800; }}
     .pill {{ justify-content:space-between; min-width:150px; }}
     .panel-left,.panel-right {{ border:1px solid var(--line); border-radius:20px; background:#fff; padding:20px; }}
-    .pid-grid {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }}
-    .pid-grid-row {{ border:1px dashed #d5e2f2; border-radius:18px; padding:14px 16px; background:#fbfdff; }}
+    .panel-right {{ background:linear-gradient(180deg,#f9fbff 0%,#f4f8ff 100%); }}
+    .panel-title-row {{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:14px; }}
+    .panel-title-row h3 {{ margin:0; }}
+    .service-grid {{ display:grid; gap:12px; }}
+    .service-badge {{ border:1px solid #d7e3f4; border-radius:18px; background:#fff; padding:14px 16px; }}
+    .service-badge.is-online {{ background:linear-gradient(180deg,#fbfffd 0%,#f2fbf6 100%); border-color:#cae8d5; }}
+    .service-badge.is-offline {{ background:linear-gradient(180deg,#fffdfd 0%,#fff4f4 100%); border-color:#efd1d1; }}
+    .service-badge-top {{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }}
+    .service-name {{ font-size:15px; font-weight:900; color:#223a59; }}
+    .service-state {{ display:inline-flex; align-items:center; min-height:28px; padding:0 10px; border-radius:999px; font-size:12px; font-weight:900; }}
+    .service-badge.is-online .service-state {{ background:#e6f7ed; color:#188453; }}
+    .service-badge.is-offline .service-state {{ background:#fdeaea; color:#ba4343; }}
+    .service-meta {{ color:#5e7694; font-size:13px; font-weight:700; }}
     .note-box {{ padding:14px 16px; border-radius:16px; background:#f6f9fc; color:#4d6784; line-height:1.75; }}
     .resource-card {{ display:flex; flex-direction:column; gap:12px; }}
     .resource-top {{ display:flex; justify-content:space-between; gap:12px; align-items:center; }}
@@ -1013,7 +1093,11 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
     let config = &state.config;
     let gateway_pid = pid_value("openclaw-gateway");
     let node_pid = pid_value("openclaw-node");
-    let display_gateway_pid = if gateway_pid != "-" { gateway_pid } else { node_pid };
+    let display_gateway_pid = if gateway_pid != "-" {
+        gateway_pid
+    } else {
+        node_pid
+    };
 
     Html(format!(
         r#"<div class="eyebrow">运行摘要</div>
@@ -1076,4 +1160,37 @@ async fn main() {
         .expect("bind ui listener");
     println!("haos-ui: listening on http://{addr}");
     axum::serve(listener, app).await.expect("serve ui");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commands_page_uses_supervisor_restart_endpoint() {
+        let html = commands_content();
+
+        assert!(html.contains("curl -fsS -X POST http://127.0.0.1:48100/action/restart"));
+        assert!(!html.contains("openclaw gateway restart"));
+    }
+
+    #[test]
+    fn commands_page_uses_real_npm_and_pairing_commands() {
+        let html = commands_content();
+
+        assert!(html.contains("npm view openclaw version"));
+        assert!(html.contains("openclaw devices approve --latest"));
+        assert!(!html.contains("https://registry.npmjs.org/openclaw/latest"));
+    }
+
+    #[test]
+    fn service_badge_shows_state_and_pid() {
+        let online = service_badge("Gateway", "1234");
+        let offline = service_badge("Gateway", "-");
+
+        assert!(online.contains("在线"));
+        assert!(online.contains("PID 1234"));
+        assert!(offline.contains("待启动"));
+        assert!(offline.contains("未检测到 PID"));
+    }
 }
