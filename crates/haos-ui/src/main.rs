@@ -4,12 +4,10 @@ use axum::{
     response::{Html, IntoResponse},
     routing::get,
 };
-use std::{env, fs, net::SocketAddr, process::Command, sync::Arc};
+use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command};
 
 #[derive(Clone)]
-struct AppState {
-    config: Arc<PageConfig>,
-}
+struct AppState;
 
 #[derive(Clone, Debug)]
 struct PageConfig {
@@ -46,6 +44,7 @@ enum NavPage {
 
 impl PageConfig {
     fn from_env() -> Self {
+        let (web_status, memory_status) = live_provider_statuses();
         Self {
             addon_version: env_value("ADDON_VERSION", "unknown"),
             access_mode: env_value("ACCESS_MODE", "lan_https"),
@@ -54,10 +53,65 @@ impl PageConfig {
             openclaw_version: env_value("OPENCLAW_VERSION", "unknown"),
             https_port: env_value("HTTPS_PORT", "18789"),
             mcp_status: env_value("MCP_STATUS", "disabled"),
-            web_status: env_value("WEB_SEARCH_PROVIDER", "disabled"),
-            memory_status: env_value("MEMORY_SEARCH_PROVIDER", "disabled"),
+            web_status,
+            memory_status,
         }
     }
+}
+
+fn live_provider_statuses() -> (String, String) {
+    let config = load_runtime_config();
+    let web_status = provider_status_from_config(
+        config.as_ref(),
+        &["tools.web.search.provider", "tools.webSearch.provider"],
+        &env_value("WEB_SEARCH_PROVIDER", "disabled"),
+    );
+    let memory_status = provider_status_from_config(
+        config.as_ref(),
+        &[
+            "agents.defaults.memorySearch.provider",
+            "agents.defaults.memory.search.provider",
+        ],
+        &env_value("MEMORY_SEARCH_PROVIDER", "disabled"),
+    );
+    (web_status, memory_status)
+}
+
+fn load_runtime_config() -> Option<serde_json::Value> {
+    fs::read_to_string(runtime_config_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+}
+
+fn runtime_config_path() -> PathBuf {
+    env::var("OPENCLAW_CONFIG_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/config/.openclaw/openclaw.json"))
+}
+
+fn first_string_path(config: &serde_json::Value, paths: &[&str]) -> Option<String> {
+    paths.iter().find_map(|path| string_path(config, path))
+}
+
+fn provider_status_from_config(
+    config: Option<&serde_json::Value>,
+    paths: &[&str],
+    fallback: &str,
+) -> String {
+    config
+        .and_then(|value| first_string_path(value, paths))
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn string_path(config: &serde_json::Value, path: &str) -> Option<String> {
+    let mut current = config;
+    for part in path.split('.').filter(|part| !part.is_empty()) {
+        current = current.get(part)?;
+    }
+    current
+        .as_str()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -444,6 +498,7 @@ fn home_content(config: &PageConfig) -> String {
       </div>
       <div class="header-actions">
         {open_gateway}
+        {open_cli}
         {goto_commands}
       </div>
     </div>
@@ -523,6 +578,7 @@ fn home_content(config: &PageConfig) -> String {
             "tone-violet"
         ),
         open_gateway = primary_button("打开网关", "ocOpenGateway()"),
+        open_cli = secondary_button("OpenClaw CLI", "ocRunCommand('openclaw tui')"),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
         stat_mode = stat_tile(
@@ -643,6 +699,7 @@ fn config_content(config: &PageConfig) -> String {
     <h3>建议操作</h3>
     <div class="action-row">
       <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
+      <button class="btn" type="button" onclick="ocRunCommand('openclaw tui')">OpenClaw CLI</button>
       <button class="btn" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
       <button class="btn" type="button" onclick="ocRunCommand('openclaw onboard')">初始化向导</button>
       <button class="btn" type="button" onclick="ocRunCommand('openclaw doctor')">运行 doctor</button>
@@ -667,6 +724,7 @@ fn config_content(config: &PageConfig) -> String {
 
 fn commands_content() -> String {
     let setup_actions = [
+        ("OpenClaw CLI", "openclaw tui"),
         ("设备列表", "openclaw devices list"),
         ("批准最新配对", "openclaw devices approve --latest"),
         ("初始化向导", "openclaw onboard"),
@@ -1085,42 +1143,46 @@ fn render_shell(
 }
 
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
-    let config = &state.config;
+    let _ = state;
+    let config = PageConfig::from_env();
     render_shell(
-        config,
+        &config,
         NavPage::Home,
         "OpenClawHAOSAddon-Rust",
         "首页专门负责运行状态、资源监控和高频入口。把配置、命令和日志拆出去后，整体更轻，也更适合长期维护。",
-        &home_content(config),
+        &home_content(&config),
     )
 }
 
 async fn config_page(State(state): State<AppState>) -> impl IntoResponse {
-    let config = &state.config;
+    let _ = state;
+    let config = PageConfig::from_env();
     render_shell(
-        config,
+        &config,
         NavPage::Config,
         "基础配置",
         "这一页用来查看插件当前怎么运行、数据保存在什么位置，以及哪些能力已经启用。需要核对配置时先看这里，会比直接翻日志和命令更直观。",
-        &config_content(config),
+        &config_content(&config),
     )
 }
 
 async fn commands_page(State(state): State<AppState>) -> impl IntoResponse {
-    let config = &state.config;
+    let _ = state;
+    let config = PageConfig::from_env();
     render_shell(
-        config,
+        &config,
         NavPage::Commands,
         "命令行工作区",
-        "这一页保留高频控制按钮和终端。按钮显示中文，实际执行仍然是英文 OpenClaw 命令。",
+        "这一页保留高频控制按钮、OpenClaw CLI 和终端。按钮显示中文，实际执行仍然是英文 OpenClaw 命令。",
         &commands_content(),
     )
 }
 
 async fn logs_page(State(state): State<AppState>) -> impl IntoResponse {
-    let config = &state.config;
+    let _ = state;
+    let config = PageConfig::from_env();
     render_shell(
-        config,
+        &config,
         NavPage::Logs,
         "日志与诊断",
         "日志和诊断独立成页后，首页更轻，命令页也不会再被长输出挤满，排查问题时路径更清楚。",
@@ -1129,7 +1191,8 @@ async fn logs_page(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
-    let config = &state.config;
+    let _ = state;
+    let config = PageConfig::from_env();
     let gateway_pid = pid_value("openclaw-gateway");
     let node_pid = pid_value("openclaw-node");
     let display_gateway_pid = if gateway_pid != "-" {
@@ -1157,7 +1220,8 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn diag_partial(State(state): State<AppState>) -> impl IntoResponse {
-    let config = &state.config;
+    let _ = state;
+    let config = PageConfig::from_env();
     Html(format!(
         r#"<div class="eyebrow">能力摘要</div>
 <h2>快速诊断</h2>
@@ -1176,9 +1240,7 @@ async fn diag_partial(State(state): State<AppState>) -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() {
-    let app_state = AppState {
-        config: Arc::new(PageConfig::from_env()),
-    };
+    let app_state = AppState;
 
     let app = Router::new()
         .route("/", get(index))
@@ -1217,6 +1279,7 @@ mod tests {
     fn commands_page_uses_real_npm_and_pairing_commands() {
         let html = commands_content();
 
+        assert!(html.contains("openclaw tui"));
         assert!(html.contains("npm view openclaw version"));
         assert!(html.contains("openclaw devices approve --latest"));
         assert!(!html.contains("https://registry.npmjs.org/openclaw/latest"));
@@ -1240,6 +1303,43 @@ mod tests {
 
         assert!(html.contains("class=\"brand-mark\""));
         assert!(html.contains("preserveAspectRatio=\"xMidYMid meet\""));
+    }
+
+    #[test]
+    fn provider_status_prefers_live_config_paths() {
+        let config = serde_json::json!({
+            "tools": {
+                "web": {
+                    "search": {
+                        "provider": "firecrawl"
+                    }
+                }
+            },
+            "agents": {
+                "defaults": {
+                    "memorySearch": {
+                        "provider": "openai"
+                    }
+                }
+            }
+        });
+
+        let web = provider_status_from_config(
+            Some(&config),
+            &["tools.web.search.provider", "tools.webSearch.provider"],
+            "disabled",
+        );
+        let memory = provider_status_from_config(
+            Some(&config),
+            &[
+                "agents.defaults.memorySearch.provider",
+                "agents.defaults.memory.search.provider",
+            ],
+            "disabled",
+        );
+
+        assert_eq!(web, "firecrawl");
+        assert_eq!(memory, "openai");
     }
 
     #[test]

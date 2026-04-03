@@ -177,6 +177,11 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         return ExitCode::from(1);
     }
 
+    if let Err(err) = ensure_mcporter_config(&args) {
+        eprintln!("addon-supervisor: failed to prepare MCPorter config: {err}");
+        return ExitCode::from(1);
+    }
+
     if let Err(err) = ensure_home_symlinks(&args) {
         eprintln!("addon-supervisor: failed to prepare home links: {err}");
         return ExitCode::from(1);
@@ -304,10 +309,22 @@ fn prepare_directories(args: &HaosEntryArgs) -> std::io::Result<()> {
         &args.cert_dir,
         &args.backup_dir,
         &args.nginx_html_dir,
+        &PathBuf::from("/var/tmp/openclaw-compile-cache"),
     ] {
         fs::create_dir_all(path)?;
     }
     Ok(())
+}
+
+fn ensure_mcporter_config(args: &HaosEntryArgs) -> std::io::Result<()> {
+    if args.mcporter_config.exists() {
+        return Ok(());
+    }
+
+    if let Some(parent) = args.mcporter_config.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&args.mcporter_config, "{}\n")
 }
 
 fn ensure_home_symlinks(args: &HaosEntryArgs) -> std::io::Result<()> {
@@ -456,6 +473,7 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("OPENCLAW_WORKSPACE_DIR", &args.openclaw_workspace_dir);
         env::set_var("XDG_CONFIG_HOME", "/config");
         env::set_var("OPENCLAW_NO_RESPAWN", "1");
+        env::set_var("NODE_COMPILE_CACHE", "/var/tmp/openclaw-compile-cache");
         env::set_var("MCPORTER_HOME_DIR", &args.mcporter_home_dir);
         env::set_var("MCPORTER_CONFIG", &args.mcporter_config);
         env::set_var("ACTION_SERVER_PORT", args.action_server_port.to_string());
@@ -1252,6 +1270,10 @@ fn handle_auto_approve_output(output: std::process::Output) -> Duration {
         return Duration::from_secs(6);
     }
 
+    if is_no_pending_pairing_output(&combined) {
+        return Duration::from_secs(30);
+    }
+
     let detail = if combined.is_empty() {
         "unknown failure".to_string()
     } else {
@@ -1318,6 +1340,7 @@ fn apply_child_env(command: &mut Command) {
         "OPENCLAW_WORKSPACE_DIR",
         "XDG_CONFIG_HOME",
         "OPENCLAW_NO_RESPAWN",
+        "NODE_COMPILE_CACHE",
         "MCPORTER_HOME_DIR",
         "MCPORTER_CONFIG",
         "ACTION_SERVER_PORT",
@@ -1447,6 +1470,51 @@ mod tests {
         };
 
         assert_eq!(handle_auto_approve_output(output), Duration::from_secs(6));
+    }
+
+    #[test]
+    fn failed_auto_approve_with_no_pending_is_also_suppressed() {
+        let output = std::process::Output {
+            status: exit_status(1),
+            stdout: b"No pending device pairing requests to approve\n".to_vec(),
+            stderr: Vec::new(),
+        };
+
+        assert_eq!(handle_auto_approve_output(output), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn ensure_mcporter_config_creates_seed_file() {
+        let unique = format!("openclaw-test-{}", random::<u64>());
+        let root = std::env::temp_dir().join(unique);
+        let args = HaosEntryArgs {
+            options_file: root.join("options.json"),
+            openclaw_config_dir: root.join(".openclaw"),
+            openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
+            openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
+            mcporter_home_dir: root.join(".mcporter"),
+            mcporter_config: root.join(".mcporter").join("mcporter.json"),
+            cert_dir: root.join("certs"),
+            backup_dir: root.join("backup"),
+            nginx_html_dir: root.join("html"),
+            gateway_internal_port: 18790,
+            action_server_port: 48100,
+            ui_port: 48101,
+            gateway_bin: "openclaw".to_string(),
+            oc_config_bin: "oc-config".to_string(),
+            mcporter_bin: "mcporter".to_string(),
+            ui_bin: "haos-ui".to_string(),
+            action_bin: "actiond".to_string(),
+            ingress_bin: "ingressd".to_string(),
+            nginx_conf: root.join("nginx.conf"),
+        };
+
+        ensure_mcporter_config(&args).expect("seed mcporter config");
+
+        let contents = fs::read_to_string(&args.mcporter_config).expect("mcporter config");
+        assert_eq!(contents, "{}\n");
+
+        let _ = fs::remove_dir_all(root);
     }
 
     fn exit_status(code: i32) -> std::process::ExitStatus {
