@@ -2,7 +2,7 @@ use axum::{
     Router,
     body::{Body, Bytes, to_bytes},
     extract::{
-        ConnectInfo, Path, Request, State,
+        ConnectInfo, Path, Query, Request, State,
         ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode},
@@ -46,6 +46,11 @@ struct AppState {
 enum TerminalClientMessage {
     Input { data: String },
     Resize { cols: u16, rows: u16 },
+}
+
+#[derive(Default, Deserialize)]
+struct TerminalPageQuery {
+    command: Option<String>,
 }
 
 #[tokio::main]
@@ -178,13 +183,19 @@ fn openclaw_brand_svg(class_name: &str) -> String {
     )
 }
 
-async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
+async fn terminal_page(
+    Query(query): Query<TerminalPageQuery>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
     if !state.enable_terminal {
         return Html(
             r#"<!doctype html><meta charset="utf-8"><body style="font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:24px">Terminal is disabled.</body>"#
                 .to_string(),
         );
     }
+
+    let boot_command = serde_json::to_string(&query.command.unwrap_or_default())
+        .unwrap_or_else(|_| "\"\"".to_string());
 
     Html(
         r##"<!doctype html>
@@ -362,12 +373,14 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     const wsUrl = new URL("./ws", location.href);
     wsUrl.protocol = scheme + ":";
+    const bootCommand = __BOOT_COMMAND__;
     const pending = [];
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";
     const decoder = new TextDecoder();
     let statusResetTimer = null;
     let resizeTimer = null;
+    let bootCommandSent = false;
     const term = new Terminal({
       allowTransparency: true,
       convertEol: true,
@@ -458,6 +471,10 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
       term.writeln("[terminal connected]");
       flushPending();
       sendResize();
+      if (!bootCommandSent && typeof bootCommand === "string" && bootCommand.trim()) {
+        sendCommand(bootCommand);
+        bootCommandSent = true;
+      }
     });
 
     socket.addEventListener("message", (event) => {
@@ -580,6 +597,11 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(scheduleFit).catch(() => {});
     }
+    if (bootCommand) {
+      const cleanUrl = new URL(location.href);
+      cleanUrl.searchParams.delete("command");
+      window.history.replaceState(null, "", cleanUrl.toString());
+    }
     copyBtn.disabled = true;
     pasteBtn.disabled = false;
     fitTerminal();
@@ -587,7 +609,8 @@ async fn terminal_page(State(state): State<AppState>) -> impl IntoResponse {
   </script>
 </body>
 </html>"##
-            .replace("__BRAND_MARK__", &openclaw_brand_svg("brand-mark")),
+            .replace("__BRAND_MARK__", &openclaw_brand_svg("brand-mark"))
+            .replace("__BOOT_COMMAND__", &boot_command),
     )
 }
 

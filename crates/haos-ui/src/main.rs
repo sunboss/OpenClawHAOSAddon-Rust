@@ -169,6 +169,7 @@ fn brand_lockup() -> String {
 fn html_attr_escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
+        .replace('"', "&quot;")
         .replace('\'', "&#39;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -351,6 +352,22 @@ fn secondary_button(label: &str, onclick: &str) -> String {
 
 fn ghost_button(label: &str, onclick: &str) -> String {
     format!(r#"<button class="btn" type="button" onclick="{onclick}">{label}</button>"#)
+}
+
+fn terminal_window_button(label: &str, command: &str) -> String {
+    let command = html_attr_escape(&js_string(command));
+    format!(
+        r#"<button class="btn" type="button" onclick="ocOpenTerminalWindow({})">{label}</button>"#,
+        command
+    )
+}
+
+fn secondary_terminal_window_button(label: &str, command: &str) -> String {
+    let command = html_attr_escape(&js_string(command));
+    format!(
+        r#"<button class="btn secondary" type="button" onclick="ocOpenTerminalWindow({})">{label}</button>"#,
+        command
+    )
 }
 
 fn kv_row(label: &str, value: &str) -> String {
@@ -578,7 +595,7 @@ fn home_content(config: &PageConfig) -> String {
             "tone-violet"
         ),
         open_gateway = primary_button("打开网关", "ocOpenGateway()"),
-        open_cli = secondary_button("OpenClaw CLI", "ocRunCommand('openclaw tui')"),
+        open_cli = secondary_terminal_window_button("OpenClaw CLI", "openclaw tui"),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
         stat_mode = stat_tile(
@@ -699,7 +716,7 @@ fn config_content(config: &PageConfig) -> String {
     <h3>建议操作</h3>
     <div class="action-row">
       <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
-      <button class="btn" type="button" onclick="ocRunCommand('openclaw tui')">OpenClaw CLI</button>
+      <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw tui')">OpenClaw CLI</button>
       <button class="btn" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
       <button class="btn" type="button" onclick="ocRunCommand('openclaw onboard')">初始化向导</button>
       <button class="btn" type="button" onclick="ocRunCommand('openclaw doctor')">运行 doctor</button>
@@ -731,7 +748,13 @@ fn commands_content() -> String {
         ("检查并修复", "openclaw doctor --fix"),
     ]
     .iter()
-    .map(|(label, cmd)| action_button(label, cmd))
+    .map(|(label, cmd)| {
+        if *cmd == "openclaw tui" {
+            terminal_window_button(label, cmd)
+        } else {
+            action_button(label, cmd)
+        }
+    })
     .collect::<Vec<_>>()
     .join("");
 
@@ -1114,7 +1137,11 @@ fn render_shell(
           window.open(targetUrl, "_blank", "noopener,noreferrer");
         }});
     }};
-    window.ocOpenTerminalWindow = function () {{ window.open(appUrl("./terminal/"), "_blank", "noopener,noreferrer"); }};
+    window.ocOpenTerminalWindow = function (command) {{
+      const targetUrl = new URL(appUrl("./terminal/"));
+      if (typeof command === "string" && command.trim()) targetUrl.searchParams.set("command", command);
+      window.open(targetUrl.toString(), "_blank", "noopener,noreferrer");
+    }};
     window.ocLoadTerminal = function () {{ ensureTerminalLoaded(); window.setTimeout(focusTerminal, 120); }};
     window.ocRunCommand = function (command) {{ injectTerminalCommand(command || ""); }};
     window.ocRunButton = function (button) {{
@@ -1280,15 +1307,17 @@ mod tests {
         let html = commands_content();
 
         assert!(html.contains("openclaw tui"));
+        assert!(html.contains("ocOpenTerminalWindow(&quot;openclaw tui&quot;)"));
         assert!(html.contains("npm view openclaw version"));
         assert!(html.contains("openclaw devices approve --latest"));
         assert!(!html.contains("https://registry.npmjs.org/openclaw/latest"));
+        assert!(!html.contains("onclick=\"ocRunCommand('openclaw tui')\""));
     }
 
     #[test]
     fn render_shell_includes_fixed_aspect_brand_logo() {
         let config = PageConfig {
-            addon_version: "2026.04.03.4".to_string(),
+            addon_version: "2026.04.03.7".to_string(),
             access_mode: "lan_https".to_string(),
             gateway_mode: "local".to_string(),
             gateway_url: String::new(),
