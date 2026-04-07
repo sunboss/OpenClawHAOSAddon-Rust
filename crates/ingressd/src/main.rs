@@ -797,14 +797,18 @@ async fn proxy_gateway(
             })
             .into_response();
     }
-    proxy_http_request(
+    let response = proxy_http_request(
         &state.client,
         &state.gateway_http_base,
         request,
         true,
         Some(peer_addr),
     )
-    .await
+    .await;
+    if response.status() == StatusCode::BAD_GATEWAY {
+        return fallback_gateway_response();
+    }
+    response
 }
 
 async fn proxy_gateway_ws(
@@ -1073,6 +1077,64 @@ fn simple_response(status: StatusCode, message: String) -> Response<Body> {
         .status(status)
         .body(Body::from(message))
         .expect("simple response")
+}
+
+fn fallback_gateway_response() -> Response<Body> {
+    Html(
+        r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="8">
+  <title>OpenClaw Gateway</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #0d1b38 0%, #111f3d 100%);
+      color: #dbe8ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      max-width: 480px;
+      width: 90%;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 20px;
+      background: rgba(255,255,255,.05);
+      padding: 32px;
+      text-align: center;
+    }
+    h1 { margin: 0 0 12px; font-size: 22px; color: #60cbff; }
+    p { margin: 0 0 20px; color: #8aacd4; line-height: 1.7; font-size: 14px; }
+    .btn {
+      display: inline-block;
+      padding: 10px 22px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.2);
+      background: rgba(255,255,255,.08);
+      color: #dbe8ff;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>OpenClaw Gateway</h1>
+    <p>Gateway 正在启动，通常需要 30–60 秒。<br>页面将自动刷新。</p>
+    <button class="btn" onclick="location.reload()">立即刷新</button>
+  </div>
+</body>
+</html>"#
+        .to_string(),
+    )
+    .into_response()
 }
 
 fn fallback_ui_response() -> Response<Body> {

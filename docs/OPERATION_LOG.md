@@ -127,6 +127,27 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-07 - Replace raw proxy error with gateway startup fallback page
+
+- User request: 直接访问 https://设备IP:18789 时，浏览器显示裸文本错误 "处理失败：发送 URL (http://127.0.0.1:18790/) 的请求时出错"
+- Intent / context:
+  - Gateway 启动需要 30–60 秒，期间 ingressd HTTPS 代理（18789→18790）因连接失败返回 502，`simple_response` 将 reqwest 错误以纯文本输出到浏览器。
+  - reqwest 错误在中文 locale 下本地化为中文，与 `proxy failed:` 前缀拼接后直接暴露给用户，体验差。
+  - UI 代理已有 `fallback_ui_response`（等价功能），但 gateway 代理路径无 fallback。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.07.4`
+  - `crates/ingressd/src/main.rs` — `proxy_gateway` 检查 502 后返回 `fallback_gateway_response()`；新增 `fallback_gateway_response` 函数（含 `<meta http-equiv="refresh" content="8">` 自动刷新）
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - `cargo check -p ingressd` — 编译通过
+- Version: `2026.04.07.4`
+- Commit: pending
+- Push: pending
+- Result summary: gateway 启动期间访问 HTTPS 端口显示友好的"Gateway 正在启动"页面并每 8 秒自动刷新，不再显示裸 reqwest 错误文本。
+- Next handoff:
+  - WebSocket 升级路径（OpenClaw 客户端连接）不受影响，fallback 只拦截普通 HTTP 502。
+  - 自动刷新间隔 8 秒可按需调整。
+
 ## 2026-04-07 - Fix mcporter initial config missing mcpServers field
 
 - User request: 日志中出现 mcporter ZodError（从新日志发现）
