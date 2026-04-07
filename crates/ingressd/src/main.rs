@@ -87,6 +87,7 @@ async fn main() {
     let state = AppState {
         client: Client::builder()
             .http2_adaptive_window(true)
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .expect("build reqwest client"),
         ui_base: format!("http://127.0.0.1:{ui_port}"),

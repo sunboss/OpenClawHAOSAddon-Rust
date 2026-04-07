@@ -1436,9 +1436,18 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let (snapshot, health_ok, pending_devices) = tokio::join!(
         collect_system_snapshot(),
         fetch_openclaw_health(),
-        tokio::task::spawn_blocking(count_pending_devices),
+        async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                tokio::task::spawn_blocking(count_pending_devices),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or(0)
+        },
     );
-    let pending_devices = pending_devices.unwrap_or(0);
+    let pending_devices = pending_devices;
     render_shell(
         &config,
         NavPage::Home,

@@ -127,6 +127,29 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-07 - Fix blank ingress page caused by blocking CLI call without timeout
+
+- User request: 网页打不开（ingress 页面空白）
+- Intent / context:
+  - 用户反映通过 HA 侧边栏点击插件后右侧内容区域全白，无任何内容显示。
+  - 根因：`haos-ui` 的 `index` 路由在每次页面请求时调用 `count_pending_devices()`，该函数执行 `openclaw devices list`，当 gateway 处于启动期间（约 60 秒内 acpx runtime 未就绪）时，该命令通过 `spawn_blocking` 阻塞约 10 秒（CLI 内置 gateway timeout）。
+  - `tokio::join!` 等待所有三个 future（含无超时的 `spawn_blocking`）全部完成，导致 `haos-ui` 迟迟不返回响应。
+  - `ingressd` 的 reqwest 客户端未设超时，代理请求挂起，HA ingress 收不到响应，显示空白 iframe。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.07.2`
+  - `crates/haos-ui/src/main.rs` — `index` 路由中 `count_pending_devices` 外包 `tokio::time::timeout(3s)`，超时返回 0
+  - `crates/ingressd/src/main.rs` — reqwest Client 添加 `.timeout(10s)`
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - `cargo check` — 编译通过，零错误
+- Version: `2026.04.07.2`
+- Commit: pending
+- Push: pending
+- Result summary: 页面加载不再因 gateway 启动慢而卡死；`count_pending_devices` 最多等 3 秒，超时按 0 处理；ingressd 代理 10 秒未响应即返回 502 fallback，显示"UI 正在启动"提示页而非空白。
+- Next handoff:
+  - gateway 启动期（约 60 秒）内首页设备计数会显示 0，属预期行为，不影响功能。
+  - 若将来 `count_pending_devices` 需要更准确，可改为异步 HTTP 接口而不是 CLI 子进程，以避免 gateway timeout 开销。
+
 ## 2026-04-07 - Native OpenClaw integration + command page optimization
 
 - User request:
