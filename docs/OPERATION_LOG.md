@@ -127,6 +127,26 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-07 - Fix mcporter initial config missing mcpServers field
+
+- User request: 日志中出现 mcporter ZodError（从新日志发现）
+- Intent / context:
+  - `ensure_mcporter_config` 在首次运行时写入 `{}` 作为初始配置，但 mcporter 要求顶层存在 `mcpServers` 字段（类型为 record），否则 Zod schema 校验失败，导致 `mcporter add HA ...` 无法执行，MCP 自动配置完全失效。
+  - 已存在的 `{}` 文件不会被覆盖（函数开头检查 `exists()` 就返回），需手动删除 `/config/.mcporter/mcporter.json` 后重启插件才能触发修复。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.07.3`
+  - `crates/addon-supervisor/src/main.rs` — 初始 mcporter.json 内容从 `{}` 改为 `{"mcpServers":{}}`
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - `cargo check -p addon-supervisor` — 编译通过
+- Version: `2026.04.07.3`
+- Commit: pending
+- Push: pending
+- Result summary: 新安装时 mcporter.json 格式正确，mcporter 不再抛 ZodError，HA MCP 自动配置可正常执行。
+- Next handoff:
+  - 已存在损坏的 `{}` 文件的设备需手动删除 `/config/.mcporter/mcporter.json` 并重启插件，仅新安装或文件不存在时自动修复。
+  - 若 mcporter schema 将来升级（如增加必填字段），需同步更新此初始模板。
+
 ## 2026-04-07 - Fix blank ingress page caused by blocking CLI call without timeout
 
 - User request: 网页打不开（ingress 页面空白）

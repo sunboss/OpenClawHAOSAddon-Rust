@@ -324,7 +324,7 @@ fn ensure_mcporter_config(args: &HaosEntryArgs) -> std::io::Result<()> {
     if let Some(parent) = args.mcporter_config.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&args.mcporter_config, "{}\n")
+    fs::write(&args.mcporter_config, "{\"mcpServers\":{}}\n")
 }
 
 fn ensure_home_symlinks(args: &HaosEntryArgs) -> std::io::Result<()> {
