@@ -615,7 +615,7 @@ async fn terminal_page(
 }
 
 async fn terminal_xterm_js() -> impl IntoResponse {
-    file_response(
+    cached_file_response(
         "/usr/local/lib/node_modules/@xterm/xterm/lib/xterm.js",
         "application/javascript; charset=utf-8",
     )
@@ -623,7 +623,7 @@ async fn terminal_xterm_js() -> impl IntoResponse {
 }
 
 async fn terminal_xterm_css() -> impl IntoResponse {
-    file_response(
+    cached_file_response(
         "/usr/local/lib/node_modules/@xterm/xterm/css/xterm.css",
         "text/css; charset=utf-8",
     )
@@ -631,7 +631,7 @@ async fn terminal_xterm_css() -> impl IntoResponse {
 }
 
 async fn terminal_xterm_addon_fit_js() -> impl IntoResponse {
-    file_response(
+    cached_file_response(
         "/usr/local/lib/node_modules/@xterm/addon-fit/lib/addon-fit.js",
         "application/javascript; charset=utf-8",
     )
@@ -951,6 +951,25 @@ async fn cert_file() -> impl IntoResponse {
 async fn file_response(path: &str, content_type: &str) -> impl IntoResponse {
     match fs::read(path) {
         Ok(bytes) => ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// Like `file_response` but adds a 1-day browser cache header.
+/// Used for npm-installed static assets that never change between restarts.
+async fn cached_file_response(path: &str, content_type: &str) -> impl IntoResponse {
+    match fs::read(path) {
+        Ok(bytes) => (
+            [
+                (axum::http::header::CONTENT_TYPE, content_type),
+                (
+                    axum::http::header::CACHE_CONTROL,
+                    "public, max-age=86400, immutable",
+                ),
+            ],
+            bytes,
+        )
+            .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
