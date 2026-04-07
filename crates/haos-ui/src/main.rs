@@ -4,10 +4,21 @@ use axum::{
     response::{Html, IntoResponse},
     routing::get,
 };
-use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command};
+use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command, sync::Arc};
+use tokio::sync::RwLock;
+
+/// Snapshot cached by the background updater task every 8 seconds.
+#[derive(Clone)]
+struct CachedSnapshot {
+    snapshot: SystemSnapshot,
+    health_ok: Option<bool>,
+    pending_devices: usize,
+}
 
 #[derive(Clone)]
-struct AppState;
+struct AppState {
+    cache: Arc<RwLock<Option<CachedSnapshot>>>,
+}
 
 #[derive(Clone, Debug)]
 struct PageConfig {
@@ -174,7 +185,7 @@ fn count_pending_devices() -> usize {
 
 async fn fetch_openclaw_health() -> Option<bool> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
+        .timeout(std::time::Duration::from_millis(1500))
         .build()
         .ok()?;
     let resp = client
@@ -1305,12 +1316,18 @@ fn render_shell(
     async function loadPanel(url, targetId) {{
       const target = document.getElementById(targetId);
       if (!target) return;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
       try {{
-        const response = await fetch(url, {{ credentials: "same-origin" }});
+        const response = await fetch(url, {{ credentials: "same-origin", signal: ctrl.signal }});
+        clearTimeout(timer);
         if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
         target.innerHTML = await response.text();
       }} catch (error) {{
-        target.innerHTML = `<p class="muted">面板加载失败：${{error.message}}</p>`;
+        clearTimeout(timer);
+        if (error.name !== "AbortError") {{
+          target.innerHTML = `<p class="muted">面板加载失败：${{error.message}}</p>`;
+        }}
       }}
     }}
     function refreshPanels() {{
@@ -1431,23 +1448,31 @@ fn render_shell(
 }
 
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
-    let _ = state;
     let config = PageConfig::from_env();
-    let (snapshot, health_ok, pending_devices) = tokio::join!(
-        collect_system_snapshot(),
-        fetch_openclaw_health(),
-        async {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(3),
-                tokio::task::spawn_blocking(count_pending_devices),
-            )
-            .await
-            .ok()
-            .and_then(|r| r.ok())
-            .unwrap_or(0)
-        },
-    );
-    let pending_devices = pending_devices;
+    let guard = state.cache.read().await;
+    let (snapshot, health_ok, pending_devices) = if let Some(c) = guard.as_ref() {
+        let result = (c.snapshot.clone(), c.health_ok, c.pending_devices);
+        drop(guard);
+        result
+    } else {
+        drop(guard);
+        // Cache not yet populated on very first request — collect inline.
+        let (snap, health, devs) = tokio::join!(
+            collect_system_snapshot(),
+            fetch_openclaw_health(),
+            async {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    tokio::task::spawn_blocking(count_pending_devices),
+                )
+                .await
+                .ok()
+                .and_then(|r| r.ok())
+                .unwrap_or(0)
+            },
+        );
+        (snap, health, devs)
+    };
     render_shell(
         &config,
         NavPage::Home,
@@ -1496,13 +1521,16 @@ async fn logs_page(State(state): State<AppState>) -> impl IntoResponse {
 async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
     let _ = state;
     let config = PageConfig::from_env();
-    let gateway_pid = pid_value("openclaw-gateway");
-    let node_pid = pid_value("openclaw-node");
-    let display_gateway_pid = if gateway_pid != "-" {
-        gateway_pid
-    } else {
-        node_pid
-    };
+    let display_gateway_pid = tokio::task::spawn_blocking(|| {
+        let gateway_pid = pid_value("openclaw-gateway");
+        if gateway_pid != "-" {
+            gateway_pid
+        } else {
+            pid_value("openclaw-node")
+        }
+    })
+    .await
+    .unwrap_or_else(|_| "-".to_string());
 
     Html(format!(
         r#"<div class="eyebrow">运行摘要</div>
@@ -1543,7 +1571,29 @@ async fn diag_partial(State(state): State<AppState>) -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() {
-    let app_state = AppState;
+    let cache: Arc<RwLock<Option<CachedSnapshot>>> = Arc::new(RwLock::new(None));
+    let cache_bg = cache.clone();
+    tokio::spawn(async move {
+        loop {
+            let (snapshot, health_ok, pending_devices) = tokio::join!(
+                collect_system_snapshot(),
+                fetch_openclaw_health(),
+                async {
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(3),
+                        tokio::task::spawn_blocking(count_pending_devices),
+                    )
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok())
+                    .unwrap_or(0)
+                },
+            );
+            *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok, pending_devices });
+            tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+        }
+    });
+    let app_state = AppState { cache };
 
     let app = Router::new()
         .route("/", get(index))

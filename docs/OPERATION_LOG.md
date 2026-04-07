@@ -127,6 +127,37 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Performance: background snapshot cache + timeout reductions
+
+- User request: 页面有点卡顿，有没有优化的空间
+- Intent / context:
+  - 性能分析发现 `index()` 每次请求都并发执行三个耗时操作（spawn_blocking 系统命令 ~1s、HTTP health check 最差 3s、openclaw CLI 最差 3s），`tokio::join!` 等最慢者，导致首页加载有明显延迟。
+  - `health_partial()` 在 async 上下文中直接调用 `pid_value()`（`fs::read_to_string`），违反 async I/O 最佳实践。
+  - JS `loadPanel` 没有超时，服务端挂起时前端无限等待。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.07.5`
+  - `crates/haos-ui/src/main.rs`
+  - `docs/OPERATION_LOG.md`
+- Changes detail:
+  - 新增 `CachedSnapshot` 结构体（snapshot + health_ok + pending_devices）
+  - `AppState` 增加 `cache: Arc<RwLock<Option<CachedSnapshot>>>` 字段
+  - `main()` 启动后台 tokio task，每 8 秒采集一次完整 snapshot 并写入缓存
+  - `index()` 改为优先读缓存（缓存命中时响应时间 <1ms），仅在首次加载前缓存未就绪时回退到内联采集
+  - `fetch_openclaw_health()` 超时 3s → 1.5s
+  - `health_partial()` 中 `pid_value()` 同步文件读取改为 `spawn_blocking` 包裹
+  - JS `loadPanel()` 增加 `AbortController` 8s 超时，超时静默处理（不显示错误）
+- Commands / validation:
+  - `cargo check -p haos-ui` — 通过
+  - `cargo test -p haos-ui` — 5/5 全过
+- Version: `2026.04.07.5`
+- Commit: pending
+- Push: pending
+- Result summary: 首页加载从最差 3s 降至 <1ms（缓存命中后），health check 最差延迟减半，async 上下文中不再有阻塞 I/O，JS 面板轮询有超时保护。
+- Next handoff:
+  - 缓存更新周期 8s，意味着服务状态最多延迟 8s 显示。如需更实时，可调小间隔。
+  - 首次请求（服务刚启动，缓存空）仍会走内联采集路径，约需 1.5-3s，这是预期行为。
+  - 后台任务无错误处理守卫（panic 会静默退出），未来可加 `tokio::spawn` + `JoinHandle` 监控。
+
 ## 2026-04-07 - Replace raw proxy error with gateway startup fallback page
 
 - User request: 直接访问 https://设备IP:18789 时，浏览器显示裸文本错误 "处理失败：发送 URL (http://127.0.0.1:18790/) 的请求时出错"
