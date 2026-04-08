@@ -61,6 +61,16 @@ Read this before making UI, runtime, or release changes.
 - `No pending device pairing requests to approve`
   - not an error
   - just the auto-approve poller finding nothing to approve
+- `Health check failed: Error: gateway timeout after 10000ms` (in doctor output)
+  - not an error
+  - doctor runs 15s after boot; CLI WebSocket needs acpx runtime (ready in 90-120s)
+  - health check always times out on startup doctor run; does not abort doctor
+- `Gateway port: Port 18790 is already in use` (in doctor output)
+  - not an error; expected — doctor detects the supervisor-managed gateway is running
+- `systemd user services are unavailable` (in doctor output)
+  - not an error; container has no systemd, gateway runs under our supervisor instead
+- `Memory search is enabled, but no embedding provider is ready` (in doctor output)
+  - not an error unless user wants memory search; requires configuring an embedding provider
 - `amazon-bedrock failed to load`
 - `Cannot find module '@slack/web-api'`
   - optional plugin dependency noise from upstream OpenClaw
