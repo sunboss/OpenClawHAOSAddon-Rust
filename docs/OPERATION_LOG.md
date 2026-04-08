@@ -127,6 +127,32 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Fix rapid-restart OOM feedback loop with exponential backoff
+
+- User request: haos 还是会重启（2026.04.08.1 之后 gateway 依然崩溃循环）
+- Intent / context:
+  - 2026.04.08.1 消除了后台 Node.js 周期性 spawn，但 `run_managed_process` 在 gateway 崩溃后仍以固定 2s 间隔立即重启，OOM 崩溃 → 2s → 再次 OOM，形成正反馈循环。
+  - 日志显示 gateway 进程 `exited with None`（被 OOM Killer 信号终止），存活时间远小于 30s，crash 后 2s 内即重启，导致系统内存未能恢复就再次 OOM。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.2`
+  - `crates/addon-supervisor/src/main.rs`
+  - `docs/OPERATION_LOG.md`
+- Changes detail:
+  - `run_managed_process` 新增三个常量：`STABLE_SECS=30`、`BACKOFF_BASE=2`、`BACKOFF_MAX=64`
+  - 新增 `consecutive_failures: u32` 计数器：进程存活 ≥30s 则清零（视为稳定），否则 +1
+  - 重启延迟 = `min(2 << consecutive_failures.min(5), 64)` → 2→4→8→16→32→64s 指数退避
+  - `consecutive_failures > 1` 时打印 `backing off Xs (failure #N)` 日志，便于排查
+  - `nginx-conf` 和 `spawn` 失败路径沿用 `BACKOFF_BASE(2s)` 不变
+- Commands / validation:
+  - `cargo check -p addon-supervisor` — 编译通过，零错误
+- Version: `2026.04.08.2`
+- Commit: pending
+- Push: pending
+- Result summary: gateway 快速崩溃时重启间隔从固定 2s 升至最长 64s，给系统足够时间释放内存后再重试，避免 OOM 正反馈循环。长时间稳定运行不受影响（稳定即清零）。
+- Next handoff:
+  - 若 gateway 内存泄漏导致每隔数小时 OOM，可考虑在 `STABLE_SECS` 内加入定时主动重启（如每 24h restart）作为长期修补，等待 upstream 修复内存泄漏。
+  - 若设备内存确实不足（<512 MB），可将 `BACKOFF_MAX` 调高至 120s 以留出更多恢复时间。
+
 ## 2026-04-08 - Fix OOM crash loop caused by background Node.js spawning
 
 - User request: 升级后 openclaw-gateway 反复重启，haos 系统不稳定

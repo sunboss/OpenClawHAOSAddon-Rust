@@ -1158,6 +1158,14 @@ impl ProcessSpec {
 }
 
 async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver<bool>) {
+    // Exponential backoff: 2s → 4s → 8s → 16s → 32s → 64s (max).
+    // Resets to 2s after the process has been alive for at least this many
+    // seconds, meaning a successful long-running run clears the failure count.
+    const STABLE_SECS: u64 = 30;
+    const BACKOFF_BASE: u64 = 2;
+    const BACKOFF_MAX: u64 = 64;
+    let mut consecutive_failures: u32 = 0;
+
     loop {
         if *shutdown_rx.borrow() {
             break;
@@ -1167,7 +1175,7 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
             let code = render_nginx(path);
             if code != ExitCode::SUCCESS {
                 eprintln!("addon-supervisor: failed to render nginx config");
-                sleep(Duration::from_secs(2)).await;
+                sleep(Duration::from_secs(BACKOFF_BASE)).await;
                 continue;
             }
         }
@@ -1178,7 +1186,7 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
 
         let Ok(mut child) = command.spawn() else {
             eprintln!("addon-supervisor: failed to start {}", spec.name);
-            sleep(Duration::from_secs(2)).await;
+            sleep(Duration::from_secs(BACKOFF_BASE)).await;
             continue;
         };
 
@@ -1187,6 +1195,8 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
         if pid != 0 {
             write_pid_file(&spec.name, pid);
         }
+
+        let started_at = std::time::Instant::now();
 
         tokio::select! {
             _ = shutdown_rx.changed() => {
@@ -1198,18 +1208,31 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
             }
             status = child.wait() => {
                 remove_pid_file(&spec.name);
+                let lived_secs = started_at.elapsed().as_secs();
                 match status {
                     Ok(exit) => {
-                        eprintln!("addon-supervisor: {} exited with {:?}", spec.name, exit.code());
+                        eprintln!("addon-supervisor: {} exited with {:?} (lived {}s)", spec.name, exit.code(), lived_secs);
                     }
                     Err(err) => {
-                        eprintln!("addon-supervisor: {} wait failed: {}", spec.name, err);
+                        eprintln!("addon-supervisor: {} wait failed: {} (lived {}s)", spec.name, err, lived_secs);
                     }
                 }
                 if *shutdown_rx.borrow() {
                     break;
                 }
-                sleep(Duration::from_secs(2)).await;
+                if lived_secs >= STABLE_SECS {
+                    consecutive_failures = 0;
+                } else {
+                    consecutive_failures = consecutive_failures.saturating_add(1);
+                }
+                let delay = (BACKOFF_BASE << consecutive_failures.min(5)).min(BACKOFF_MAX);
+                if consecutive_failures > 1 {
+                    eprintln!(
+                        "addon-supervisor: {} backing off {}s (failure #{})",
+                        spec.name, delay, consecutive_failures
+                    );
+                }
+                sleep(Duration::from_secs(delay)).await;
             }
         }
     }
