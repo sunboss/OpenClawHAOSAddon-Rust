@@ -44,9 +44,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN npm config set fund false && npm config set audit false \
     && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @slack/web-api @slack/bolt @xterm/xterm @xterm/addon-fit \
-    # @buape/carbon is required by openclaw's Discord channel plugin but missing
-    # from openclaw's declared dependencies (upstream packaging bug in 2026.4.8+).
-    && npm install -g @buape/carbon
+    # Undeclared peer deps required by openclaw's bundled channel plugins (upstream bug in 2026.4.8+):
+    #   @buape/carbon         — Discord channel plugin
+    #   @larksuiteoapi/node-sdk — Feishu/Lark channel plugin
+    && npm install -g @buape/carbon @larksuiteoapi/node-sdk
 
 COPY --from=builder /src/target/release/actiond /usr/local/bin/actiond
 COPY --from=builder /src/target/release/addon-supervisor /usr/local/bin/addon-supervisor

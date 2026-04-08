@@ -127,6 +127,27 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Fix missing Feishu channel dependency @larksuiteoapi/node-sdk
+
+- User request: 升级后日志持续刷 `Cannot find module '@larksuiteoapi/node-sdk'`（Feishu 渠道）
+- Intent / context:
+  - 与 `@buape/carbon`（Discord）同类问题：openclaw v2026.4.8 Feishu 渠道插件依赖 `@larksuiteoapi/node-sdk`，但未在 package.json 中声明，每次 HTTP 请求触发 `probe-Cz2PiFtC.js` 加载 Feishu 扩展时报 `MODULE_NOT_FOUND`，每 30 秒刷一次。
+  - 查询 npm registry 确认该包未在 openclaw 的 dependencies/peerDependencies/optionalDependencies 中出现，属 upstream 遗漏。
+  - 将已知两个未声明依赖合并为一条 `npm install -g` 指令，统一注释说明来源。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.5`
+  - `Dockerfile` — 补丁行改为同时安装 `@buape/carbon @larksuiteoapi/node-sdk`，更新注释
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - 无需 cargo 编译
+- Version: `2026.04.08.5`
+- Commit: pending
+- Push: pending
+- Result summary: Feishu 渠道插件加载不再报 MODULE_NOT_FOUND，与 Discord 修复合并为单条安装指令。
+- Next handoff:
+  - v2026.4.8 release notes 提及修复了 10+ 个渠道（BlueBubbles、Google Chat、IRC、Matrix、Mattermost、Teams、Nextcloud Talk、Zalo 等），可能还有其他渠道存在同类未声明依赖，出现时继续追加到此 `npm install -g` 行。
+  - 若 upstream 后续版本修复打包问题，可移除这些补丁包。
+
 ## 2026-04-08 - Fix missing @buape/carbon dependency for Discord channel plugin
 
 - User request: 升级后日志持续刷 `Cannot find module '@buape/carbon'`
