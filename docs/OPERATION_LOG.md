@@ -127,6 +127,42 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Perf: cache pending_devices + show Gateway Token on home page + prebundle deps
+
+- User request: 首页有点卡顿；首页显示 Gateway Token 可以复制
+- Intent / context:
+  - 每次页面请求都调用 `count_pending_devices()`（spawn Node.js 进程 ~500ms），是首页卡顿的直接原因。
+  - `CachedSnapshot` 之前去掉了 `pending_devices` 字段（2026.04.08.1 修 OOM）；现在加回来但改为后台每 5 分钟刷新一次（而非之前的 8 秒），既不压内存也不影响页面速度。
+  - 首页缺少 Gateway Token 展示，用户需要进终端 `jq` 才能获取；原版 HAOS 插件在 landing page 显著展示 token。
+  - doctor --fix 每次重启都下载 46 个 bundled deps（约 2 分钟），是因为 Dockerfile 的 `npm install -g` 装到全局路径，而 openclaw/jiti 找的是自己的 node_modules。改为安装到 openclaw 包目录后预装进镜像。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.7`
+  - `crates/haos-ui/src/main.rs`
+  - `Dockerfile`
+  - `docs/OPERATION_LOG.md`
+- Changes detail:
+  **haos-ui**
+  - `CachedSnapshot` 增回 `pending_devices: usize` 字段
+  - 后台任务：新增 `last_pending_check: Option<Instant>`，每 5 分钟刷新一次 `pending_devices`，30s 周期内其余时刻复用缓存值
+  - `index()` 不再每次 `spawn_blocking(count_pending_devices)`，直接读缓存，首页响应速度 <1ms（缓存命中）
+  - `PageConfig` 增 `gateway_token: String`，从 `openclaw.json` 的 `gateway.auth.token` 读取
+  - 首页新增 Token 卡片：蓝色背景区块，默认遮罩显示末 8 位，[显示] 切换明文，[复制] 使用 Clipboard API，复制成功 1.5s 反馈
+  - CSS 增 `.token-section`、`.token-row`、`.token-val` 等样式
+  **Dockerfile**
+  - 移除独立的 `npm install -g @buape/carbon ...` 补丁行
+  - 新增 `cd /usr/local/lib/node_modules/openclaw && npm install --no-save --ignore-scripts <全部 46 个包>`，安装到 openclaw 自己的 node_modules，doctor 检测路径匹配，不再每次启动重下
+  - `@grammyjs/types` 一并加入（原缺漏）
+- Commands / validation:
+  - `cargo test -p haos-ui` — 5/5 全过
+- Version: `2026.04.08.7`
+- Commit: pending
+- Push: pending
+- Result summary: 首页加载不再因 Node.js spawn 卡顿；Gateway Token 在首页可见可复制；镜像重建后启动时 doctor 不再下载 46 个包。
+- Next handoff:
+  - `pending_devices` 最多延迟 5 分钟才更新，设备配对提醒有轻微滞后，属预期行为。
+  - `--ignore-scripts` 跳过了原生 addon 的编译（@discordjs/opus 等）；这些包在未配置 Discord 语音时不影响功能，配置后如有问题可移除 `--ignore-scripts` 标志。
+  - Token 展示直接读 openclaw.json，如 gateway 尚未完成 onboard（token 未生成），token 卡片不显示，属预期行为。
+
 ## 2026-04-08 - Fix all undeclared channel plugin deps for openclaw 2026.4.8 (complete)
 
 - User request: 日志继续刷 `Cannot find module 'grammy'`（Telegram 渠道），要求一次性补齐所有缺失包

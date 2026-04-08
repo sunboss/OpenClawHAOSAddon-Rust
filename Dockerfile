@@ -43,12 +43,62 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm config set fund false && npm config set audit false \
-    && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @slack/web-api @slack/bolt @xterm/xterm @xterm/addon-fit \
-    # Undeclared peer deps required by openclaw's bundled channel plugins (upstream bug in 2026.4.8+):
-    #   @buape/carbon           — Discord channel plugin
-    #   @larksuiteoapi/node-sdk — Feishu/Lark channel plugin
-    #   grammy + @grammyjs/types — Telegram channel plugin (@grammyjs/types is devDep only upstream)
-    && npm install -g @buape/carbon @larksuiteoapi/node-sdk grammy @grammyjs/types
+    && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @xterm/xterm @xterm/addon-fit
+
+# Pre-install all openclaw bundled plugin deps into openclaw's own node_modules so that
+# `openclaw doctor --fix` reports them as already installed (no per-startup npm download).
+# Packages are installed with --ignore-scripts to avoid native-build failures on ARM;
+# jiti lazy-loads these at runtime so missing native addons degrade gracefully.
+# Source: `openclaw doctor` "Bundled plugin runtime deps are missing" output (v2026.4.8).
+RUN cd /usr/local/lib/node_modules/openclaw \
+    && npm install --no-save --ignore-scripts \
+      "@aws-sdk/client-s3@3.1024.0" \
+      "@aws-sdk/s3-request-presigner@3.1024.0" \
+      "@aws/bedrock-token-generator@^1.1.0" \
+      "@buape/carbon@0.14.0" \
+      "@clawdbot/lobster@2026.1.24" \
+      "@discordjs/opus@^0.10.0" \
+      "@discordjs/voice@^0.19.2" \
+      "@grammyjs/runner@^2.0.3" \
+      "@grammyjs/transformer-throttler@^1.2.1" \
+      "@grammyjs/types@^3.26.0" \
+      "@lancedb/lancedb@^0.27.2" \
+      "@larksuiteoapi/node-sdk@^1.60.0" \
+      "@microsoft/teams.api@2.0.6" \
+      "@microsoft/teams.apps@2.0.6" \
+      "@opentelemetry/api@^1.9.1" \
+      "@opentelemetry/api-logs@^0.214.0" \
+      "@opentelemetry/exporter-logs-otlp-proto@^0.214.0" \
+      "@opentelemetry/exporter-metrics-otlp-proto@^0.214.0" \
+      "@opentelemetry/exporter-trace-otlp-proto@^0.214.0" \
+      "@opentelemetry/resources@^2.6.1" \
+      "@opentelemetry/sdk-logs@^0.214.0" \
+      "@opentelemetry/sdk-metrics@^2.6.1" \
+      "@opentelemetry/sdk-node@^0.214.0" \
+      "@opentelemetry/sdk-trace-base@^2.6.1" \
+      "@opentelemetry/semantic-conventions@^1.40.0" \
+      "@pierre/diffs@1.1.10" \
+      "@pierre/theme@0.0.29" \
+      "@slack/bolt@^4.6.0" \
+      "@slack/web-api@^7.15.0" \
+      "@snazzah/davey@^0.1.11" \
+      "@tloncorp/tlon-skill@0.3.2" \
+      "@twurple/api@^8.1.3" \
+      "@twurple/auth@^8.1.3" \
+      "@twurple/chat@^8.1.3" \
+      "@urbit/aura@^3.0.0" \
+      "@whiskeysockets/baileys@7.0.0-rc.9" \
+      "acpx@0.5.2" \
+      "discord-api-types@^0.38.44" \
+      "fake-indexeddb@^6.2.5" \
+      "grammy@^1.42.0" \
+      "jimp@^1.6.0" \
+      "mpg123-decoder@^1.0.3" \
+      "music-metadata@^11.12.3" \
+      "nostr-tools@^2.23.3" \
+      "opusscript@^0.1.1" \
+      "silk-wasm@^3.7.1" \
+      "zca-js@2.1.2"
 
 COPY --from=builder /src/target/release/actiond /usr/local/bin/actiond
 COPY --from=builder /src/target/release/addon-supervisor /usr/local/bin/addon-supervisor

@@ -8,12 +8,13 @@ use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command, sync::Arc};
 use tokio::sync::RwLock;
 
 /// Snapshot cached by the background updater task every 30 seconds.
-/// Only lightweight operations (proc reads + local HTTP) belong here.
-/// Heavy CLI calls (openclaw devices list) stay on-demand in the index handler.
+/// `pending_devices` is refreshed at most once every 5 minutes to avoid
+/// spawning a Node.js process on every page load.
 #[derive(Clone)]
 struct CachedSnapshot {
     snapshot: SystemSnapshot,
     health_ok: Option<bool>,
+    pending_devices: usize,
 }
 
 #[derive(Clone)]
@@ -34,6 +35,7 @@ struct PageConfig {
     memory_status: String,
     current_model: String,
     mcp_endpoint_count: usize,
+    gateway_token: String,
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +79,10 @@ impl PageConfig {
             .and_then(|v| first_string_path(v, &["agents.defaults.model"]))
             .unwrap_or_else(|| "未配置".to_string());
         let mcp_endpoint_count = count_mcp_endpoints();
+        let gateway_token = config
+            .as_ref()
+            .and_then(|v| string_path(v, "gateway.auth.token"))
+            .unwrap_or_default();
         Self {
             addon_version: env_value("ADDON_VERSION", "unknown"),
             access_mode: env_value("ACCESS_MODE", "lan_https"),
@@ -89,6 +95,7 @@ impl PageConfig {
             memory_status,
             current_model,
             mcp_endpoint_count,
+            gateway_token,
         }
     }
 }
@@ -666,6 +673,7 @@ fn home_content(
           {stat_model}
         </div>
 
+        {token_section}
         {device_notice}
         <div class="note-box">如果你需要处理设备授权，请进入命令行页执行授权命令。常用命令是 <code>openclaw devices list</code> 和 <code>openclaw devices approve --latest</code>。</div>
       </section>
@@ -730,6 +738,27 @@ fn home_content(
         stat_addon = stat_tile("Add-on 版本", &config.addon_version, "插件发布版本"),
         stat_openclaw = stat_tile("OpenClaw 版本", &config.openclaw_version, "上游运行时版本"),
         stat_model = stat_tile("AI 模型", &config.current_model, "当前 OpenClaw 使用的对话模型"),
+        token_section = {
+            let tok = &config.gateway_token;
+            if tok.is_empty() {
+                String::new()
+            } else {
+                let masked = format!("••••••••{}", &tok[tok.len().saturating_sub(8)..]);
+                let tok_escaped = tok.replace('\\', "\\\\").replace('"', "\\\"");
+                format!(r#"<div class="token-section">
+  <div class="token-header">
+    <span class="token-label">Gateway Token</span>
+    <span class="token-hint">用于直接访问 OpenClaw API，请勿泄露</span>
+  </div>
+  <div class="token-row">
+    <code class="token-val" id="ocTokenVal">{masked}</code>
+    <button class="btn" id="ocTokenToggleBtn" onclick="ocToggleToken()">显示</button>
+    <button class="btn btn-action" onclick="ocCopyToken(this)">复制</button>
+  </div>
+  <script>(function(){{var t="{tok_escaped}";window.ocToggleToken=function(){{var v=document.getElementById("ocTokenVal"),b=document.getElementById("ocTokenToggleBtn");if(b.dataset.vis==="1"){{v.textContent="••••••••"+t.slice(-8);b.textContent="显示";b.dataset.vis="";}}else{{v.textContent=t;b.textContent="隐藏";b.dataset.vis="1";}}}}; window.ocCopyToken=function(btn){{var orig=btn.textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){{btn.textContent="已复制 ✓";setTimeout(function(){{btn.textContent=orig;}},1500);}}).catch(function(){{prompt("请手动复制 Token:",t);}});}};}})()</script>
+</div>"#, masked=masked, tok_escaped=tok_escaped)
+            }
+        },
         device_notice = if pending_devices > 0 {
             format!(
                 r#"<div class="notice-badge warn">有 {pending_devices} 个设备等待授权配对，请前往命令行页执行 <code>openclaw devices approve --latest</code>。</div>"#
@@ -1233,6 +1262,12 @@ fn render_shell(
     .note-box{{ padding:12px 14px; border-radius:12px; background:#f8fafc; border:1px solid #e2eaf6; color:#4d6784; font-size:13px; line-height:1.75; }}
     .notice-badge{{ padding:10px 14px; border-radius:10px; font-size:13px; font-weight:700; line-height:1.65; margin-bottom:8px; }}
     .notice-badge.warn{{ background:#fffbeb; border:1px solid #fcd34d; color:#92400e; }}
+    .token-section{{ padding:12px 14px; border-radius:12px; background:#f0f7ff; border:1px solid #bfdbfe; margin-bottom:10px; }}
+    .token-header{{ display:flex; align-items:baseline; gap:10px; margin-bottom:8px; }}
+    .token-label{{ font-size:12px; font-weight:800; color:#1e40af; text-transform:uppercase; letter-spacing:.04em; }}
+    .token-hint{{ font-size:12px; color:#6b88a8; }}
+    .token-row{{ display:flex; align-items:center; gap:8px; }}
+    .token-val{{ flex:1; font-family:monospace; font-size:13px; background:#fff; border:1px solid #bfdbfe; border-radius:8px; padding:6px 10px; color:#1e3a5f; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }}
     .custom-cmd-row{{ display:flex; gap:10px; align-items:center; }}
     .cmd-input{{
       flex:1; height:38px; padding:0 14px; border-radius:10px;
@@ -1451,26 +1486,16 @@ fn render_shell(
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let config = PageConfig::from_env();
     let guard = state.cache.read().await;
-    let (snapshot, health_ok) = if let Some(c) = guard.as_ref() {
-        let result = (c.snapshot.clone(), c.health_ok);
+    let (snapshot, health_ok, pending_devices) = if let Some(c) = guard.as_ref() {
+        let result = (c.snapshot.clone(), c.health_ok, c.pending_devices);
         drop(guard);
         result
     } else {
         drop(guard);
         // Cache not yet populated on very first request — collect inline.
-        tokio::join!(collect_system_snapshot(), fetch_openclaw_health())
+        let (snapshot, health_ok) = tokio::join!(collect_system_snapshot(), fetch_openclaw_health());
+        (snapshot, health_ok, 0)
     };
-    // count_pending_devices runs openclaw CLI (Node.js); keep it on-demand
-    // with a short timeout so it never blocks the page and never runs in the
-    // background where it could pressure memory on constrained devices.
-    let pending_devices = tokio::time::timeout(
-        std::time::Duration::from_secs(3),
-        tokio::task::spawn_blocking(count_pending_devices),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())
-    .unwrap_or(0);
     render_shell(
         &config,
         NavPage::Home,
@@ -1572,12 +1597,26 @@ async fn main() {
     let cache: Arc<RwLock<Option<CachedSnapshot>>> = Arc::new(RwLock::new(None));
     let cache_bg = cache.clone();
     tokio::spawn(async move {
+        // pending_devices spawns a Node.js process; only refresh every 5 minutes
+        // to avoid memory pressure on constrained devices.
+        const PENDING_REFRESH_SECS: u64 = 300;
+        let mut last_pending_check: Option<tokio::time::Instant> = None;
         loop {
             let (snapshot, health_ok) = tokio::join!(
                 collect_system_snapshot(),
                 fetch_openclaw_health(),
             );
-            *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok });
+            let now = tokio::time::Instant::now();
+            let needs_pending_refresh = last_pending_check
+                .map(|t| now.duration_since(t).as_secs() >= PENDING_REFRESH_SECS)
+                .unwrap_or(true);
+            let pending_devices = if needs_pending_refresh {
+                last_pending_check = Some(now);
+                tokio::task::spawn_blocking(count_pending_devices).await.unwrap_or(0)
+            } else {
+                cache_bg.read().await.as_ref().map(|c| c.pending_devices).unwrap_or(0)
+            };
+            *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok, pending_devices });
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }
     });
@@ -1645,6 +1684,7 @@ mod tests {
             memory_status: "x_search".to_string(),
             current_model: "gpt-4o".to_string(),
             mcp_endpoint_count: 0,
+            gateway_token: String::new(),
         };
 
         let Html(html) = render_shell(&config, NavPage::Home, "title", "subtitle", "<div></div>");
