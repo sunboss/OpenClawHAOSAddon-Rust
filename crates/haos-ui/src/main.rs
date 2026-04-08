@@ -7,12 +7,13 @@ use axum::{
 use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command, sync::Arc};
 use tokio::sync::RwLock;
 
-/// Snapshot cached by the background updater task every 8 seconds.
+/// Snapshot cached by the background updater task every 30 seconds.
+/// Only lightweight operations (proc reads + local HTTP) belong here.
+/// Heavy CLI calls (openclaw devices list) stay on-demand in the index handler.
 #[derive(Clone)]
 struct CachedSnapshot {
     snapshot: SystemSnapshot,
     health_ok: Option<bool>,
-    pending_devices: usize,
 }
 
 #[derive(Clone)]
@@ -1450,29 +1451,26 @@ fn render_shell(
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let config = PageConfig::from_env();
     let guard = state.cache.read().await;
-    let (snapshot, health_ok, pending_devices) = if let Some(c) = guard.as_ref() {
-        let result = (c.snapshot.clone(), c.health_ok, c.pending_devices);
+    let (snapshot, health_ok) = if let Some(c) = guard.as_ref() {
+        let result = (c.snapshot.clone(), c.health_ok);
         drop(guard);
         result
     } else {
         drop(guard);
         // Cache not yet populated on very first request — collect inline.
-        let (snap, health, devs) = tokio::join!(
-            collect_system_snapshot(),
-            fetch_openclaw_health(),
-            async {
-                tokio::time::timeout(
-                    std::time::Duration::from_secs(3),
-                    tokio::task::spawn_blocking(count_pending_devices),
-                )
-                .await
-                .ok()
-                .and_then(|r| r.ok())
-                .unwrap_or(0)
-            },
-        );
-        (snap, health, devs)
+        tokio::join!(collect_system_snapshot(), fetch_openclaw_health())
     };
+    // count_pending_devices runs openclaw CLI (Node.js); keep it on-demand
+    // with a short timeout so it never blocks the page and never runs in the
+    // background where it could pressure memory on constrained devices.
+    let pending_devices = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        tokio::task::spawn_blocking(count_pending_devices),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .unwrap_or(0);
     render_shell(
         &config,
         NavPage::Home,
@@ -1575,22 +1573,12 @@ async fn main() {
     let cache_bg = cache.clone();
     tokio::spawn(async move {
         loop {
-            let (snapshot, health_ok, pending_devices) = tokio::join!(
+            let (snapshot, health_ok) = tokio::join!(
                 collect_system_snapshot(),
                 fetch_openclaw_health(),
-                async {
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(3),
-                        tokio::task::spawn_blocking(count_pending_devices),
-                    )
-                    .await
-                    .ok()
-                    .and_then(|r| r.ok())
-                    .unwrap_or(0)
-                },
             );
-            *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok, pending_devices });
-            tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+            *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok });
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }
     });
     let app_state = AppState { cache };

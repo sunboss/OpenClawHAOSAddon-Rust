@@ -127,6 +127,32 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Fix OOM crash loop caused by background Node.js spawning
+
+- User request: 升级后 openclaw-gateway 反复重启，haos 系统不稳定
+- Intent / context:
+  - 上版本（2026.04.07.5）的后台缓存任务每 8 秒调用 `count_pending_devices()`，该函数启动 `openclaw devices list`（Node.js 进程，100-200MB 内存）。
+  - Raspberry Pi 等内存受限设备上，每 8 秒 spawn 一个 Node.js 进程叠加 gateway 自身的 Node.js 进程，触发 OOM Killer 将 gateway 进程杀死（`exited with None` = 信号终止）。
+  - 日志中 PID 快速跳跃（36→329→789→1393）证实了 gateway 在快速崩溃重启循环中。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.1`（日期修正）
+  - `crates/haos-ui/src/main.rs`
+  - `docs/OPERATION_LOG.md`
+- Changes detail:
+  - `CachedSnapshot` 去掉 `pending_devices` 字段
+  - 后台任务移除 `count_pending_devices()` 调用，只保留轻量操作（proc 文件读取 + HTTP health check）
+  - 后台任务更新间隔 8s → 30s，进一步降低系统压力
+  - `index()` 仍按需调用 `count_pending_devices()`（用户访问页面时），保留 3s 超时保护
+- Commands / validation:
+  - `cargo test -p haos-ui` — 5/5 全过
+- Version: `2026.04.08.1`
+- Commit: pending
+- Push: pending
+- Result summary: 后台任务不再持续 spawn Node.js 进程，gateway OOM 崩溃循环消除，系统恢复稳定。
+- Next handoff:
+  - 后台缓存目前只缓存 SystemSnapshot（proc/df/ps）和 health_ok（actiond HTTP），两者都是轻量操作，30s 间隔对 SD 卡设备友好。
+  - `count_pending_devices()` 仍是按需的 Node.js 调用，如果将来想彻底消除，可改为通过 actiond 的 REST 接口查询（无 Node.js 开销）。
+
 ## 2026-04-08 - Performance: background snapshot cache + timeout reductions
 
 - User request: 页面有点卡顿，有没有优化的空间
