@@ -1248,7 +1248,10 @@ async fn run_pairing_auto_approver(
         return;
     }
 
-    sleep(Duration::from_secs(20)).await;
+    // Wait for gateway to be ready before first approval attempt.
+    // Gateway startup typically takes 20-25s; 45s gives a comfortable margin
+    // and avoids the "gateway timeout" error on first try.
+    sleep(Duration::from_secs(45)).await;
     loop {
         if *shutdown_rx.borrow() {
             break;

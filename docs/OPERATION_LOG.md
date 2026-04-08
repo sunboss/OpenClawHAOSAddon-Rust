@@ -127,6 +127,27 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Fix auto-approve helper timeout on gateway startup
+
+- User request: 日志中 `auto-approve helper exited with Some(1): gateway timeout` 反复出现
+- Intent / context:
+  - `run_pairing_auto_approver` 启动后等待 20 秒就开始执行 `openclaw devices approve --latest`，但 gateway 实际启动需要 22-25 秒，导致第一次尝试必然超时并打印错误日志。
+  - 配对功能本身不受影响（15 秒后自动重试时 gateway 已就绪），但日志噪音严重。
+  - 修复：初始等待从 20 秒改为 45 秒，给 gateway 充足的启动时间。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.8`
+  - `crates/addon-supervisor/src/main.rs` — `sleep(20s)` → `sleep(45s)`
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - `cargo check -p addon-supervisor` — 编译通过
+- Version: `2026.04.08.8`
+- Commit: pending
+- Push: pending
+- Result summary: 首次启动时 auto-approve helper 不再因 gateway 未就绪而报 timeout 错误，日志更干净。
+- Next handoff:
+  - 如果 gateway 启动时间超过 45 秒（极慢设备），第一次仍会失败，15 秒后重试。可按需调大此值。
+  - 预装 deps 已生效（2026.04.08.7），doctor 不再显示 "Bundled plugin runtime deps are missing"。
+
 ## 2026-04-08 - Perf: cache pending_devices + show Gateway Token on home page + prebundle deps
 
 - User request: 首页有点卡顿；首页显示 Gateway Token 可以复制
