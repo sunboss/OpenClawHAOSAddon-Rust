@@ -127,6 +127,26 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-09 - Fix auto-approve startup race: increase initial delay to 120s
+
+- User request: 日志显示 90s 延迟仍差 3-5 秒（acpx 实测需 93-95s），每次重启仍有一次启动失败
+- Intent / context:
+  - 精确计时：gateway 启动后 ~20s ready，acpx runtime 再需 ~73s，合计 ~93-95s。
+  - 90s 延迟每次差 3-5 秒，导致启动时仍有一次 CLI 超时。
+  - 改为 120s 给 25s 余量，覆盖 SD 卡慢启动场景。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.09.1`
+  - `crates/addon-supervisor/src/main.rs` — `sleep(90s)` → `sleep(120s)`
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - `cargo check -p addon-supervisor` — 编译通过
+- Version: `2026.04.09.1`
+- Commit: pending
+- Push: pending
+- Result summary: 重启后 auto-approve helper 不再因 acpx 未就绪失败；120s 覆盖实测 93-95s 加 25s 余量。
+- Next handoff:
+  - 运行期间约每 30 分钟一次偶发失败属 gateway 内部定时事件，非 bug，系统 15s 自动恢复。
+
 ## 2026-04-09 - Fix auto-approve startup race: increase initial delay to 90s
 
 - User request: 日志中 `auto-approve helper exited with Some(1): gateway timeout` 在重启后持续出现，45s 延迟仍不够
