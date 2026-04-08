@@ -1,5 +1,5 @@
 name: OpenClawHAOSAddon-Rust
-version: "2026.04.09.3"
+version: "2026.04.09.4"
 slug: openclaw_assistant_rust
 description: Rust rewrite of the local HAOS add-on layer while keeping upstream OpenClaw runtimes unchanged.
 url: https://github.com/sunboss/OpenClawHAOSAddon-Rust
@@ -32,7 +32,6 @@ options:
   enable_openai_api: true
   auto_configure_mcp: true
   homeassistant_token: ""
-  auto_approve_device_pairing: true
   run_doctor_on_start: true
 
 schema:
@@ -47,5 +46,4 @@ schema:
   enable_openai_api: bool?
   auto_configure_mcp: bool?
   homeassistant_token: str?
-  auto_approve_device_pairing: bool?
   run_doctor_on_start: bool?

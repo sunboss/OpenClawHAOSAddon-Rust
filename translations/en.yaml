@@ -41,9 +41,6 @@ configuration:
   homeassistant_token:
     name: Home Assistant Token
     description: Long-lived Home Assistant token used for MCP registration.
-  auto_approve_device_pairing:
-    name: Auto-Approve Device Pairing
-    description: Periodically approve the latest pending device pairing request.
   run_doctor_on_start:
     name: Run Doctor On Start
     description: Run openclaw doctor shortly after startup for diagnostics.

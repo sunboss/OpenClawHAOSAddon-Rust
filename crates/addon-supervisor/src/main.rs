@@ -39,8 +39,6 @@ enum Commands {
         #[arg(long, default_value = "")]
         gateway_remote_url: String,
         #[arg(long, default_value_t = true)]
-        auto_approve_pairing: bool,
-        #[arg(long, default_value_t = true)]
         run_doctor_on_start: bool,
         #[arg(long, default_value_t = 7681)]
         terminal_port: u16,
@@ -104,7 +102,6 @@ struct AddonOptions {
     enable_openai_api: Option<bool>,
     auto_configure_mcp: Option<bool>,
     homeassistant_token: Option<String>,
-    auto_approve_device_pairing: Option<bool>,
     run_doctor_on_start: Option<bool>,
 }
 
@@ -121,7 +118,6 @@ struct RuntimeSettings {
     enable_openai_api: bool,
     auto_configure_mcp: bool,
     homeassistant_token: String,
-    auto_approve_pairing: bool,
     run_doctor_on_start: bool,
 }
 
@@ -144,7 +140,6 @@ fn main() -> ExitCode {
             ingress_bin,
             gateway_mode,
             gateway_remote_url,
-            auto_approve_pairing,
             run_doctor_on_start,
             terminal_port,
             enable_terminal,
@@ -155,7 +150,6 @@ fn main() -> ExitCode {
             ingress_bin,
             gateway_mode,
             gateway_remote_url,
-            auto_approve_pairing,
             run_doctor_on_start,
             terminal_port,
             enable_terminal,
@@ -254,7 +248,6 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         args.ingress_bin,
         settings.gateway_mode,
         settings.gateway_remote_url,
-        settings.auto_approve_pairing,
         settings.run_doctor_on_start,
         settings.terminal_port,
         settings.enable_terminal,
@@ -290,7 +283,6 @@ fn runtime_settings(options: &AddonOptions) -> RuntimeSettings {
         enable_openai_api: options.enable_openai_api.unwrap_or(true),
         auto_configure_mcp: options.auto_configure_mcp.unwrap_or(true),
         homeassistant_token: options.homeassistant_token.clone().unwrap_or_default(),
-        auto_approve_pairing: options.auto_approve_device_pairing.unwrap_or(true),
         run_doctor_on_start: options.run_doctor_on_start.unwrap_or(true),
     }
 }
@@ -1013,7 +1005,6 @@ fn run_services(
     ingress_bin: String,
     gateway_mode: String,
     gateway_remote_url: String,
-    auto_approve_pairing: bool,
     run_doctor_on_start: bool,
     _terminal_port: u16,
     _enable_terminal: bool,
@@ -1065,14 +1056,6 @@ fn run_services(
             ProcessSpec::new("ingressd", ingress_bin, vec![]),
             shutdown_rx,
         )));
-
-        if auto_approve_pairing {
-            handles.push(tokio::spawn(run_pairing_auto_approver(
-                gateway_bin.clone(),
-                gateway_mode.clone(),
-                shutdown_tx.subscribe(),
-            )));
-        }
 
         if run_doctor_on_start {
             handles.push(tokio::spawn(run_startup_doctor(
@@ -1238,96 +1221,8 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
     }
 }
 
-async fn run_pairing_auto_approver(
-    gateway_bin: String,
-    gateway_mode: String,
-    mut shutdown_rx: watch::Receiver<bool>,
-) {
-    if gateway_mode == "remote" {
-        println!("addon-supervisor: auto-approve pairing skipped in remote mode");
-        return;
-    }
-
-    // Failures within the startup grace window are suppressed (not logged) because
-    // the embedded acpx runtime backend — required for CLI connections — takes a
-    // variable amount of time to initialize after gateway ready (~70-120s depending
-    // on hardware/load). A fixed initial delay cannot reliably cover all boots, so
-    // we start polling immediately but stay quiet until the grace period expires.
-    const STARTUP_GRACE_SECS: u64 = 180;
-    let started_at = tokio::time::Instant::now();
-
-    loop {
-        if *shutdown_rx.borrow() {
-            break;
-        }
-
-        let in_grace = started_at.elapsed().as_secs() < STARTUP_GRACE_SECS;
-        let mut command = Command::new(&gateway_bin);
-        apply_child_env(&mut command);
-        command.args(["devices", "approve", "--latest"]);
-        let delay = tokio::select! {
-            _ = shutdown_rx.changed() => {
-                break;
-            }
-            result = command.output() => {
-                match result {
-                    Ok(output) => handle_auto_approve_output(output, in_grace),
-                    Err(err) => {
-                        if !in_grace {
-                            eprintln!("addon-supervisor: failed to start auto-approve helper: {err}");
-                        }
-                        Duration::from_secs(15)
-                    }
-                }
-            }
-        };
-
-        sleep(delay).await;
-    }
-}
-
-fn handle_auto_approve_output(output: std::process::Output, suppress_errors: bool) -> Duration {
-    let stdout = normalize_command_output(&output.stdout);
-    let stderr = normalize_command_output(&output.stderr);
-    let combined = if !stderr.is_empty() {
-        stderr.clone()
-    } else {
-        stdout.clone()
-    };
-
-    if output.status.success() {
-        if combined.is_empty() || is_no_pending_pairing_output(&combined) {
-            return Duration::from_secs(30);
-        }
-        println!("{combined}");
-        return Duration::from_secs(6);
-    }
-
-    if is_no_pending_pairing_output(&combined) {
-        return Duration::from_secs(30);
-    }
-
-    if !suppress_errors {
-        let detail = if combined.is_empty() {
-            "unknown failure".to_string()
-        } else {
-            combined
-        };
-        eprintln!(
-            "addon-supervisor: auto-approve helper exited with {:?}: {}",
-            output.status.code(),
-            detail
-        );
-    }
-    Duration::from_secs(15)
-}
-
 fn normalize_command_output(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).trim().to_string()
-}
-
-fn is_no_pending_pairing_output(output: &str) -> bool {
-    output.contains("No pending device pairing requests to approve")
 }
 
 async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receiver<bool>) {
@@ -1419,7 +1314,6 @@ mod tests {
             enable_openai_api: false,
             auto_configure_mcp: true,
             homeassistant_token: "token".to_string(),
-            auto_approve_pairing: false,
             run_doctor_on_start: false,
         }
     }
@@ -1479,46 +1373,6 @@ mod tests {
     }
 
     #[test]
-    fn no_pending_pairing_output_is_suppressed() {
-        assert!(is_no_pending_pairing_output(
-            "No pending device pairing requests to approve"
-        ));
-    }
-
-    #[test]
-    fn successful_auto_approve_waits_longer_when_idle() {
-        let output = std::process::Output {
-            status: exit_status(0),
-            stdout: b"No pending device pairing requests to approve\n".to_vec(),
-            stderr: Vec::new(),
-        };
-
-        assert_eq!(handle_auto_approve_output(output), Duration::from_secs(30));
-    }
-
-    #[test]
-    fn successful_auto_approve_rechecks_quickly_after_approval() {
-        let output = std::process::Output {
-            status: exit_status(0),
-            stdout: b"Approved abc123\n".to_vec(),
-            stderr: Vec::new(),
-        };
-
-        assert_eq!(handle_auto_approve_output(output), Duration::from_secs(6));
-    }
-
-    #[test]
-    fn failed_auto_approve_with_no_pending_is_also_suppressed() {
-        let output = std::process::Output {
-            status: exit_status(1),
-            stdout: b"No pending device pairing requests to approve\n".to_vec(),
-            stderr: Vec::new(),
-        };
-
-        assert_eq!(handle_auto_approve_output(output), Duration::from_secs(30));
-    }
-
-    #[test]
     fn ensure_mcporter_config_creates_seed_file() {
         let unique = format!("openclaw-test-{}", random::<u64>());
         let root = std::env::temp_dir().join(unique);
@@ -1547,22 +1401,9 @@ mod tests {
         ensure_mcporter_config(&args).expect("seed mcporter config");
 
         let contents = fs::read_to_string(&args.mcporter_config).expect("mcporter config");
-        assert_eq!(contents, "{}\n");
+        assert_eq!(contents, "{\"mcpServers\":{}}\n");
 
         let _ = fs::remove_dir_all(root);
     }
 
-    fn exit_status(code: i32) -> std::process::ExitStatus {
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::ExitStatusExt;
-            std::process::ExitStatus::from_raw(code)
-        }
-
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::ExitStatusExt;
-            std::process::ExitStatus::from_raw(code as u32)
-        }
-    }
 }
