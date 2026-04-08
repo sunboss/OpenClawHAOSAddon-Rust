@@ -8,7 +8,7 @@ RUN cargo build --release --workspace
 FROM node:24-bookworm-slim
 
 ARG TARGETARCH
-ARG OPENCLAW_VERSION=2026.4.5
+ARG OPENCLAW_VERSION=2026.4.8
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
 ARG BUILD_DATE=unknown

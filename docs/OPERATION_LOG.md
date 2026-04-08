@@ -127,6 +127,26 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Upgrade openclaw to v2026.4.8
+
+- User request: 升级 openclaw 到 v2026.4.8
+- Intent / context:
+  - gateway 自检日志提示 `update available: v2026.4.8 (current v2026.4.5)`，用户确认升级。
+  - v2026.4.8 修复：Telegram/多渠道打包缺失 sidecar 导致的 npm 构建失败、Slack Socket Mode 代理支持、SecretRef token 下载、DNS pinning 问题，均为 Bug Fix，无破坏性变更。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.3`
+  - `Dockerfile` — `OPENCLAW_VERSION` 从 `2026.4.5` 改为 `2026.4.8`
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - 无需 cargo 编译，仅修改 npm 安装版本号
+- Version: `2026.04.08.3`
+- Commit: pending
+- Push: pending
+- Result summary: 镜像重建后将安装 openclaw@2026.4.8，修复多渠道启动问题和 Slack 代理支持。
+- Next handoff:
+  - 升级后首次启动 gateway 会重新加载插件（当前 52 loaded），如有渠道启动失败需查日志。
+  - openai/gpt-5.4 模型仍无 API key，建议执行 `openclaw config set agents.defaults.model minimax/MiniMax-M2.7` 消除每 30 分钟的诊断报错。
+
 ## 2026-04-08 - Fix rapid-restart OOM feedback loop with exponential backoff
 
 - User request: haos 还是会重启（2026.04.08.1 之后 gateway 依然崩溃循环）
