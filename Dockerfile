@@ -43,7 +43,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm config set fund false && npm config set audit false \
-    && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @slack/web-api @slack/bolt @xterm/xterm @xterm/addon-fit
+    && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @slack/web-api @slack/bolt @xterm/xterm @xterm/addon-fit \
+    # @buape/carbon is required by openclaw's Discord channel plugin but missing
+    # from openclaw's declared dependencies (upstream packaging bug in 2026.4.8+).
+    && npm install -g @buape/carbon
 
 COPY --from=builder /src/target/release/actiond /usr/local/bin/actiond
 COPY --from=builder /src/target/release/addon-supervisor /usr/local/bin/addon-supervisor

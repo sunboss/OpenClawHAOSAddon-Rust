@@ -127,6 +127,27 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Fix missing @buape/carbon dependency for Discord channel plugin
+
+- User request: 升级后日志持续刷 `Cannot find module '@buape/carbon'`
+- Intent / context:
+  - openclaw v2026.4.8 的 Discord 渠道插件新引入了 `@buape/carbon` 依赖，但 openclaw 的 `package.json` 未将其列为 dependencies，导致 `npm install -g openclaw` 时不会自动安装。
+  - gateway HTTP server 每次处理请求时调用 `listBundledChannelPlugins` → 触发 Discord 插件加载 → 找不到 `@buape/carbon` → `unhandled error`，持续刷错误日志。
+  - gateway 本身仍可运行（acpx runtime ready、webchat 正常），但错误噪音影响日志可读性，属 upstream 打包漏洞。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.4`
+  - `Dockerfile` — npm 安装步骤追加 `npm install -g @buape/carbon`，带注释说明原因
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - 无需 cargo 编译，仅 Dockerfile 层变更
+- Version: `2026.04.08.4`
+- Commit: pending
+- Push: pending
+- Result summary: 镜像重建后 `@buape/carbon` 已安装，Discord 插件加载不再报 `MODULE_NOT_FOUND`，错误日志消除。
+- Next handoff:
+  - 若 openclaw 后续版本修复了此打包问题（将 `@buape/carbon` 加入 dependencies），可从 Dockerfile 移除这行补丁。
+  - 当前用户未使用 Discord 渠道，修复仅消除日志噪音，不影响现有功能。
+
 ## 2026-04-08 - Upgrade openclaw to v2026.4.8
 
 - User request: 升级 openclaw 到 v2026.4.8
