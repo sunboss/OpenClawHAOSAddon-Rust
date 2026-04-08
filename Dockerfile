@@ -45,9 +45,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm config set fund false && npm config set audit false \
     && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @slack/web-api @slack/bolt @xterm/xterm @xterm/addon-fit \
     # Undeclared peer deps required by openclaw's bundled channel plugins (upstream bug in 2026.4.8+):
-    #   @buape/carbon         — Discord channel plugin
+    #   @buape/carbon           — Discord channel plugin
     #   @larksuiteoapi/node-sdk — Feishu/Lark channel plugin
-    && npm install -g @buape/carbon @larksuiteoapi/node-sdk
+    #   grammy + @grammyjs/types — Telegram channel plugin (@grammyjs/types is devDep only upstream)
+    && npm install -g @buape/carbon @larksuiteoapi/node-sdk grammy @grammyjs/types
 
 COPY --from=builder /src/target/release/actiond /usr/local/bin/actiond
 COPY --from=builder /src/target/release/addon-supervisor /usr/local/bin/addon-supervisor

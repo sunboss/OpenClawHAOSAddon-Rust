@@ -127,6 +127,30 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-08 - Fix all undeclared channel plugin deps for openclaw 2026.4.8 (complete)
+
+- User request: 日志继续刷 `Cannot find module 'grammy'`（Telegram 渠道），要求一次性补齐所有缺失包
+- Intent / context:
+  - 对 openclaw v2026.4.8 的全部渠道扩展文件（telegram/discord/feishu/google-chat/teams/mattermost/irc/nextcloud-talk/bluebubbles/zalo/whatsapp/signal）进行完整扫描。
+  - 扫描结论：只有三个渠道有未声明的外部 npm 依赖（其他渠道使用内部模块，无外部依赖）：
+    - Discord: `@buape/carbon`
+    - Feishu: `@larksuiteoapi/node-sdk`
+    - Telegram: `grammy`、`@grammyjs/types`（后者在 openclaw devDependencies 中，但 production 代码调用）
+  - 合并为一行 `npm install -g` 全部补齐。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.6`
+  - `Dockerfile` — 补丁行追加 `grammy @grammyjs/types`，更新注释
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - 无需 cargo 编译
+- Version: `2026.04.08.6`
+- Commit: pending
+- Push: pending
+- Result summary: 全部三个有问题的渠道插件（Discord/Feishu/Telegram）的缺失依赖已补齐，gateway-http unhandled error 将在镜像重建后消除。
+- Next handoff:
+  - 扫描结果为完整扫描，其他渠道（Google Chat/Teams/IRC/Mattermost/Nextcloud/Zalo/BlueBubbles 等）不存在同类问题，无需额外修补。
+  - 若 upstream 后续修复 package.json 打包，可移除此 npm install -g 补丁行。
+
 ## 2026-04-08 - Fix missing Feishu channel dependency @larksuiteoapi/node-sdk
 
 - User request: 升级后日志持续刷 `Cannot find module '@larksuiteoapi/node-sdk'`（Feishu 渠道）
