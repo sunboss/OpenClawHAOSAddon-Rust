@@ -1248,16 +1248,20 @@ async fn run_pairing_auto_approver(
         return;
     }
 
-    // Wait for gateway AND acpx runtime to be ready before first approval attempt.
-    // Gateway process reports ready in ~20s, but the embedded acpx runtime backend
-    // (which CLI connections require) takes an additional 70-75s to initialize.
-    // Observed total: ~93-95s. 120s gives a comfortable buffer on typical hardware.
-    sleep(Duration::from_secs(120)).await;
+    // Failures within the startup grace window are suppressed (not logged) because
+    // the embedded acpx runtime backend — required for CLI connections — takes a
+    // variable amount of time to initialize after gateway ready (~70-120s depending
+    // on hardware/load). A fixed initial delay cannot reliably cover all boots, so
+    // we start polling immediately but stay quiet until the grace period expires.
+    const STARTUP_GRACE_SECS: u64 = 180;
+    let started_at = tokio::time::Instant::now();
+
     loop {
         if *shutdown_rx.borrow() {
             break;
         }
 
+        let in_grace = started_at.elapsed().as_secs() < STARTUP_GRACE_SECS;
         let mut command = Command::new(&gateway_bin);
         apply_child_env(&mut command);
         command.args(["devices", "approve", "--latest"]);
@@ -1267,9 +1271,11 @@ async fn run_pairing_auto_approver(
             }
             result = command.output() => {
                 match result {
-                    Ok(output) => handle_auto_approve_output(output),
+                    Ok(output) => handle_auto_approve_output(output, in_grace),
                     Err(err) => {
-                        eprintln!("addon-supervisor: failed to start auto-approve helper: {err}");
+                        if !in_grace {
+                            eprintln!("addon-supervisor: failed to start auto-approve helper: {err}");
+                        }
                         Duration::from_secs(15)
                     }
                 }
@@ -1280,7 +1286,7 @@ async fn run_pairing_auto_approver(
     }
 }
 
-fn handle_auto_approve_output(output: std::process::Output) -> Duration {
+fn handle_auto_approve_output(output: std::process::Output, suppress_errors: bool) -> Duration {
     let stdout = normalize_command_output(&output.stdout);
     let stderr = normalize_command_output(&output.stderr);
     let combined = if !stderr.is_empty() {
@@ -1301,16 +1307,18 @@ fn handle_auto_approve_output(output: std::process::Output) -> Duration {
         return Duration::from_secs(30);
     }
 
-    let detail = if combined.is_empty() {
-        "unknown failure".to_string()
-    } else {
-        combined
-    };
-    eprintln!(
-        "addon-supervisor: auto-approve helper exited with {:?}: {}",
-        output.status.code(),
-        detail
-    );
+    if !suppress_errors {
+        let detail = if combined.is_empty() {
+            "unknown failure".to_string()
+        } else {
+            combined
+        };
+        eprintln!(
+            "addon-supervisor: auto-approve helper exited with {:?}: {}",
+            output.status.code(),
+            detail
+        );
+    }
     Duration::from_secs(15)
 }
 
