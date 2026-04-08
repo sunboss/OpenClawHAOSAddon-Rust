@@ -1248,10 +1248,11 @@ async fn run_pairing_auto_approver(
         return;
     }
 
-    // Wait for gateway to be ready before first approval attempt.
-    // Gateway startup typically takes 20-25s; 45s gives a comfortable margin
-    // and avoids the "gateway timeout" error on first try.
-    sleep(Duration::from_secs(45)).await;
+    // Wait for gateway AND acpx runtime to be ready before first approval attempt.
+    // Gateway process is ready in ~20s, but the embedded acpx runtime backend
+    // (which CLI connections require) takes an additional 40-70s to initialize.
+    // 90s covers both phases on typical hardware.
+    sleep(Duration::from_secs(90)).await;
     loop {
         if *shutdown_rx.borrow() {
             break;

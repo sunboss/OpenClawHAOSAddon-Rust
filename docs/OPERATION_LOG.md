@@ -127,6 +127,28 @@ Copy this block before each push and fill it in:
   - If adding more command groups to the commands page, follow the pattern: setup/config → `action_button`, diagnostics/read-only → `diag_button`, destructive/restart → `action_button` (auto-gets `btn-danger` via keyword match).
   - openclaw upstream version in Dockerfile is still `2026.4.2`; latest release is `v2026.4.5` (adds video_generate, music_generate, Qwen/Fireworks/MiniMax providers, dreaming system). Upgrade is optional but noted.
 
+## 2026-04-09 - Fix auto-approve startup race: increase initial delay to 90s
+
+- User request: 日志中 `auto-approve helper exited with Some(1): gateway timeout` 在重启后持续出现，45s 延迟仍不够
+- Intent / context:
+  - 日志分析：从 gateway 启动到 `[plugins] embedded acpx runtime backend ready` 需要约 90 秒（gateway 进程就绪约 20s，acpx runtime 初始化额外需 40-70s）。
+  - CLI 连接（`openclaw devices approve --latest`）依赖 acpx runtime，webchat 不依赖，因此 webchat 正常而 CLI 超时。
+  - 45s 延迟只等到 gateway 进程就绪，未等到 acpx ready，故启动阶段仍失败。
+  - 运行期间偶发失败（约每 30 分钟一次）属正常行为：gateway bonjour 重启或短暂繁忙时 CLI 连接超时，15s 后自动重试，不影响功能。
+- Files changed:
+  - `config.yaml` — 版本升至 `2026.04.08.9`
+  - `crates/addon-supervisor/src/main.rs` — `sleep(45s)` → `sleep(90s)`
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - `cargo check -p addon-supervisor` — 编译通过
+- Version: `2026.04.08.9`
+- Commit: pending
+- Push: pending
+- Result summary: 重启后启动阶段 auto-approve 不再因 acpx runtime 尚未就绪而报 timeout；运行期间偶发超时属预期行为，系统自动恢复。
+- Next handoff:
+  - 运行期间约 30 分钟一次的偶发失败是 gateway 短暂繁忙导致，非 bug，无需处理。
+  - 若后续希望彻底消除，可改用 gateway 的 webchat WebSocket API 发送 device.pair.approve，绕过 CLI 依赖。
+
 ## 2026-04-08 - Fix auto-approve helper timeout on gateway startup
 
 - User request: 日志中 `auto-approve helper exited with Some(1): gateway timeout` 反复出现
