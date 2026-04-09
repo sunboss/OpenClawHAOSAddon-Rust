@@ -31,10 +31,11 @@ pub async fn list_pending_pairs(gateway_token: &str) -> Vec<PendingPair> {
             pairs
         }
         Err(err) => {
-            // gateway 尚未就绪时会出现 "Connection refused"，属于正常启动阶段现象，不打错误日志
-            if err.contains("Connection refused") {
-                // gateway 未启动，静默跳过
-            } else {
+            // 启动阶段两类正常现象，不打错误日志：
+            //   - "Connection refused"：gateway 进程尚未启动
+            //   - "timed out"：gateway 已启动但 acpx 运行时尚未就绪（通常需要 60-120s）
+            let is_startup_noise = err.contains("Connection refused") || err.contains("timed out");
+            if !is_startup_noise {
                 eprintln!("haos-ui: device.pair.list failed: {err}");
             }
             vec![]

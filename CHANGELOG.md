@@ -1,3 +1,7 @@
+## 2026.04.09.11
+
+- 优化：启动阶段 `gateway call timed out` 不再打印错误日志（acpx 未就绪属正常现象）
+
 ## 2026.04.09.10
 
 - 修复：WebSocket connect 改用 `id="cli"` + `mode="cli"`，绕过 v2026.4.9 新增的
