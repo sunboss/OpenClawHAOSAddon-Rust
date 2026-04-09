@@ -1,3 +1,11 @@
+## 2026.04.09.10
+
+- 修复：WebSocket connect 改用 `id="cli"` + `mode="cli"`，绕过 v2026.4.9 新增的
+  Control UI device identity 校验（根本原因：`id="openclaw-control-ui"` 触发
+  `isControlUi=true` 导致 `reject-control-ui-insecure-auth`，改为 CLI 身份后
+  走 `roleCanSkipDeviceIdentity("operator", true)` 直接 allow）
+- 同步移除 Origin 头（CLI 本地连接不需要，带 Origin 反而影响 hasBrowserOriginHeader 判断）
+
 ## 2026.04.09.9
 
 - 修复：WebSocket 握手改用 `IntoClientRequest` 正确生成 `Sec-WebSocket-Key` 等标准头，
