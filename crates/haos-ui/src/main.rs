@@ -100,8 +100,9 @@ impl PageConfig {
         let current_model = config
             .as_ref()
             .and_then(|v| first_string_path(v, &[
-                "agents.defaults.llm.model",  // v2026.4.9+
-                "agents.defaults.model",       // 旧版本兜底
+                "agents.defaults.model.primary", // 实际格式：model 是对象，primary 是模型名
+                "agents.defaults.llm.model",     // 备用路径
+                "agents.defaults.model",         // 旧版本字符串兜底
             ]))
             .unwrap_or_else(|| "未配置".to_string());
         let mcp_endpoint_count = count_mcp_endpoints();
@@ -769,7 +770,7 @@ fn home_content(
     <button class="btn" id="ocTokenToggleBtn" onclick="ocToggleToken()">显示</button>
     <button class="btn btn-action" onclick="ocCopyToken(this)">复制</button>
   </div>
-  <script>(function(){{var t="{tok_escaped}";window.ocToggleToken=function(){{var v=document.getElementById("ocTokenVal"),b=document.getElementById("ocTokenToggleBtn");if(b.dataset.vis==="1"){{v.textContent="••••••••"+t.slice(-8);b.textContent="显示";b.dataset.vis="";}}else{{v.textContent=t;b.textContent="隐藏";b.dataset.vis="1";}}}}; window.ocCopyToken=function(btn){{var orig=btn.textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){{btn.textContent="已复制 ✓";setTimeout(function(){{btn.textContent=orig;}},1500);}}).catch(function(){{prompt("请手动复制 Token:",t);}});}};}})()</script>
+  <script>(function(){{var t="{tok_escaped}";window.ocToggleToken=function(){{var v=document.getElementById("ocTokenVal"),b=document.getElementById("ocTokenToggleBtn");if(b.dataset.vis==="1"){{v.textContent="••••••••"+t.slice(-8);b.textContent="显示";b.dataset.vis="";}}else{{v.textContent=t;b.textContent="隐藏";b.dataset.vis="1";}}}}; window.ocCopyToken=function(btn){{var orig=btn.textContent;function done(){{btn.textContent="已复制 ✓";setTimeout(function(){{btn.textContent=orig;}},1500);}}function fb(){{try{{var ta=document.createElement("textarea");ta.value=t;ta.style.cssText="position:fixed;opacity:0;top:0;left:0;width:1px;height:1px";document.body.appendChild(ta);ta.focus();ta.select();var ok=document.execCommand("copy");document.body.removeChild(ta);if(ok){{done();}}else{{alert("Token: "+t);}}}}catch(e){{alert("Token: "+t);}}}}if(navigator.clipboard){{navigator.clipboard.writeText(t).then(done,fb);}}else{{fb();}}}};}})()</script>
 </div>"#, masked=masked, tok_escaped=tok_escaped)
             }
         },
