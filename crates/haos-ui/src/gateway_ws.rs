@@ -74,15 +74,17 @@ async fn call_gateway(token: &str, method: &str, params: Value) -> Result<Value,
 }
 
 async fn call_gateway_inner(token: &str, method: &str, params: Value) -> Result<Value, String> {
-    // gateway 的 controlUi.allowedOrigins 校验要求 HTTP Origin 头，
-    // 不带 Origin 的连接会被拒绝（origin=n/a → "origin not allowed"）
-    use tokio_tungstenite::tungstenite::http::Request;
-    let request = Request::builder()
-        .uri("ws://127.0.0.1:18790")
-        .header("Host", "127.0.0.1:18790")
-        .header("Origin", "http://127.0.0.1:18790")
-        .body(())
+    // 先用 IntoClientRequest 构建请求（自动生成 Sec-WebSocket-Key / Upgrade / Connection 等
+    // 标准握手头），再单独追加 Origin 头。
+    // 注意：不能直接用 Request::builder()，否则 Sec-WebSocket-Key 缺失，握手失败。
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::tungstenite::http::header::ORIGIN;
+    let mut request = "ws://127.0.0.1:18790"
+        .into_client_request()
         .map_err(|e| format!("ws request build error: {e}"))?;
+    request
+        .headers_mut()
+        .insert(ORIGIN, "http://127.0.0.1:18790".parse().unwrap());
     let (mut ws, _) = connect_async(request)
         .await
         .map_err(|e| format!("ws connect failed: {e}"))?;

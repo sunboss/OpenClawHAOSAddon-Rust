@@ -1,3 +1,8 @@
+## 2026.04.09.9
+
+- 修复：WebSocket 握手改用 `IntoClientRequest` 正确生成 `Sec-WebSocket-Key` 等标准头，
+  再单独追加 `Origin` 头，彻底解决 `Missing sec-websocket-key` 握手失败
+
 ## 2026.04.09.8
 
 - 修复：WebSocket 连接补充 `Origin: http://127.0.0.1:18790` 头，解决 gateway 拒绝 `device.pair.list`（`origin not allowed`）
