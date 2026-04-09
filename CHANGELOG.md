@@ -1,3 +1,11 @@
+## 2026.04.10.1
+
+- 修复：实现完整 Ed25519 设备身份认证，彻底解决 `missing scope: operator.pairing`
+  - 首次运行在 `/config/.openclaw/haos-ui-identity.json` 生成持久化密钥对
+  - connect 请求携带 device 对象（id/publicKey/signature/signedAt/nonce）
+  - gateway 判断为 `cli_container_local` → silent auto-approve → scopes 不被清空
+  - 后续连接直接复用已配对 identity，无需每次重新配对
+
 ## 2026.04.09.11
 
 - 优化：启动阶段 `gateway call timed out` 不再打印错误日志（acpx 未就绪属正常现象）

@@ -559,10 +559,13 @@ name = "haos-ui"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "futures-util",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]
