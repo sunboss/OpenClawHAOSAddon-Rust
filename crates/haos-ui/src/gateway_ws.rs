@@ -31,7 +31,12 @@ pub async fn list_pending_pairs(gateway_token: &str) -> Vec<PendingPair> {
             pairs
         }
         Err(err) => {
-            eprintln!("haos-ui: device.pair.list failed: {err}");
+            // gateway 尚未就绪时会出现 "Connection refused"，属于正常启动阶段现象，不打错误日志
+            if err.contains("Connection refused") {
+                // gateway 未启动，静默跳过
+            } else {
+                eprintln!("haos-ui: device.pair.list failed: {err}");
+            }
             vec![]
         }
     }
@@ -82,7 +87,7 @@ async fn call_gateway_inner(token: &str, method: &str, params: Value) -> Result<
     .await
     .map_err(|_| "connect.challenge timeout".to_string())??;
 
-    // 发送 connect 请求
+    // 发送 connect 请求（platform 字段为 gateway schema 必填项）
     let connect_id = new_id();
     let connect_frame = json!({
         "type": "req",
@@ -95,6 +100,7 @@ async fn call_gateway_inner(token: &str, method: &str, params: Value) -> Result<
                 "id": "openclaw-control-ui",
                 "version": "2026.4.8",
                 "mode": "webchat",
+                "platform": "linux",
                 "instanceId": new_id()
             },
             "caps": [],

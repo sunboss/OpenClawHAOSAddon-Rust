@@ -1,3 +1,8 @@
+## 2026.04.09.6
+
+- 修复：gateway WebSocket connect 请求补充 `platform` 字段，消除 `must have required property 'platform'` 鉴权失败
+- 优化：gateway 未就绪时（Connection refused）不再打印错误日志，消除启动阶段噪音
+
 ## 2026.04.09.5
 
 - 新增：首页实时配对通知——有设备请求配对时自动弹出 Banner，显示设备名，点按钮即可批准，无需进命令行
