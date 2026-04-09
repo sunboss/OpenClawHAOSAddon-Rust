@@ -1,15 +1,19 @@
+mod gateway_ws;
+
 use axum::{
     Router,
     extract::State,
-    response::{Html, IntoResponse},
-    routing::get,
+    response::{Html, IntoResponse, Sse, sse::Event},
+    routing::{get, post},
+    Json,
 };
-use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command, sync::Arc};
-use tokio::sync::RwLock;
+use futures_util::{StreamExt as _, stream};
+use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command, sync::Arc, time::Duration};
+use tokio::sync::{RwLock, broadcast};
+
+use gateway_ws::PendingPair;
 
 /// Snapshot cached by the background updater task every 30 seconds.
-/// `pending_devices` is refreshed at most once every 5 minutes to avoid
-/// spawning a Node.js process on every page load.
 #[derive(Clone)]
 struct CachedSnapshot {
     snapshot: SystemSnapshot,
@@ -17,9 +21,28 @@ struct CachedSnapshot {
     pending_devices: usize,
 }
 
+/// 待配对设备列表（通过 WebSocket 轮询，每 30s 更新一次）。
+#[derive(Clone)]
+struct PairingState {
+    pairs: Arc<RwLock<Vec<PendingPair>>>,
+    /// 每当列表变化时广播，SSE 连接订阅此 channel。
+    notify: broadcast::Sender<()>,
+}
+
+impl PairingState {
+    fn new() -> Self {
+        let (notify, _) = broadcast::channel(4);
+        Self {
+            pairs: Arc::new(RwLock::new(vec![])),
+            notify,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct AppState {
     cache: Arc<RwLock<Option<CachedSnapshot>>>,
+    pairing: PairingState,
 }
 
 #[derive(Clone, Debug)]
@@ -176,19 +199,6 @@ fn mcp_status_display(config: &PageConfig) -> String {
     } else {
         "disabled".to_string()
     }
-}
-
-fn count_pending_devices() -> usize {
-    let Ok(output) = Command::new("openclaw").args(["devices", "list"]).output() else {
-        return 0;
-    };
-    if !output.status.success() {
-        return 0;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines()
-        .filter(|line| line.to_lowercase().contains("pending"))
-        .count()
 }
 
 async fn fetch_openclaw_health() -> Option<bool> {
@@ -674,8 +684,9 @@ fn home_content(
         </div>
 
         {token_section}
+        <div id="pairing-banner" style="display:none"></div>
         {device_notice}
-        <div class="note-box">如果你需要处理设备授权，请进入命令行页执行授权命令。常用命令是 <code>openclaw devices list</code> 和 <code>openclaw devices approve --latest</code>。</div>
+        <div class="note-box">有新设备需要配对时，上方会自动出现通知。也可前往命令行页手动执行 <code>openclaw devices approve --latest</code>。</div>
       </section>
 
       <aside class="panel-right">
@@ -1467,6 +1478,70 @@ fn render_shell(
     window.setInterval(refreshPanels, 45000);
     window.setTimeout(refreshPanels, 120);
   </script>
+  <script>
+    (function() {{
+      var banner = document.getElementById("pairing-banner");
+      if (!banner) return;
+
+      function renderBanner(pairs) {{
+        if (!pairs || pairs.length === 0) {{
+          banner.style.display = "none";
+          banner.innerHTML = "";
+          return;
+        }}
+        var html = '<div class="notice-badge warn" style="margin-bottom:8px">';
+        html += '<strong>有 ' + pairs.length + ' 台设备请求配对</strong>';
+        html += '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">';
+        pairs.forEach(function(p) {{
+          html += '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #fcd34d;border-radius:8px;padding:4px 10px;font-size:13px;">';
+          html += '<span>' + escapeHtml(p.deviceName) + '</span>';
+          html += '<button class="btn btn-action" style="padding:2px 10px;font-size:12px;" onclick="ocApprovePair(\'' + escapeHtml(p.requestId) + '\',this)">批准</button>';
+          html += '</span>';
+        }});
+        html += '</div></div>';
+        banner.innerHTML = html;
+        banner.style.display = "block";
+      }}
+
+      function escapeHtml(str) {{
+        return String(str).replace(/[&<>"']/g, function(c) {{
+          return ({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}})[c];
+        }});
+      }}
+
+      window.ocApprovePair = function(requestId, btn) {{
+        btn.disabled = true;
+        btn.textContent = "处理中…";
+        fetch(appUrl('./action/pair-approve'), {{
+          method: "POST",
+          headers: {{"Content-Type": "application/json"}},
+          body: JSON.stringify({{request_id: requestId}})
+        }})
+        .then(function(r) {{ return r.json(); }})
+        .then(function(data) {{
+          if (data.ok) {{
+            btn.closest("span").innerHTML = '<span style="color:#15803d;font-weight:700;">✓ ' + escapeHtml(data.message) + '</span>';
+          }} else {{
+            btn.disabled = false;
+            btn.textContent = "重试";
+            btn.title = data.message;
+          }}
+        }})
+        .catch(function() {{
+          btn.disabled = false;
+          btn.textContent = "重试";
+        }});
+      }};
+
+      var es = new EventSource(appUrl('./events/pairing'));
+      es.addEventListener("pairing", function(e) {{
+        try {{ renderBanner(JSON.parse(e.data)); }} catch(ex) {{}}
+      }});
+      es.onerror = function() {{
+        // SSE 断开后浏览器会自动重连，无需手动处理
+      }};
+    }})();
+  </script>
 </body>
 </html>"#,
         nav_home = nav_home,
@@ -1483,19 +1558,107 @@ fn render_shell(
     ))
 }
 
+// ─── 配对轮询后台任务 ────────────────────────────────────────────────────────
+
+async fn pairing_poll_task(pairing: PairingState) {
+    const POLL_SECS: u64 = 30;
+    loop {
+        let token = PageConfig::from_env().gateway_token;
+        if !token.is_empty() {
+            let new_pairs = gateway_ws::list_pending_pairs(&token).await;
+            let changed = {
+                let old = pairing.pairs.read().await;
+                old.len() != new_pairs.len()
+                    || old.iter().zip(new_pairs.iter()).any(|(a, b)| a.request_id != b.request_id)
+            };
+            if changed {
+                *pairing.pairs.write().await = new_pairs;
+                let _ = pairing.notify.send(());
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
+    }
+}
+
+// ─── SSE：配对事件推送 ────────────────────────────────────────────────────────
+
+async fn pairing_sse(State(state): State<AppState>) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    let pairs = state.pairing.pairs.read().await.clone();
+    let rx = state.pairing.notify.subscribe();
+    let pairing = state.pairing.clone();
+
+    let initial = build_pairing_event(&pairs);
+    let s = stream::once(async move { Ok(initial) }).chain(stream::unfold(
+        (rx, pairing),
+        |(mut rx, pairing)| async move {
+            loop {
+                match rx.recv().await {
+                    Ok(()) => {
+                        let pairs = pairing.pairs.read().await.clone();
+                        let event = build_pairing_event(&pairs);
+                        return Some((Ok(event), (rx, pairing)));
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        },
+    ));
+
+    Sse::new(s).keep_alive(
+        axum::response::sse::KeepAlive::new().interval(Duration::from_secs(25)),
+    )
+}
+
+fn build_pairing_event(pairs: &[PendingPair]) -> Event {
+    let data: Vec<serde_json::Value> = pairs
+        .iter()
+        .map(|p| serde_json::json!({ "requestId": p.request_id, "deviceName": p.device_name }))
+        .collect();
+    Event::default()
+        .event("pairing")
+        .data(serde_json::to_string(&data).unwrap_or_else(|_| "[]".to_string()))
+}
+
+// ─── POST /action/pair-approve ────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct ApproveRequest {
+    request_id: String,
+}
+
+async fn pair_approve(
+    State(state): State<AppState>,
+    Json(body): Json<ApproveRequest>,
+) -> impl IntoResponse {
+    let token = PageConfig::from_env().gateway_token;
+    if token.is_empty() {
+        return Json(serde_json::json!({ "ok": false, "message": "Gateway token 未配置" }));
+    }
+    let (ok, message) = gateway_ws::approve_pair(&token, &body.request_id).await;
+    // 批准后立即刷新配对列表
+    if ok {
+        let new_pairs = gateway_ws::list_pending_pairs(&token).await;
+        *state.pairing.pairs.write().await = new_pairs;
+        let _ = state.pairing.notify.send(());
+    }
+    Json(serde_json::json!({ "ok": ok, "message": message }))
+}
+
+// ─── 页面 handlers ────────────────────────────────────────────────────────────
+
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let config = PageConfig::from_env();
     let guard = state.cache.read().await;
-    let (snapshot, health_ok, pending_devices) = if let Some(c) = guard.as_ref() {
-        let result = (c.snapshot.clone(), c.health_ok, c.pending_devices);
+    let (snapshot, health_ok) = if let Some(c) = guard.as_ref() {
+        let result = (c.snapshot.clone(), c.health_ok);
         drop(guard);
         result
     } else {
         drop(guard);
-        // Cache not yet populated on very first request — collect inline.
-        let (snapshot, health_ok) = tokio::join!(collect_system_snapshot(), fetch_openclaw_health());
-        (snapshot, health_ok, 0)
+        tokio::join!(collect_system_snapshot(), fetch_openclaw_health())
     };
+    let pending_devices = state.pairing.pairs.read().await.len();
     render_shell(
         &config,
         NavPage::Home,
@@ -1597,30 +1760,25 @@ async fn main() {
     let cache: Arc<RwLock<Option<CachedSnapshot>>> = Arc::new(RwLock::new(None));
     let cache_bg = cache.clone();
     tokio::spawn(async move {
-        // pending_devices spawns a Node.js process; only refresh every 5 minutes
-        // to avoid memory pressure on constrained devices.
-        const PENDING_REFRESH_SECS: u64 = 300;
-        let mut last_pending_check: Option<tokio::time::Instant> = None;
         loop {
             let (snapshot, health_ok) = tokio::join!(
                 collect_system_snapshot(),
                 fetch_openclaw_health(),
             );
-            let now = tokio::time::Instant::now();
-            let needs_pending_refresh = last_pending_check
-                .map(|t| now.duration_since(t).as_secs() >= PENDING_REFRESH_SECS)
-                .unwrap_or(true);
-            let pending_devices = if needs_pending_refresh {
-                last_pending_check = Some(now);
-                tokio::task::spawn_blocking(count_pending_devices).await.unwrap_or(0)
-            } else {
-                cache_bg.read().await.as_ref().map(|c| c.pending_devices).unwrap_or(0)
-            };
+            // pending_devices 由 pairing_poll_task 维护，这里读缓存即可
+            let pending_devices = cache_bg.read().await.as_ref().map(|c| c.pending_devices).unwrap_or(0);
             *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok, pending_devices });
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
         }
     });
-    let app_state = AppState { cache };
+
+    let pairing = PairingState::new();
+    let pairing_bg = pairing.clone();
+    tokio::spawn(async move {
+        pairing_poll_task(pairing_bg).await;
+    });
+
+    let app_state = AppState { cache, pairing };
 
     let app = Router::new()
         .route("/", get(index))
@@ -1629,6 +1787,8 @@ async fn main() {
         .route("/logs", get(logs_page))
         .route("/partials/health", get(health_partial))
         .route("/partials/diag", get(diag_partial))
+        .route("/events/pairing", get(pairing_sse))
+        .route("/action/pair-approve", post(pair_approve))
         .with_state(app_state);
 
     let port = env::var("UI_PORT")
