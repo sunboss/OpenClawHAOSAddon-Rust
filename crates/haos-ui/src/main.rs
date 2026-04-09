@@ -99,7 +99,10 @@ impl PageConfig {
         );
         let current_model = config
             .as_ref()
-            .and_then(|v| first_string_path(v, &["agents.defaults.model"]))
+            .and_then(|v| first_string_path(v, &[
+                "agents.defaults.llm.model",  // v2026.4.9+
+                "agents.defaults.model",       // 旧版本兜底
+            ]))
             .unwrap_or_else(|| "未配置".to_string());
         let mcp_endpoint_count = count_mcp_endpoints();
         let gateway_token = config

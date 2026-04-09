@@ -98,7 +98,7 @@ async fn call_gateway_inner(token: &str, method: &str, params: Value) -> Result<
             "maxProtocol": 3,
             "client": {
                 "id": "openclaw-control-ui",
-                "version": "2026.4.8",
+                "version": "2026.4.9",
                 "mode": "webchat",
                 "platform": "linux",
                 "instanceId": new_id()
