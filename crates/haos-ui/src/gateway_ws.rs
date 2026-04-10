@@ -87,28 +87,33 @@ fn load_or_create_identity() -> Result<DeviceIdentity, String> {
     Ok(DeviceIdentity { device_id, public_key_b64url, key_pair })
 }
 
-/// 查询待配对设备列表。失败时返回空列表（不打 panic）。
-pub async fn list_pending_pairs(gateway_token: &str) -> Vec<PendingPair> {
+/// 查询待配对设备列表。
+/// 返回 `Some(pairs)` 表示请求成功（pairs 可能为空）；
+/// 返回 `None` 表示请求失败（调用方可据此做退避）。
+pub async fn list_pending_pairs(gateway_token: &str) -> Option<Vec<PendingPair>> {
     match call_gateway(gateway_token, "device.pair.list", json!({})).await {
         Ok(payload) => {
             let pairs = parse_pending_pairs(&payload);
             if !pairs.is_empty() {
                 println!("haos-ui: device.pair.list: {} 个待配对请求", pairs.len());
             }
-            pairs
+            Some(pairs)
         }
         Err(err) => {
             // 启动阶段正常现象，不打错误日志：
             //   - "Connection refused"：gateway 进程尚未启动
-            //   - "timed out" / "timeout"：gateway 已启动但 acpx 运行时尚未就绪（通常需要 60-120s）
-            //     包括：gateway call timed out、hello-ok timeout、connect.challenge timeout、request timeout
+            //   - "timed out" / "timeout"：握手/hello-ok/challenge/request 超时，
+            //     acpx 运行时尚未就绪（通常需要 60-120s）
+            //   - "ws stream ended" / "ws closed"：gateway 在握手阶段主动关闭连接
             let is_startup_noise = err.contains("Connection refused")
                 || err.contains("timed out")
-                || err.contains("timeout");
+                || err.contains("timeout")
+                || err.contains("ws stream ended")
+                || err.contains("ws closed");
             if !is_startup_noise {
                 eprintln!("haos-ui: device.pair.list failed: {err}");
             }
-            vec![]
+            None
         }
     }
 }

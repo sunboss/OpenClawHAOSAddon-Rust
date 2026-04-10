@@ -1,3 +1,10 @@
+## 2026.04.10.5
+
+- 修复：`list_pending_pairs` 改返回 `Option<Vec>` 区分"成功空列表"和"请求失败"
+- 优化：`pairing_poll_task` 启动延迟 90s（等待 acpx 就绪），失败时指数退避至最长 120s，成功后重置 10s 间隔
+- 优化：补全启动噪音抑制——`ws stream ended` / `ws closed` 类错误不再打印
+- 代码：`pair_approve` 中 `list_pending_pairs` 返回值更新为 `Option` 解包
+
 ## 2026.04.10.4
 
 - 修复：`hello-ok timeout` / `connect.challenge timeout` 等启动噪音未被抑制的问题，统一过滤所有含 `timeout` 的错误日志

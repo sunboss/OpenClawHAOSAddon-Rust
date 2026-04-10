@@ -1565,22 +1565,38 @@ fn render_shell(
 // ─── 配对轮询后台任务 ────────────────────────────────────────────────────────
 
 async fn pairing_poll_task(pairing: PairingState) {
+    // acpx 运行时通常需要 60-120s 才就绪；先等 90s 再开始轮询，
+    // 避免启动阶段在 gateway 日志里频繁留下 "handshake timeout" 噪音。
+    tokio::time::sleep(Duration::from_secs(90)).await;
+
+    // 成功后用 10s 间隔；失败时指数退避（最长 120s），成功后重置。
     const POLL_SECS: u64 = 10;
+    const MAX_BACKOFF_SECS: u64 = 120;
+    let mut backoff = POLL_SECS;
+
     loop {
         let token = PageConfig::from_env().gateway_token;
         if !token.is_empty() {
-            let new_pairs = gateway_ws::list_pending_pairs(&token).await;
-            let changed = {
-                let old = pairing.pairs.read().await;
-                old.len() != new_pairs.len()
-                    || old.iter().zip(new_pairs.iter()).any(|(a, b)| a.request_id != b.request_id)
-            };
-            if changed {
-                *pairing.pairs.write().await = new_pairs;
-                let _ = pairing.notify.send(());
+            match gateway_ws::list_pending_pairs(&token).await {
+                Some(new_pairs) => {
+                    backoff = POLL_SECS; // 成功后重置间隔
+                    let changed = {
+                        let old = pairing.pairs.read().await;
+                        old.len() != new_pairs.len()
+                            || old.iter().zip(new_pairs.iter()).any(|(a, b)| a.request_id != b.request_id)
+                    };
+                    if changed {
+                        *pairing.pairs.write().await = new_pairs;
+                        let _ = pairing.notify.send(());
+                    }
+                }
+                None => {
+                    // 失败（gateway 未就绪）：指数退避，减少 gateway 日志噪音
+                    backoff = (backoff * 2).min(MAX_BACKOFF_SECS);
+                }
             }
         }
-        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
+        tokio::time::sleep(Duration::from_secs(backoff)).await;
     }
 }
 
@@ -1642,9 +1658,10 @@ async fn pair_approve(
     let (ok, message) = gateway_ws::approve_pair(&token, &body.request_id).await;
     // 批准后立即刷新配对列表
     if ok {
-        let new_pairs = gateway_ws::list_pending_pairs(&token).await;
-        *state.pairing.pairs.write().await = new_pairs;
-        let _ = state.pairing.notify.send(());
+        if let Some(new_pairs) = gateway_ws::list_pending_pairs(&token).await {
+            *state.pairing.pairs.write().await = new_pairs;
+            let _ = state.pairing.notify.send(());
+        }
     }
     Json(serde_json::json!({ "ok": ok, "message": message }))
 }
