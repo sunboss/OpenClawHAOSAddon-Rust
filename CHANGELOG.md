@@ -1,3 +1,7 @@
+## 2026.04.10.4
+
+- 修复：`hello-ok timeout` / `connect.challenge timeout` 等启动噪音未被抑制的问题，统一过滤所有含 `timeout` 的错误日志
+
 ## 2026.04.10.3
 
 - 移除调试日志（raw payload 已确认格式为 `{paired:[...], pending:[...]}`，字段解析正确）
