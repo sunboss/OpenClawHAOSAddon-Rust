@@ -487,6 +487,12 @@ fn primary_button(label: &str, onclick: &str) -> String {
     format!(r#"<button class="btn primary" type="button" onclick="{onclick}">{label}</button>"#)
 }
 
+fn primary_link_button(label: &str, id: &str, onclick: &str) -> String {
+    format!(
+        r##"<a class="btn primary" id="{id}" href="#" target="_blank" rel="noopener noreferrer" onclick="{onclick}">{label}</a>"##
+    )
+}
+
 fn secondary_button(label: &str, onclick: &str) -> String {
     format!(r#"<button class="btn secondary" type="button" onclick="{onclick}">{label}</button>"#)
 }
@@ -777,7 +783,11 @@ fn home_content(
             "基于 Gateway 或 Node 主进程存活时间",
             "tone-violet"
         ),
-        open_gateway = primary_button("打开网关", "ocOpenGateway()"),
+        open_gateway = primary_link_button(
+            "打开网关",
+            "ocGatewayLink",
+            "return ocOpenGatewayLink(event, this)"
+        ),
         open_cli = secondary_terminal_window_button("OpenClaw CLI", "openclaw tui"),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
@@ -1744,6 +1754,11 @@ fn render_shell(
       if (!url || !token) return url;
       return String(url).replace(/#.*$/, '') + '#token=' + encodeURIComponent(token);
     }}
+    function syncGatewayLink(anchor) {{
+      const link = anchor || document.getElementById("ocGatewayLink");
+      if (!link) return;
+      link.href = nativeGatewayUrl();
+    }}
     async function fetchGatewayToken() {{
       if (gatewayTokenValue) return gatewayTokenValue;
       const response = await fetch(appUrl('./token'), {{ credentials: 'same-origin', cache: 'no-cache' }});
@@ -1833,6 +1848,12 @@ fn render_shell(
         window.open(finalUrl, "_blank", "noopener,noreferrer");
       }}
     }};
+    window.ocOpenGatewayLink = async function (event, anchor) {{
+      if (event) event.preventDefault();
+      syncGatewayLink(anchor);
+      await window.ocOpenGateway();
+      return false;
+    }};
     window.ocOpenTerminalWindow = function (command) {{
       const targetUrl = new URL(appUrl("./terminal/"));
       if (typeof command === "string" && command.trim()) targetUrl.searchParams.set("command", command);
@@ -1856,6 +1877,7 @@ fn render_shell(
       inp.value = "";
     }};
     document.addEventListener("visibilitychange", refreshPanels);
+    syncGatewayLink();
     window.setInterval(refreshPanels, 45000);
     window.setTimeout(refreshPanels, 120);
   </script>

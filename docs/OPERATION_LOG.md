@@ -22,6 +22,39 @@ Copy this block before each push and fill it in:
 - Next handoff:
 ```
 
+## 2026-04-10 23:55 Asia/Shanghai - Make homepage gateway entry a real link while preserving native ready gating
+
+- User request: the homepage `打开网关` entry no longer looked like a real link; continue on the `2026.04.10.9` mainline and fix it.
+- Intent / context:
+  - the homepage action was rendered as a pure JS button, so users could not see a direct link target on the native gateway entry
+  - the existing `ocOpenGateway()` behavior still mattered because it waits for stronger readiness and appends the gateway token before opening the native UI
+- Root-cause conclusion:
+  - UX regressed because the visual control was only a `<button>` with JS behavior, not an actual anchor element
+  - we should keep the mainline startup-order safeguards but restore a real link-style entry on the homepage
+- Files changed:
+  - `crates/haos-ui/src/main.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - add a dedicated `primary_link_button()` helper for anchor-styled primary actions
+  - change the homepage `打开网关` control from a JS-only button to a real `<a>` element with `target="_blank"`
+  - sync the rendered `href` to the native gateway URL on load so the entry visibly behaves like a link
+  - keep click behavior routed through the existing native open logic so the page still waits for control readiness and token retrieval before final navigation
+- Commands / validation:
+  - `cargo test -p haos-ui`
+- Version:
+  - target version `2026.04.10.10`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - the homepage gateway entry is once again a visible link-style control, while preserving the native ready/token flow added on the 10.9 mainline
+- Next handoff:
+  - after push, verify the homepage shows a link-style `打开网关` control and that it still opens the native gateway successfully after startup
+  - if users want the same visual treatment on secondary pages, convert the remaining raw `ocOpenGateway()` button call sites as a follow-up
+
 ## 2026-04-10 21:45 Asia/Shanghai - Gate pairing poll and native gateway open on stronger control readiness
 
 - User request: do not merely suppress remaining websocket noise; solve what can be solved in the add-on layer.
