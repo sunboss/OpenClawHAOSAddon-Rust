@@ -2047,26 +2047,77 @@ async fn wait_for_pairing_backend_ready() {
 
 // ─── SSE：配对事件推送 ────────────────────────────────────────────────────────
 
-async fn pairing_sse(State(state): State<AppState>) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    let pairs = state.pairing.pairs.read().await.clone();
-    let rx = state.pairing.notify.subscribe();
-    let pairing = state.pairing.clone();
+async fn wait_for_pairing_backend_ready_on_demand(timeout_limit: Duration) -> bool {
+    const POLL_SECS: u64 = 5;
+    const PROBE_TIMEOUT_MS: u64 = 800;
+    const STABLE_SUCCESSES: u8 = 2;
+    const SETTLE_SECS: u64 = 4;
+    let deadline = tokio::time::Instant::now() + timeout_limit;
+    let target = format!(
+        "127.0.0.1:{}",
+        browser_control_port_from_gateway_port(gateway_internal_port_from_env())
+    );
+    let mut consecutive_successes = 0u8;
 
-    let initial = build_pairing_event(&pairs);
+    while tokio::time::Instant::now() < deadline {
+        let ready = timeout(Duration::from_millis(PROBE_TIMEOUT_MS), TcpStream::connect(&target))
+            .await
+            .map(|result| result.is_ok())
+            .unwrap_or(false);
+
+        if ready {
+            consecutive_successes = consecutive_successes.saturating_add(1);
+            if consecutive_successes >= STABLE_SUCCESSES {
+                tokio::time::sleep(Duration::from_secs(SETTLE_SECS)).await;
+                return true;
+            }
+        } else {
+            consecutive_successes = 0;
+        }
+
+        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
+    }
+
+    false
+}
+
+async fn pairing_sse(
+    State(state): State<AppState>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    let pairing = state.pairing.clone();
+    let initial_pairs = pairing.pairs.read().await.clone();
+    let token = PageConfig::from_env().gateway_token;
+
+    let initial = build_pairing_event(&initial_pairs);
     let s = stream::once(async move { Ok(initial) }).chain(stream::unfold(
-        (rx, pairing),
-        |(mut rx, pairing)| async move {
-            loop {
-                match rx.recv().await {
-                    Ok(()) => {
-                        let pairs = pairing.pairs.read().await.clone();
-                        let event = build_pairing_event(&pairs);
-                        return Some((Ok(event), (rx, pairing)));
+        (pairing, initial_pairs, token, false, 10u64),
+        |(pairing, last_pairs, token, ready, backoff)| async move {
+            let mut next_pairs = last_pairs.clone();
+            let mut next_ready = ready;
+            let mut next_backoff = backoff;
+
+            tokio::time::sleep(Duration::from_secs(next_backoff)).await;
+
+            if !token.is_empty() {
+                if next_ready || wait_for_pairing_backend_ready_on_demand(Duration::from_secs(150)).await {
+                    next_ready = true;
+                    match gateway_ws::list_pending_pairs(&token).await {
+                        Some(fresh_pairs) => {
+                            next_backoff = if fresh_pairs.is_empty() { 30 } else { 10 };
+                            next_pairs = fresh_pairs.clone();
+                            *pairing.pairs.write().await = fresh_pairs;
+                        }
+                        None => {
+                            next_backoff = (next_backoff * 2).min(120);
+                        }
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => return None,
+                } else {
+                    next_backoff = 30;
                 }
             }
+
+            let event = build_pairing_event(&next_pairs);
+            Some((Ok(event), (pairing, next_pairs, token, next_ready, next_backoff)))
         },
     ));
 
@@ -2105,7 +2156,6 @@ async fn pair_approve(
     if ok {
         if let Some(new_pairs) = gateway_ws::list_pending_pairs(&token).await {
             *state.pairing.pairs.write().await = new_pairs;
-            let _ = state.pairing.notify.send(());
         }
     }
     Json(serde_json::json!({ "ok": ok, "message": message }))
@@ -2224,7 +2274,9 @@ async fn diag_partial(State(state): State<AppState>) -> impl IntoResponse {
 #[tokio::main]
 async fn main() {
     let cache: Arc<RwLock<Option<CachedSnapshot>>> = Arc::new(RwLock::new(None));
+    let pairing = PairingState::new();
     let cache_bg = cache.clone();
+    let pairing_bg = pairing.clone();
     tokio::spawn(async move {
         loop {
             let (snapshot, health_ok) = tokio::join!(
@@ -2232,18 +2284,11 @@ async fn main() {
                 fetch_openclaw_health(),
             );
             // pending_devices 由 pairing_poll_task 维护，这里读缓存即可
-            let pending_devices = cache_bg.read().await.as_ref().map(|c| c.pending_devices).unwrap_or(0);
+            let pending_devices = pairing_bg.pairs.read().await.len();
             *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok, pending_devices });
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
     });
-
-    let pairing = PairingState::new();
-    let pairing_bg = pairing.clone();
-    tokio::spawn(async move {
-        pairing_poll_task(pairing_bg).await;
-    });
-
     let app_state = AppState { cache, pairing };
 
     let app = Router::new()

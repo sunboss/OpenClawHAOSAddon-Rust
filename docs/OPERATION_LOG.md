@@ -22,6 +22,41 @@ Copy this block before each push and fill it in:
 - Next handoff:
 ```
 
+## 2026-04-11 00:25 Asia/Shanghai - Stop background pairing polling from constantly touching 127.0.0.1:18790
+
+- User request: keep digging into `18790`; confirm what it is and continue reducing unnecessary internal connections instead of hiding the logs.
+- Intent / context:
+  - latest HAOS logs still showed periodic `origin=n/a host=127.0.0.1:18790` websocket failures even after `2026.04.10.10`
+  - code inspection confirmed these were not browser clicks alone; `haos-ui` still had a background `pairing_poll_task` that continuously called `device.pair.list` over the native gateway websocket
+  - in this add-on architecture, `18790` is the upstream native loopback gateway port, so the right fix is to reduce our own eager callers rather than trying to remove the port
+- Root-cause conclusion:
+  - the remaining recurring loopback websocket noise was primarily self-inflicted by the add-on's always-on pairing poller
+  - keeping pairing updates event-driven / on-demand is closer to the desired model than a permanent background websocket poll
+- Files changed:
+  - `crates/haos-ui/src/main.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - stop spawning the background `pairing_poll_task` at `haos-ui` startup
+  - keep pairing state in memory, but refresh it only from the pairing SSE path when a page is actually open and subscribed
+  - keep `pair-approve` refresh behavior so manual approval still updates in-memory pairing state
+  - update the cached pending-device count from current in-memory pairing state instead of from the removed background poll loop
+- Commands / validation:
+  - `cargo test -p haos-ui`
+- Version:
+  - target version `2026.04.11.1`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - the add-on no longer maintains a permanent background websocket pairing poll against the native gateway
+  - repeated internal `127.0.0.1:18790` connection attempts should now only happen when the user has an active page/session that actually needs pairing state
+- Next handoff:
+  - after push, compare logs before/after and verify whether the periodic `origin=n/a host=127.0.0.1:18790` lines largely disappear while idle
+  - if browser-triggered `origin=https://...:18789` websocket failures still remain, inspect whether the native gateway page itself is being auto-opened or refreshed too early
+
 ## 2026-04-10 23:55 Asia/Shanghai - Make homepage gateway entry a real link while preserving native ready gating
 
 - User request: the homepage `打开网关` entry no longer looked like a real link; continue on the `2026.04.10.9` mainline and fix it.
