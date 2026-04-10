@@ -61,6 +61,8 @@ struct HaosEntryArgs {
     openclaw_config_dir: PathBuf,
     #[arg(long, default_value = "/config/.openclaw/openclaw.json")]
     openclaw_config_path: PathBuf,
+    #[arg(long, default_value = "/config/.openclaw/addon-panel.json")]
+    panel_config_path: PathBuf,
     #[arg(long, default_value = "/config/.openclaw/workspace")]
     openclaw_workspace_dir: PathBuf,
     #[arg(long, default_value = "/config/.mcporter")]
@@ -357,57 +359,67 @@ fn create_dir_symlink(_src: &Path, _dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+fn merge_json_overlay(base: &mut serde_json::Value, overlay: &serde_json::Value) {
+    match (base, overlay) {
+        (serde_json::Value::Object(base_obj), serde_json::Value::Object(overlay_obj)) => {
+            for (key, value) in overlay_obj {
+                if let Some(existing) = base_obj.get_mut(key) {
+                    merge_json_overlay(existing, value);
+                } else {
+                    base_obj.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        (base_slot, overlay_value) => {
+            *base_slot = overlay_value.clone();
+        }
+    }
+}
+
+fn load_panel_overrides(path: &Path) -> Option<serde_json::Value> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+}
+
 fn bootstrap_openclaw_config(
     args: &HaosEntryArgs,
     settings: &RuntimeSettings,
 ) -> std::io::Result<()> {
-    if args.openclaw_config_path.exists() {
-        let existing = fs::read_to_string(&args.openclaw_config_path)
+    let mut config = if args.openclaw_config_path.exists() {
+        fs::read_to_string(&args.openclaw_config_path)
             .ok()
-            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
-        if let Some(mut config) = existing {
-            let mut changed = false;
-            if config.get("workspaceDir").is_some() {
-                if let Some(object) = config.as_object_mut() {
-                    object.remove("workspaceDir");
-                    changed = true;
-                }
-            }
-            if changed {
-                ensure_workspace_path(&mut config, args);
-                fs::write(
-                    &args.openclaw_config_path,
-                    format!(
-                        "{}\n",
-                        serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string())
-                    ),
-                )?;
-            }
-        }
-        return Ok(());
-    }
-
-    let token = generate_gateway_token();
-    let mut config = serde_json::json!({
-        "gateway": {
-            "mode": "local",
-            "bind": "loopback",
-            "port": args.gateway_internal_port,
-            "trustedProxies": ["127.0.0.1/32", "::1/128"],
-            "auth": {
-                "mode": "token",
-                "token": token
-            },
-            "http": {
-                "endpoints": {
-                    "chatCompletions": {
-                        "enabled": settings.enable_openai_api
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        let token = generate_gateway_token();
+        serde_json::json!({
+            "gateway": {
+                "mode": "local",
+                "bind": "loopback",
+                "port": args.gateway_internal_port,
+                "trustedProxies": ["127.0.0.1/32", "::1/128"],
+                "auth": {
+                    "mode": "token",
+                    "token": token
+                },
+                "http": {
+                    "endpoints": {
+                        "chatCompletions": {
+                            "enabled": settings.enable_openai_api
+                        }
                     }
                 }
             }
-        }
-    });
+        })
+    };
+    if let Some(object) = config.as_object_mut() {
+        object.remove("workspaceDir");
+    }
     ensure_workspace_path(&mut config, args);
+    if let Some(overlay) = load_panel_overrides(&args.panel_config_path) {
+        merge_json_overlay(&mut config, &overlay);
+    }
 
     if let Some(parent) = args.openclaw_config_path.parent() {
         fs::create_dir_all(parent)?;
@@ -461,6 +473,7 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("TZ", &settings.timezone);
         env::set_var("OPENCLAW_CONFIG_DIR", &args.openclaw_config_dir);
         env::set_var("OPENCLAW_CONFIG_PATH", &args.openclaw_config_path);
+        env::set_var("HAOS_PANEL_CONFIG_PATH", &args.panel_config_path);
         env::set_var("OPENCLAW_STATE_DIR", &args.openclaw_config_dir);
         env::set_var("OPENCLAW_WORKSPACE_DIR", &args.openclaw_workspace_dir);
         env::set_var("OPENCLAW_RUNTIME_DIR", "/run/openclaw-rs");
@@ -1454,6 +1467,7 @@ fn apply_child_env(command: &mut Command) {
         "TZ",
         "OPENCLAW_CONFIG_DIR",
         "OPENCLAW_CONFIG_PATH",
+        "HAOS_PANEL_CONFIG_PATH",
         "OPENCLAW_STATE_DIR",
         "OPENCLAW_WORKSPACE_DIR",
         "OPENCLAW_RUNTIME_DIR",
@@ -1641,6 +1655,7 @@ mod tests {
             options_file: root.join("options.json"),
             openclaw_config_dir: root.join(".openclaw"),
             openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
+            panel_config_path: root.join(".openclaw").join("addon-panel.json"),
             openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
             mcporter_home_dir: root.join(".mcporter"),
             mcporter_config: root.join(".mcporter").join("mcporter.json"),
@@ -1698,6 +1713,7 @@ mod tests {
             options_file: root.join("options.json"),
             openclaw_config_dir: root.join(".openclaw"),
             openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
+            panel_config_path: root.join(".openclaw").join("addon-panel.json"),
             openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
             mcporter_home_dir: root.join(".mcporter"),
             mcporter_config: root.join(".mcporter").join("mcporter.json"),

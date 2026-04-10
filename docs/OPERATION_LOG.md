@@ -850,3 +850,28 @@ Copy this block before each push and fill it in:
   - `count_pending_devices()` 解析的是 `openclaw devices list` 纯文本输出中含 "pending" 的行数，若 openclaw 更新了输出格式需重新校验。
   - `count_mcp_endpoints()` 对 mcporter.json 结构做了兼容性猜测，若 mcporter 升级了 schema 需验证字段名。
   - 参考 techartdev/OpenClawHomeAssistant v0.5.63→v0.5.65：run.sh 的 gateway 3 层检测改进（ss/pgrep/proc 扫描）对本项目的 Rust addon-supervisor 无需同步，架构不同。
+## 2026-04-11 - HA panel config for Web Search / Memory Search / model selection
+
+- User request:
+  - 在 HA 面板里按官方文档补齐 `Web Search`、`Memory Search`、模型选择
+  - 需要官方 provider 列表、可输入 API、并兼顾网页登录/控制台跳转的交互
+  - 配置时再写文件，平时不要自动改动 `openclaw.json`
+- Files changed:
+  - `crates/haos-ui/src/main.rs`
+  - `crates/addon-supervisor/src/main.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - `haos-ui` 配置页新增可编辑表单，分别保存 `Web Search`、`Memory Search`、模型配置
+  - `Web Search` / `Memory Search` provider 下拉按官方文档常见列表提供，并带官方文档与网页登录/控制台链接
+  - API Key 字段不回显现有值；留空表示保持，勾选复选框才会清除
+  - 表单保存改为写入独立的 `/config/.openclaw/addon-panel.json`
+  - `addon-supervisor` 在启动时读取并递归合并 `addon-panel.json` 到 `openclaw.json`
+  - 未点击保存时，不会自动改写 `openclaw.json`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor`
+- Version:
+  - `2026.04.11.4`
+- Push:
+  - pending

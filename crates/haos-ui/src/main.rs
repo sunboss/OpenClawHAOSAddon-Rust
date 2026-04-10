@@ -68,6 +68,18 @@ struct PageConfig {
     mcp_status: String,
     web_status: String,
     memory_status: String,
+    web_provider: String,
+    web_enabled: bool,
+    web_base_url: String,
+    web_model: String,
+    web_api_configured: bool,
+    memory_provider: String,
+    memory_enabled: bool,
+    memory_model: String,
+    memory_fallback: String,
+    memory_base_url: String,
+    memory_local_model_path: String,
+    memory_api_configured: bool,
     current_model: String,
     mcp_endpoint_count: usize,
     gateway_token: String,
@@ -96,6 +108,17 @@ enum NavPage {
 impl PageConfig {
     fn from_env() -> Self {
         let config = load_runtime_config();
+        let (web_provider, web_enabled, web_base_url, web_model, web_api_configured) =
+            load_web_search_settings(config.as_ref());
+        let (
+            memory_provider,
+            memory_enabled,
+            memory_model,
+            memory_fallback,
+            memory_base_url,
+            memory_local_model_path,
+            memory_api_configured,
+        ) = load_memory_search_settings(config.as_ref());
         let web_status = provider_status_from_config(
             config.as_ref(),
             &["tools.web.search.provider", "tools.webSearch.provider"],
@@ -149,6 +172,18 @@ impl PageConfig {
             mcp_status: env_value("MCP_STATUS", "disabled"),
             web_status,
             memory_status,
+            web_provider,
+            web_enabled,
+            web_base_url,
+            web_model,
+            web_api_configured,
+            memory_provider,
+            memory_enabled,
+            memory_model,
+            memory_fallback,
+            memory_base_url,
+            memory_local_model_path,
+            memory_api_configured,
             current_model,
             mcp_endpoint_count,
             gateway_token,
@@ -156,8 +191,8 @@ impl PageConfig {
     }
 }
 
-fn load_runtime_config() -> Option<serde_json::Value> {
-    fs::read_to_string(runtime_config_path())
+fn load_json_file(path: PathBuf) -> Option<serde_json::Value> {
+    fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
 }
@@ -166,6 +201,122 @@ fn runtime_config_path() -> PathBuf {
     env::var("OPENCLAW_CONFIG_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/config/.openclaw/openclaw.json"))
+}
+
+fn panel_config_path() -> PathBuf {
+    env::var("HAOS_PANEL_CONFIG_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/config/.openclaw/addon-panel.json"))
+}
+
+fn merge_json_overlay(base: &mut serde_json::Value, overlay: &serde_json::Value) {
+    match (base, overlay) {
+        (serde_json::Value::Object(base_obj), serde_json::Value::Object(overlay_obj)) => {
+            for (key, value) in overlay_obj {
+                if let Some(existing) = base_obj.get_mut(key) {
+                    merge_json_overlay(existing, value);
+                } else {
+                    base_obj.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        (base_slot, overlay_value) => {
+            *base_slot = overlay_value.clone();
+        }
+    }
+}
+
+fn load_runtime_config() -> Option<serde_json::Value> {
+    let mut effective = load_json_file(runtime_config_path()).unwrap_or_else(|| serde_json::json!({}));
+    if let Some(overlay) = load_json_file(panel_config_path()) {
+        merge_json_overlay(&mut effective, &overlay);
+    }
+    Some(effective)
+}
+
+fn load_panel_config_mutable() -> serde_json::Value {
+    load_json_file(panel_config_path()).unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn save_panel_config_value(config: &serde_json::Value) -> Result<(), String> {
+    let path = panel_config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("create config dir: {err}"))?;
+    }
+    let text =
+        serde_json::to_string_pretty(config).map_err(|err| format!("serialize config: {err}"))?;
+    fs::write(&path, format!("{text}\n")).map_err(|err| format!("write config: {err}"))
+}
+
+fn ensure_object(value: &mut serde_json::Value) -> &mut serde_json::Map<String, serde_json::Value> {
+    if !value.is_object() {
+        *value = serde_json::Value::Object(serde_json::Map::new());
+    }
+    value.as_object_mut().expect("object")
+}
+
+fn set_config_value_path(
+    root: &mut serde_json::Value,
+    path: &[&str],
+    value: serde_json::Value,
+) {
+    if path.is_empty() {
+        *root = value;
+        return;
+    }
+    let mut current = root;
+    for key in &path[..path.len().saturating_sub(1)] {
+        let obj = ensure_object(current);
+        current = obj
+            .entry((*key).to_string())
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    }
+    ensure_object(current).insert(path[path.len() - 1].to_string(), value);
+}
+
+fn remove_config_value_path(root: &mut serde_json::Value, path: &[&str]) {
+    fn inner(node: &mut serde_json::Value, path: &[&str]) -> bool {
+        if path.is_empty() {
+            return false;
+        }
+        let Some(obj) = node.as_object_mut() else {
+            return false;
+        };
+        if path.len() == 1 {
+            obj.remove(path[0]);
+            return obj.is_empty();
+        }
+        if let Some(child) = obj.get_mut(path[0]) {
+            if inner(child, &path[1..]) {
+                obj.remove(path[0]);
+            }
+        }
+        obj.is_empty()
+    }
+
+    let _ = inner(root, path);
+}
+
+fn set_or_remove_string_path(root: &mut serde_json::Value, path: &[&str], value: &str) {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        remove_config_value_path(root, path);
+    } else {
+        set_config_value_path(root, path, serde_json::Value::String(trimmed.to_string()));
+    }
+}
+
+fn set_bool_path(root: &mut serde_json::Value, path: &[&str], value: bool) {
+    set_config_value_path(root, path, serde_json::Value::Bool(value));
+}
+
+fn parse_csv_values(input: &str) -> Vec<String> {
+    input
+        .split(',')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .map(|part| part.to_string())
+        .collect()
 }
 
 fn first_string_path(config: &serde_json::Value, paths: &[&str]) -> Option<String> {
@@ -182,6 +333,25 @@ fn provider_status_from_config(
         .unwrap_or_else(|| fallback.to_string())
 }
 
+fn bool_path(config: &serde_json::Value, path: &str) -> Option<bool> {
+    let mut current = config;
+    for part in path.split('.').filter(|part| !part.is_empty()) {
+        current = current.get(part)?;
+    }
+    current.as_bool()
+}
+
+fn path_exists(config: &serde_json::Value, path: &str) -> bool {
+    let mut current = config;
+    for part in path.split('.').filter(|part| !part.is_empty()) {
+        let Some(next) = current.get(part) else {
+            return false;
+        };
+        current = next;
+    }
+    !current.is_null()
+}
+
 fn string_path(config: &serde_json::Value, path: &str) -> Option<String> {
     let mut current = config;
     for part in path.split('.').filter(|part| !part.is_empty()) {
@@ -191,6 +361,97 @@ fn string_path(config: &serde_json::Value, path: &str) -> Option<String> {
         .as_str()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn web_provider_plugin(provider: &str) -> Option<&'static str> {
+    match provider {
+        "brave" => Some("brave"),
+        "exa" => Some("exa"),
+        "firecrawl" => Some("firecrawl"),
+        "gemini" => Some("google"),
+        "grok" => Some("xai"),
+        "kimi" => Some("moonshot"),
+        "minimax" => Some("minimax"),
+        "ollama" => Some("ollama"),
+        "perplexity" => Some("perplexity"),
+        "searxng" => Some("searxng"),
+        "tavily" => Some("tavily"),
+        _ => None,
+    }
+}
+
+fn web_provider_config_string(
+    config: &serde_json::Value,
+    provider: &str,
+    field: &str,
+) -> Option<String> {
+    let plugin = web_provider_plugin(provider)?;
+    string_path(
+        config,
+        &format!("plugins.entries.{plugin}.config.webSearch.{field}"),
+    )
+}
+
+fn web_provider_api_configured(config: &serde_json::Value, provider: &str) -> bool {
+    if provider == "duckduckgo" || provider == "ollama" {
+        return false;
+    }
+    if provider == "searxng" {
+        return path_exists(config, "plugins.entries.searxng.config.webSearch.baseUrl");
+    }
+    let Some(plugin) = web_provider_plugin(provider) else {
+        return false;
+    };
+    path_exists(
+        config,
+        &format!("plugins.entries.{plugin}.config.webSearch.apiKey"),
+    )
+}
+
+fn load_web_search_settings(config: Option<&serde_json::Value>) -> (String, bool, String, String, bool) {
+    let provider = config
+        .and_then(|value| string_path(value, "tools.web.search.provider"))
+        .unwrap_or_else(|| "auto".to_string());
+    let enabled = config
+        .and_then(|value| bool_path(value, "tools.web.search.enabled"))
+        .unwrap_or(true);
+    let base_url = config
+        .and_then(|value| web_provider_config_string(value, &provider, "baseUrl"))
+        .unwrap_or_default();
+    let model = config
+        .and_then(|value| web_provider_config_string(value, &provider, "model"))
+        .unwrap_or_default();
+    let api_configured = config
+        .map(|value| web_provider_api_configured(value, &provider))
+        .unwrap_or(false);
+    (provider, enabled, base_url, model, api_configured)
+}
+
+fn load_memory_search_settings(
+    config: Option<&serde_json::Value>,
+) -> (String, bool, String, String, String, String, bool) {
+    let provider = config
+        .and_then(|value| string_path(value, "agents.defaults.memorySearch.provider"))
+        .unwrap_or_else(|| "auto".to_string());
+    let enabled = config
+        .and_then(|value| bool_path(value, "agents.defaults.memorySearch.enabled"))
+        .unwrap_or(true);
+    let model = config
+        .and_then(|value| string_path(value, "agents.defaults.memorySearch.model"))
+        .unwrap_or_default();
+    let fallback = config
+        .and_then(|value| string_path(value, "agents.defaults.memorySearch.fallback"))
+        .unwrap_or_else(|| "none".to_string());
+    let base_url = config
+        .and_then(|value| string_path(value, "agents.defaults.memorySearch.remote.baseUrl"))
+        .unwrap_or_default();
+    let local_model_path = config
+        .and_then(|value| string_path(value, "agents.defaults.memorySearch.local.modelPath"))
+        .unwrap_or_default();
+    let api_configured = config
+        .map(|value| path_exists(value, "agents.defaults.memorySearch.remote.apiKey"))
+        .unwrap_or(false);
+    (provider, enabled, model, fallback, base_url, local_model_path, api_configured)
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -270,6 +531,114 @@ fn pid_value(name: &str) -> String {
 fn display_value(value: &str) -> &str {
     let value = value.trim();
     if value.is_empty() { "disabled" } else { value }
+}
+
+const WEB_SEARCH_DOCS_URL: &str = "https://docs.openclaw.ai/tools/web";
+const MEMORY_SEARCH_DOCS_URL: &str = "https://docs.openclaw.ai/reference/memory-config";
+const MODEL_CONFIG_DOCS_URL: &str = "https://docs.openclaw.ai/gateway/configuration-reference";
+
+const WEB_PROVIDER_META: &[(&str, &str, &str, &str)] = &[
+    ("auto", "Auto", WEB_SEARCH_DOCS_URL, ""),
+    ("duckduckgo", "DuckDuckGo", WEB_SEARCH_DOCS_URL, "https://duckduckgo.com/"),
+    ("brave", "Brave", WEB_SEARCH_DOCS_URL, "https://api.search.brave.com/"),
+    ("exa", "Exa", WEB_SEARCH_DOCS_URL, "https://dashboard.exa.ai/"),
+    ("firecrawl", "Firecrawl", WEB_SEARCH_DOCS_URL, "https://www.firecrawl.dev/app"),
+    ("gemini", "Gemini", WEB_SEARCH_DOCS_URL, "https://aistudio.google.com/app/apikey"),
+    ("grok", "Grok / xAI", WEB_SEARCH_DOCS_URL, "https://console.x.ai/"),
+    ("kimi", "Kimi / Moonshot", WEB_SEARCH_DOCS_URL, "https://platform.moonshot.cn/console/api-keys"),
+    ("minimax", "MiniMax", WEB_SEARCH_DOCS_URL, "https://platform.minimaxi.com/user-center/basic-information/interface-key"),
+    ("ollama", "Ollama", WEB_SEARCH_DOCS_URL, "https://ollama.com/"),
+    ("perplexity", "Perplexity", WEB_SEARCH_DOCS_URL, "https://www.perplexity.ai/settings/api"),
+    ("searxng", "SearXNG", WEB_SEARCH_DOCS_URL, "https://docs.searxng.org/"),
+    ("tavily", "Tavily", WEB_SEARCH_DOCS_URL, "https://app.tavily.com/home"),
+];
+
+const MEMORY_PROVIDER_META: &[(&str, &str, &str, &str)] = &[
+    ("auto", "Auto", MEMORY_SEARCH_DOCS_URL, ""),
+    ("openai", "OpenAI", MEMORY_SEARCH_DOCS_URL, "https://platform.openai.com/api-keys"),
+    ("gemini", "Gemini", MEMORY_SEARCH_DOCS_URL, "https://aistudio.google.com/app/apikey"),
+    ("voyage", "Voyage", MEMORY_SEARCH_DOCS_URL, "https://dash.voyageai.com/api-keys"),
+    ("mistral", "Mistral", MEMORY_SEARCH_DOCS_URL, "https://console.mistral.ai/api-keys/"),
+    ("bedrock", "AWS Bedrock", MEMORY_SEARCH_DOCS_URL, "https://console.aws.amazon.com/bedrock/"),
+    ("ollama", "Ollama", MEMORY_SEARCH_DOCS_URL, "https://ollama.com/"),
+    ("local", "Local Model", MEMORY_SEARCH_DOCS_URL, ""),
+];
+
+const COMMON_MODEL_OPTIONS: &[&str] = &[
+    "openai-codex/gpt-5.4",
+    "openai-codex/gpt-5.4-mini",
+    "openai/gpt-5.4",
+    "openai/gpt-5.4-mini",
+    "google/gemini-2.5-pro",
+    "google/gemini-2.5-flash",
+    "anthropic/claude-opus-4.1",
+    "anthropic/claude-sonnet-4.5",
+    "openrouter/qwen/qwen-2.5-72b-instruct",
+];
+
+fn provider_meta<'a>(
+    provider: &str,
+    entries: &'a [(&'a str, &'a str, &'a str, &'a str)],
+) -> (&'a str, &'a str, &'a str, &'a str) {
+    entries
+        .iter()
+        .copied()
+        .find(|(value, _, _, _)| *value == provider)
+        .unwrap_or(entries[0])
+}
+
+fn select_option_tags(
+    selected: &str,
+    entries: &[(&str, &str, &str, &str)],
+) -> String {
+    entries
+        .iter()
+        .map(|(value, label, docs_url, console_url)| {
+            let selected_attr = if *value == selected { " selected" } else { "" };
+            format!(
+                r#"<option value="{value}" data-docs="{docs}" data-console="{console}"{selected_attr}>{label}</option>"#,
+                value = html_attr_escape(value),
+                docs = html_attr_escape(docs_url),
+                console = html_attr_escape(console_url),
+                selected_attr = selected_attr,
+                label = label,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn datalist_option_tags(values: &[&str]) -> String {
+    values
+        .iter()
+        .map(|value| format!(r#"<option value="{}"></option>"#, html_attr_escape(value)))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn form_checkbox(id: &str, checked: bool, label: &str, help: &str) -> String {
+    let checked_attr = if checked { " checked" } else { "" };
+    format!(
+        r#"<label class="toggle-row" for="{id}">
+  <span class="toggle-copy">
+    <span class="toggle-title">{label}</span>
+    <span class="toggle-help">{help}</span>
+  </span>
+  <input type="checkbox" id="{id}"{checked_attr}>
+</label>"#,
+        id = id,
+        checked_attr = checked_attr,
+        label = label,
+        help = help,
+    )
+}
+
+fn text_or_placeholder(value: &str, placeholder: &str) -> String {
+    if value.trim().is_empty() {
+        placeholder.to_string()
+    } else {
+        value.to_string()
+    }
 }
 
 fn js_string(value: &str) -> String {
@@ -1104,143 +1473,295 @@ fn commands_content() -> String {
 
 fn config_content_v2(config: &PageConfig) -> String {
     let openclaw_config_cmd = format!("cat {}", config.openclaw_config_path);
+    let panel_config_cmd = format!("cat {}", panel_config_path().display());
     let mcporter_config_cmd = format!("cat {}", config.mcporter_config_path);
-    let probe_cmd =
-        "curl -fsS http://127.0.0.1:48100/healthz && echo && curl -fsS http://127.0.0.1:48100/readyz";
+
+    let (web_label, web_docs, web_console, _) =
+        provider_meta(&config.web_provider, WEB_PROVIDER_META);
+    let (memory_label, memory_docs, memory_console, _) =
+        provider_meta(&config.memory_provider, MEMORY_PROVIDER_META);
+
+    let web_api_state = if config.web_api_configured {
+        "已配置 API / 凭证"
+    } else {
+        "未配置 API / 凭证"
+    };
+    let memory_api_state = if config.memory_api_configured {
+        "已配置 API / 凭证"
+    } else {
+        "未配置 API / 凭证"
+    };
+
+    let web_provider_options = select_option_tags(&config.web_provider, WEB_PROVIDER_META);
+    let memory_provider_options = select_option_tags(&config.memory_provider, MEMORY_PROVIDER_META);
+    let model_datalist = datalist_option_tags(COMMON_MODEL_OPTIONS);
+    let web_model_display = text_or_placeholder(&config.web_model, "未单独设置");
+    let memory_model_display = text_or_placeholder(&config.memory_model, "未单独设置");
 
     format!(
         r#"<div class="page-grid">
   <section class="card">
     <div class="card-head">
       <div>
-        <div class="eyebrow">基础配置</div>
-        <h2>配置文件、状态目录与探针边界</h2>
-        <p class="muted">这一页按官方 Docker / Podman 的思路拆开看：配置文件放哪里、持续状态写到哪里、运行时目录在哪里，以及应该用哪个探针判断服务是否真正 ready。</p>
+        <div class="eyebrow">配置中心</div>
+        <h2>Web Search、Memory Search 与模型选择</h2>
+        <p class="muted">这一页按官方文档提供可编辑配置，但不会在后台悄悄改 <code>openclaw.json</code>。只有你点击保存时，才会把配置写入独立的 Add-on 配置文件；重启插件后再合并应用，稳定性更高。</p>
       </div>
       <div class="header-actions">
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
+        <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
+        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('openclaw tui')">OpenClaw CLI</button>
         <a class="btn primary" href="./commands">进入命令页</a>
       </div>
     </div>
-    <div class="split-grid">
-      <section class="soft-card">
-        <h3>配置文件 vs 持久状态</h3>
-        <ul class="clean-list">
-          <li><code>openclaw.json</code> 和 <code>mcporter.json</code> 是主要配置入口，优先通过这两个文件理解当前设置。</li>
-          <li><code>/config/.openclaw</code> 目前仍同时承载 OpenClaw 的持久状态；这是向官方 <code>config path / state dir</code> 靠拢中的过渡形态。</li>
-          <li><code>workspace</code>、sessions、identity、memory 等可变内容都属于状态数据，不应和“配置是否正确”混为一谈。</li>
-        </ul>
-      </section>
-      <section class="soft-card">
-        <h3>探针语义</h3>
-        <ul class="clean-list">
-          <li><code>/healthz</code> 只表示 ingress / action 服务自身存活，适合轻量 liveness。</li>
-          <li><code>/readyz</code> 才表示受 supervisor 管理的网关进程和本地端口已经 ready，首页状态和代理检查应以它为准。</li>
-          <li><code>/health</code> 现在只是 readiness 的 JSON 包装，不再在启动期跑重型 CLI 健康检查。</li>
-        </ul>
-      </section>
+    <div class="notice-badge warn">
+      保存后会写入 <code>{panel_config_path}</code>。要真正应用到 OpenClaw，请重启插件；这样不配置的时候不会改动 <code>openclaw.json</code>。
     </div>
   </section>
 
   <div class="three-up">
     <section class="card">
-      <h3>访问入口</h3>
+      <h3>当前状态</h3>
       <div class="kv-list">
         {access}
         {mode}
         {https}
-        {openclaw}
-      </div>
-    </section>
-    <section class="card">
-      <h3>配置文件</h3>
-      <div class="kv-list">
-        {oc_config_path}
-        {mcporter_config_path}
-        {cert_dir}
-        {version}
-      </div>
-    </section>
-    <section class="card">
-      <h3>持久状态目录</h3>
-      <div class="kv-list">
-        {oc_state_dir}
-        {workspace_dir}
-        {mcp_dir}
-        {backup_dir}
-      </div>
-    </section>
-  </div>
-
-  <div class="three-up">
-    <section class="card">
-      <h3>运行时目录与探针</h3>
-      <div class="kv-list">
-        {runtime_dir}
-        {healthz}
-        {readyz}
-        {health_json}
-      </div>
-    </section>
-    <section class="card">
-      <h3>能力状态</h3>
-      <div class="kv-list">
-        {mcp}
-        {web}
-        {memory}
         {model}
       </div>
     </section>
     <section class="card">
-      <h3>建议理解顺序</h3>
+      <h3>Web Search 概览</h3>
       <div class="kv-list">
-        {step_one}
-        {step_two}
-        {step_three}
-        {step_four}
+        {web_status}
+        {web_provider}
+        {web_model}
+        {web_api}
+      </div>
+    </section>
+    <section class="card">
+      <h3>Memory Search 概览</h3>
+      <div class="kv-list">
+        {memory_status}
+        {memory_provider}
+        {memory_model}
+        {memory_api}
       </div>
     </section>
   </div>
 
   <section class="card">
-    <h3>建议操作</h3>
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">Web Search</div>
+        <h3>官方 Provider 与网页登录入口</h3>
+        <p class="muted">支持官方文档里的常见 provider。选择 provider 后，右侧会给出官方文档和登录 / 控制台入口，方便直接去申请或验证凭证。</p>
+      </div>
+      <div class="header-actions">
+        <a class="btn" id="webDocsLink" href="{web_docs}" target="_blank" rel="noopener noreferrer">官方文档</a>
+        <a class="btn secondary" id="webConsoleLink" href="{web_console}" target="_blank" rel="noopener noreferrer"{web_console_style}>登录 / 控制台</a>
+      </div>
+    </div>
+    <div class="config-form">
+      {web_enabled_toggle}
+      <div class="form-grid">
+        <label class="field">
+          <span class="field-label">Provider</span>
+          <select id="webProvider" data-kind="web" onchange="ocSyncProviderMeta('web')">{web_provider_options}</select>
+        </label>
+        <label class="field">
+          <span class="field-label">当前 Provider 状态</span>
+          <input type="text" value="{web_label} / {web_api_state}" readonly>
+        </label>
+        <label class="field">
+          <span class="field-label">Base URL</span>
+          <input type="text" id="webBaseUrl" value="{web_base_url}" placeholder="留空使用 provider 默认地址">
+        </label>
+        <label class="field">
+          <span class="field-label">Provider Model</span>
+          <input type="text" id="webModel" value="{web_model_value}" placeholder="例如 sonar-pro / grok-3-search">
+        </label>
+        <label class="field field-span-2">
+          <span class="field-label">API Key / Token</span>
+          <input type="password" id="webApiKey" value="" placeholder="留空表示保持现有值；如需网页登录，请点右上角登录 / 控制台">
+          <span class="field-help">不会回显当前密钥。只有填写新值时才会覆盖。</span>
+        </label>
+        <label class="field-inline">
+          <input type="checkbox" id="webClearApiKey">
+          <span>清除当前 Web Search API Key</span>
+        </label>
+      </div>
+      <div class="action-row">
+        <button class="btn primary" type="button" onclick="ocSaveWebSearchConfig()">保存 Web Search</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw doctor')">在终端验证</button>
+        <span class="form-status" id="webSaveStatus">保存后需重启插件</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">Memory Search</div>
+        <h3>Embedding Provider、远端凭证与本地模型路径</h3>
+        <p class="muted">这一部分对应官方 <code>agents.defaults.memorySearch</code> 配置。远端 provider 可直接填写 API Key，本地 provider 则填写模型路径。</p>
+      </div>
+      <div class="header-actions">
+        <a class="btn" id="memoryDocsLink" href="{memory_docs}" target="_blank" rel="noopener noreferrer">官方文档</a>
+        <a class="btn secondary" id="memoryConsoleLink" href="{memory_console}" target="_blank" rel="noopener noreferrer"{memory_console_style}>登录 / 控制台</a>
+      </div>
+    </div>
+    <div class="config-form">
+      {memory_enabled_toggle}
+      <div class="form-grid">
+        <label class="field">
+          <span class="field-label">Provider</span>
+          <select id="memoryProvider" data-kind="memory" onchange="ocSyncProviderMeta('memory')">{memory_provider_options}</select>
+        </label>
+        <label class="field">
+          <span class="field-label">当前 Provider 状态</span>
+          <input type="text" value="{memory_label} / {memory_api_state}" readonly>
+        </label>
+        <label class="field">
+          <span class="field-label">Embedding Model</span>
+          <input type="text" id="memoryModel" value="{memory_model_value}" placeholder="例如 text-embedding-3-large">
+        </label>
+        <label class="field">
+          <span class="field-label">Fallback</span>
+          <input type="text" id="memoryFallback" value="{memory_fallback}" placeholder="none / openai / voyage ...">
+        </label>
+        <div id="memoryRemoteGroup" class="field-group field-span-2">
+          <label class="field">
+            <span class="field-label">Remote Base URL</span>
+            <input type="text" id="memoryBaseUrl" value="{memory_base_url}" placeholder="留空使用 provider 默认地址">
+          </label>
+          <label class="field">
+            <span class="field-label">Remote API Key</span>
+            <input type="password" id="memoryApiKey" value="" placeholder="留空表示保持现有值">
+            <span class="field-help">不会回显当前密钥。只有填写新值时才会覆盖。</span>
+          </label>
+          <label class="field-inline">
+            <input type="checkbox" id="memoryClearApiKey">
+            <span>清除当前 Memory Search API Key</span>
+          </label>
+        </div>
+        <div id="memoryLocalGroup" class="field-group field-span-2">
+          <label class="field">
+            <span class="field-label">Local Model Path</span>
+            <input type="text" id="memoryLocalModelPath" value="{memory_local_model_path}" placeholder="/models/embeddings/...">
+          </label>
+        </div>
+      </div>
+      <div class="action-row">
+        <button class="btn primary" type="button" onclick="ocSaveMemorySearchConfig()">保存 Memory Search</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw memory status --deep')">在终端验证</button>
+        <span class="form-status" id="memorySaveStatus">保存后需重启插件</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">模型</div>
+        <h3>对话模型选择</h3>
+        <p class="muted">这里写入官方 <code>agents.defaults.model.primary</code> 和 <code>fallbacks</code>。主模型可直接填完整模型 ID，也可以从常用建议里选择。</p>
+      </div>
+      <div class="header-actions">
+        <a class="btn" href="{model_docs}" target="_blank" rel="noopener noreferrer">官方文档</a>
+        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('openclaw onboard')">打开初始化向导</button>
+      </div>
+    </div>
+    <div class="config-form">
+      <div class="form-grid">
+        <label class="field field-span-2">
+          <span class="field-label">Primary Model</span>
+          <input type="text" id="primaryModel" value="{current_model}" list="modelSuggestions" placeholder="例如 openai-codex/gpt-5.4">
+          <datalist id="modelSuggestions">{model_datalist}</datalist>
+        </label>
+        <label class="field field-span-2">
+          <span class="field-label">Fallback Models</span>
+          <input type="text" id="fallbackModels" value="" placeholder="逗号分隔，例如 openai/gpt-5.4-mini, google/gemini-2.5-flash">
+          <span class="field-help">留空表示不设置 fallback。保存时会写成官方的数组结构。</span>
+        </label>
+      </div>
+      <div class="action-row">
+        <button class="btn primary" type="button" onclick="ocSaveModelConfig()">保存模型配置</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw status --deep')">在终端查看当前模型</button>
+        <span class="form-status" id="modelSaveStatus">保存后需重启插件</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>相关文件</h3>
+    <div class="kv-list">
+      {oc_config_path}
+      {panel_path}
+      {mcporter_config_path}
+      {cert_dir}
+      {runtime_dir}
+      {backup_dir}
+    </div>
     <div class="action-row">
-      <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
-      <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw tui')">OpenClaw CLI</button>
-      <button class="btn" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
-      <button class="btn" type="button" onclick="ocRunCommand('openclaw onboard')">初始化向导</button>
-      <button class="btn" type="button" onclick="ocRunCommand('{probe_cmd}')">查看探针状态</button>
-      <button class="btn" type="button" onclick="ocRunCommand('{openclaw_config_cmd}')">查看 OpenClaw 配置</button>
-      <button class="btn" type="button" onclick="ocRunCommand('{mcporter_config_cmd}')">查看 MCP 配置</button>
+      <button class="btn" type="button" onclick="ocRunCommand('{openclaw_config_cmd}')">查看 openclaw.json</button>
+      <button class="btn" type="button" onclick="ocRunCommand('{panel_config_cmd}')">查看 Add-on 配置文件</button>
+      <button class="btn" type="button" onclick="ocRunCommand('{mcporter_config_cmd}')">查看 mcporter.json</button>
     </div>
   </section>
 </div>"#,
+        panel_config_path = panel_config_path().display(),
         access = kv_row("访问模式", &config.access_mode),
         mode = kv_row("网关模式", &config.gateway_mode),
         https = kv_row("HTTPS 端口", &config.https_port),
-        openclaw = kv_row("OpenClaw 版本", &config.openclaw_version),
+        model = kv_row("当前对话模型", &config.current_model),
+        web_status = kv_row("Web Search", if config.web_enabled { "enabled" } else { "disabled" }),
+        web_provider = kv_row("Provider", &config.web_provider),
+        web_model = kv_row("Provider Model", &web_model_display),
+        web_api = kv_row("API / 凭证", web_api_state),
+        memory_status = kv_row("Memory Search", if config.memory_enabled { "enabled" } else { "disabled" }),
+        memory_provider = kv_row("Provider", &config.memory_provider),
+        memory_model = kv_row("Embedding Model", &memory_model_display),
+        memory_api = kv_row("API / 凭证", memory_api_state),
+        web_docs = html_attr_escape(web_docs),
+        web_console = html_attr_escape(web_console),
+        web_console_style = if web_console.is_empty() { r#" style="display:none""# } else { "" },
+        web_enabled_toggle = form_checkbox(
+            "webEnabled",
+            config.web_enabled,
+            "启用 Web Search",
+            "对应官方 tools.web.search.enabled",
+        ),
+        web_provider_options = web_provider_options,
+        web_label = web_label,
+        web_api_state = web_api_state,
+        web_base_url = html_attr_escape(&config.web_base_url),
+        web_model_value = html_attr_escape(&config.web_model),
+        memory_docs = html_attr_escape(memory_docs),
+        memory_console = html_attr_escape(memory_console),
+        memory_console_style = if memory_console.is_empty() { r#" style="display:none""# } else { "" },
+        memory_enabled_toggle = form_checkbox(
+            "memoryEnabled",
+            config.memory_enabled,
+            "启用 Memory Search",
+            "对应官方 agents.defaults.memorySearch.enabled",
+        ),
+        memory_provider_options = memory_provider_options,
+        memory_label = memory_label,
+        memory_api_state = memory_api_state,
+        memory_model_value = html_attr_escape(&config.memory_model),
+        memory_fallback = html_attr_escape(&config.memory_fallback),
+        memory_base_url = html_attr_escape(&config.memory_base_url),
+        memory_local_model_path = html_attr_escape(&config.memory_local_model_path),
+        model_docs = MODEL_CONFIG_DOCS_URL,
+        current_model = html_attr_escape(&config.current_model),
+        model_datalist = model_datalist,
         oc_config_path = kv_row("OpenClaw 配置", &config.openclaw_config_path),
-        mcporter_config_path = kv_row("MCP 配置", &config.mcporter_config_path),
+        panel_path = kv_row("Add-on 配置", &panel_config_path().display().to_string()),
+        mcporter_config_path = kv_row("MCPorter 配置", &config.mcporter_config_path),
         cert_dir = kv_row("证书目录", &config.cert_dir),
-        version = kv_row("Add-on 版本", &config.addon_version),
-        oc_state_dir = kv_row("OpenClaw 状态根", &config.openclaw_state_dir),
-        workspace_dir = kv_row("Workspace", &config.openclaw_workspace_dir),
-        mcp_dir = kv_row("MCPorter 状态", &config.mcporter_home_dir),
-        backup_dir = kv_row("备份目录", &config.backup_dir),
         runtime_dir = kv_row("运行时目录", &config.openclaw_runtime_dir),
-        healthz = kv_row("Liveness", "GET /healthz"),
-        readyz = kv_row("Readiness", "GET /readyz"),
-        health_json = kv_row("JSON 健康", "GET /health"),
-        mcp = kv_row("MCP", &mcp_status_display(config)),
-        web = kv_row("Web Search", display_value(&config.web_status)),
-        memory = kv_row("Memory Search", display_value(&config.memory_status)),
-        model = kv_row("当前模型", &config.current_model),
-        step_one = kv_row("1", "先看 /readyz，再看首页状态"),
-        step_two = kv_row("2", "再看 openclaw.json 与 mcporter.json"),
-        step_three = kv_row("3", "最后检查 workspace / sessions / backup"),
-        step_four = kv_row("4", "需要深查时再运行 doctor 或 status --deep"),
-        probe_cmd = html_attr_escape(probe_cmd),
+        backup_dir = kv_row("备份目录", &config.backup_dir),
         openclaw_config_cmd = html_attr_escape(&openclaw_config_cmd),
+        panel_config_cmd = html_attr_escape(&panel_config_cmd),
         mcporter_config_cmd = html_attr_escape(&mcporter_config_cmd),
     )
 }
@@ -1652,6 +2173,32 @@ fn render_shell(
     }}
     .cmd-input:focus{{ border-color:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.18); }}
     .cmd-input::placeholder{{ color:#94a3b8; }}
+    .config-form{{ display:grid; gap:16px; }}
+    .form-grid{{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }}
+    .field{{ display:grid; gap:6px; }}
+    .field-group{{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }}
+    .field-span-2{{ grid-column:1 / -1; }}
+    .field-label,.toggle-title{{ color:#27466a; font-size:12px; font-weight:900; letter-spacing:.02em; }}
+    .field-help,.toggle-help{{ color:#7a94b4; font-size:12px; line-height:1.6; }}
+    .field input,.field select{{
+      width:100%; min-height:40px; padding:0 13px; border-radius:10px;
+      border:1px solid #d1ddef; background:#fff; color:#1a2b42;
+      font:500 13px/1 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      outline:none; transition:border-color .15s, box-shadow .15s;
+    }}
+    .field input:focus,.field select:focus{{ border-color:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.18); }}
+    .field input[readonly]{{ background:#f8fbff; color:#56718f; }}
+    .toggle-row,.field-inline{{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:#f8fbff;
+    }}
+    .toggle-copy{{ display:grid; gap:3px; }}
+    .field-inline{{ justify-content:flex-start; }}
+    .field-inline input,.toggle-row input{{ width:18px; height:18px; accent-color:#2563eb; }}
+    .provider-links{{ display:flex; gap:10px; flex-wrap:wrap; }}
+    .form-status{{ display:inline-flex; align-items:center; min-height:36px; color:#5b708f; font-size:13px; font-weight:700; }}
+    .form-status.ok{{ color:#166534; }}
+    .form-status.err{{ color:#b91c1c; }}
     .resource-card{{ display:flex; flex-direction:column; gap:9px; }}
     .resource-top{{ display:flex; justify-content:space-between; gap:12px; align-items:center; }}
     .resource-percent{{ color:#27466a; font-size:12px; font-weight:900; }}
@@ -1931,8 +2478,102 @@ fn render_shell(
       injectTerminalCommand(inp.value.trim());
       inp.value = "";
     }};
+    function ocSetFormStatus(id, text, ok) {{
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = text || "";
+      el.classList.remove("ok", "err");
+      if (ok === true) el.classList.add("ok");
+      if (ok === false) el.classList.add("err");
+    }}
+    async function ocPostJson(url, payload) {{
+      const response = await fetch(appUrl(url), {{
+        method: "POST",
+        credentials: "same-origin",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify(payload)
+      }});
+      return response.json();
+    }}
+    function ocSyncProviderMeta(kind) {{
+      const select = document.getElementById(kind + "Provider");
+      if (!select) return;
+      const option = select.options[select.selectedIndex];
+      const docsHref = option ? (option.dataset.docs || "") : "";
+      const consoleHref = option ? (option.dataset.console || "") : "";
+      const docsLink = document.getElementById(kind + "DocsLink");
+      const consoleLink = document.getElementById(kind + "ConsoleLink");
+      if (docsLink && docsHref) docsLink.href = docsHref;
+      if (consoleLink) {{
+        if (consoleHref) {{
+          consoleLink.href = consoleHref;
+          consoleLink.style.display = "";
+        }} else {{
+          consoleLink.removeAttribute("href");
+          consoleLink.style.display = "none";
+        }}
+      }}
+      if (kind === "memory") {{
+        const isLocal = select.value === "local";
+        const localGroup = document.getElementById("memoryLocalGroup");
+        const remoteGroup = document.getElementById("memoryRemoteGroup");
+        if (localGroup) localGroup.style.display = isLocal ? "grid" : "none";
+        if (remoteGroup) remoteGroup.style.display = isLocal ? "none" : "grid";
+      }}
+    }}
+    window.ocSaveWebSearchConfig = async function () {{
+      ocSetFormStatus("webSaveStatus", "正在保存…");
+      try {{
+        const data = await ocPostJson("./action/config-web-search", {{
+          enabled: !!document.getElementById("webEnabled")?.checked,
+          provider: document.getElementById("webProvider")?.value || "auto",
+          model: document.getElementById("webModel")?.value || "",
+          base_url: document.getElementById("webBaseUrl")?.value || "",
+          api_key: document.getElementById("webApiKey")?.value || "",
+          clear_api_key: !!document.getElementById("webClearApiKey")?.checked
+        }});
+        ocSetFormStatus("webSaveStatus", data.message || "已保存", !!data.ok);
+        if (data.ok) window.setTimeout(function() {{ location.reload(); }}, 800);
+      }} catch (error) {{
+        ocSetFormStatus("webSaveStatus", "保存失败：" + (error.message || error), false);
+      }}
+    }};
+    window.ocSaveMemorySearchConfig = async function () {{
+      ocSetFormStatus("memorySaveStatus", "正在保存…");
+      try {{
+        const data = await ocPostJson("./action/config-memory-search", {{
+          enabled: !!document.getElementById("memoryEnabled")?.checked,
+          provider: document.getElementById("memoryProvider")?.value || "auto",
+          model: document.getElementById("memoryModel")?.value || "",
+          fallback: document.getElementById("memoryFallback")?.value || "",
+          base_url: document.getElementById("memoryBaseUrl")?.value || "",
+          api_key: document.getElementById("memoryApiKey")?.value || "",
+          clear_api_key: !!document.getElementById("memoryClearApiKey")?.checked,
+          local_model_path: document.getElementById("memoryLocalModelPath")?.value || ""
+        }});
+        ocSetFormStatus("memorySaveStatus", data.message || "已保存", !!data.ok);
+        if (data.ok) window.setTimeout(function() {{ location.reload(); }}, 800);
+      }} catch (error) {{
+        ocSetFormStatus("memorySaveStatus", "保存失败：" + (error.message || error), false);
+      }}
+    }};
+    window.ocSaveModelConfig = async function () {{
+      ocSetFormStatus("modelSaveStatus", "正在保存…");
+      try {{
+        const data = await ocPostJson("./action/config-model", {{
+          primary_model: document.getElementById("primaryModel")?.value || "",
+          fallback_models: document.getElementById("fallbackModels")?.value || ""
+        }});
+        ocSetFormStatus("modelSaveStatus", data.message || "已保存", !!data.ok);
+        if (data.ok) window.setTimeout(function() {{ location.reload(); }}, 800);
+      }} catch (error) {{
+        ocSetFormStatus("modelSaveStatus", "保存失败：" + (error.message || error), false);
+      }}
+    }};
     document.addEventListener("visibilitychange", refreshPanels);
     syncGatewayLink();
+    ocSyncProviderMeta("web");
+    ocSyncProviderMeta("memory");
     window.setInterval(refreshPanels, 45000);
     window.setTimeout(refreshPanels, 120);
   </script>
@@ -2198,6 +2839,181 @@ struct ApproveRequest {
     request_id: String,
 }
 
+#[derive(serde::Deserialize)]
+struct SaveWebSearchRequest {
+    enabled: bool,
+    provider: String,
+    model: String,
+    base_url: String,
+    api_key: String,
+    clear_api_key: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct SaveMemorySearchRequest {
+    enabled: bool,
+    provider: String,
+    model: String,
+    fallback: String,
+    base_url: String,
+    api_key: String,
+    clear_api_key: bool,
+    local_model_path: String,
+}
+
+#[derive(serde::Deserialize)]
+struct SaveModelRequest {
+    primary_model: String,
+    fallback_models: String,
+}
+
+fn clear_known_web_provider_overrides(config: &mut serde_json::Value) {
+    for (provider, _, _, _) in WEB_PROVIDER_META {
+        let Some(plugin) = web_provider_plugin(provider) else {
+            continue;
+        };
+        remove_config_value_path(
+            config,
+            &["plugins", "entries", plugin, "config", "webSearch", "apiKey"],
+        );
+        remove_config_value_path(
+            config,
+            &["plugins", "entries", plugin, "config", "webSearch", "baseUrl"],
+        );
+        remove_config_value_path(
+            config,
+            &["plugins", "entries", plugin, "config", "webSearch", "model"],
+        );
+    }
+}
+
+fn apply_web_search_overlay(config: &mut serde_json::Value, body: &SaveWebSearchRequest) {
+    set_bool_path(config, &["tools", "web", "search", "enabled"], body.enabled);
+    if body.provider.trim().is_empty() || body.provider.trim() == "auto" {
+        remove_config_value_path(config, &["tools", "web", "search", "provider"]);
+    } else {
+        set_or_remove_string_path(config, &["tools", "web", "search", "provider"], &body.provider);
+    }
+    clear_known_web_provider_overrides(config);
+    if let Some(plugin) = web_provider_plugin(body.provider.trim()) {
+        set_or_remove_string_path(
+            config,
+            &["plugins", "entries", plugin, "config", "webSearch", "baseUrl"],
+            &body.base_url,
+        );
+        set_or_remove_string_path(
+            config,
+            &["plugins", "entries", plugin, "config", "webSearch", "model"],
+            &body.model,
+        );
+        if body.clear_api_key {
+            remove_config_value_path(
+                config,
+                &["plugins", "entries", plugin, "config", "webSearch", "apiKey"],
+            );
+        } else if !body.api_key.trim().is_empty() {
+            set_or_remove_string_path(
+                config,
+                &["plugins", "entries", plugin, "config", "webSearch", "apiKey"],
+                &body.api_key,
+            );
+        }
+    }
+}
+
+fn apply_memory_search_overlay(config: &mut serde_json::Value, body: &SaveMemorySearchRequest) {
+    set_bool_path(
+        config,
+        &["agents", "defaults", "memorySearch", "enabled"],
+        body.enabled,
+    );
+    if body.provider.trim().is_empty() || body.provider.trim() == "auto" {
+        remove_config_value_path(config, &["agents", "defaults", "memorySearch", "provider"]);
+    } else {
+        set_or_remove_string_path(
+            config,
+            &["agents", "defaults", "memorySearch", "provider"],
+            &body.provider,
+        );
+    }
+    set_or_remove_string_path(
+        config,
+        &["agents", "defaults", "memorySearch", "model"],
+        &body.model,
+    );
+    if body.fallback.trim().is_empty() || body.fallback.trim() == "none" {
+        remove_config_value_path(config, &["agents", "defaults", "memorySearch", "fallback"]);
+    } else {
+        set_or_remove_string_path(
+            config,
+            &["agents", "defaults", "memorySearch", "fallback"],
+            &body.fallback,
+        );
+    }
+    if body.provider.trim() == "local" {
+        set_or_remove_string_path(
+            config,
+            &["agents", "defaults", "memorySearch", "local", "modelPath"],
+            &body.local_model_path,
+        );
+        remove_config_value_path(
+            config,
+            &["agents", "defaults", "memorySearch", "remote", "baseUrl"],
+        );
+        if body.clear_api_key {
+            remove_config_value_path(
+                config,
+                &["agents", "defaults", "memorySearch", "remote", "apiKey"],
+            );
+        }
+    } else {
+        remove_config_value_path(
+            config,
+            &["agents", "defaults", "memorySearch", "local", "modelPath"],
+        );
+        set_or_remove_string_path(
+            config,
+            &["agents", "defaults", "memorySearch", "remote", "baseUrl"],
+            &body.base_url,
+        );
+        if body.clear_api_key {
+            remove_config_value_path(
+                config,
+                &["agents", "defaults", "memorySearch", "remote", "apiKey"],
+            );
+        } else if !body.api_key.trim().is_empty() {
+            set_or_remove_string_path(
+                config,
+                &["agents", "defaults", "memorySearch", "remote", "apiKey"],
+                &body.api_key,
+            );
+        }
+    }
+}
+
+fn apply_model_overlay(config: &mut serde_json::Value, body: &SaveModelRequest) {
+    set_or_remove_string_path(
+        config,
+        &["agents", "defaults", "model", "primary"],
+        &body.primary_model,
+    );
+    let fallbacks = parse_csv_values(&body.fallback_models);
+    if fallbacks.is_empty() {
+        remove_config_value_path(config, &["agents", "defaults", "model", "fallbacks"]);
+    } else {
+        set_config_value_path(
+            config,
+            &["agents", "defaults", "model", "fallbacks"],
+            serde_json::Value::Array(
+                fallbacks
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+    }
+}
+
 async fn pair_approve(
     State(state): State<AppState>,
     Json(body): Json<ApproveRequest>,
@@ -2217,6 +3033,45 @@ async fn pair_approve(
 }
 
 // ─── 页面 handlers ────────────────────────────────────────────────────────────
+
+async fn save_web_search_config(Json(body): Json<SaveWebSearchRequest>) -> impl IntoResponse {
+    let mut config = load_panel_config_mutable();
+    apply_web_search_overlay(&mut config, &body);
+    match save_panel_config_value(&config) {
+        Ok(()) => Json(serde_json::json!({
+            "ok": true,
+            "message": "Web Search 配置已保存，重启插件后会应用到 OpenClaw",
+            "restart_required": true
+        })),
+        Err(err) => Json(serde_json::json!({ "ok": false, "message": err })),
+    }
+}
+
+async fn save_memory_search_config(Json(body): Json<SaveMemorySearchRequest>) -> impl IntoResponse {
+    let mut config = load_panel_config_mutable();
+    apply_memory_search_overlay(&mut config, &body);
+    match save_panel_config_value(&config) {
+        Ok(()) => Json(serde_json::json!({
+            "ok": true,
+            "message": "Memory Search 配置已保存，重启插件后会应用到 OpenClaw",
+            "restart_required": true
+        })),
+        Err(err) => Json(serde_json::json!({ "ok": false, "message": err })),
+    }
+}
+
+async fn save_model_config(Json(body): Json<SaveModelRequest>) -> impl IntoResponse {
+    let mut config = load_panel_config_mutable();
+    apply_model_overlay(&mut config, &body);
+    match save_panel_config_value(&config) {
+        Ok(()) => Json(serde_json::json!({
+            "ok": true,
+            "message": "模型配置已保存，重启插件后会应用到 OpenClaw",
+            "restart_required": true
+        })),
+        Err(err) => Json(serde_json::json!({ "ok": false, "message": err })),
+    }
+}
 
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let config = PageConfig::from_env();
@@ -2355,6 +3210,9 @@ async fn main() {
         .route("/partials/diag", get(diag_partial))
         .route("/events/pairing", get(pairing_sse))
         .route("/action/pair-approve", post(pair_approve))
+        .route("/action/config-web-search", post(save_web_search_config))
+        .route("/action/config-memory-search", post(save_memory_search_config))
+        .route("/action/config-model", post(save_model_config))
         .with_state(app_state);
 
     let port = env::var("UI_PORT")
@@ -2391,7 +3249,19 @@ mod tests {
             cert_dir: "/config/certs".to_string(),
             mcp_status: "enabled".to_string(),
             web_status: "firecrawl".to_string(),
+            web_provider: "firecrawl".to_string(),
+            web_enabled: true,
+            web_base_url: "https://api.firecrawl.dev".to_string(),
+            web_model: "firecrawl-search-v1".to_string(),
+            web_api_configured: true,
             memory_status: "x_search".to_string(),
+            memory_provider: "openai".to_string(),
+            memory_enabled: true,
+            memory_model: "text-embedding-3-large".to_string(),
+            memory_fallback: "none".to_string(),
+            memory_base_url: String::new(),
+            memory_local_model_path: String::new(),
+            memory_api_configured: true,
             current_model: "gpt-4o".to_string(),
             mcp_endpoint_count: 0,
             gateway_token: String::new(),
@@ -2430,6 +3300,41 @@ mod tests {
         assert!(html.contains("/config/.openclaw/openclaw.json"));
         assert!(html.contains("/config/.mcporter/mcporter.json"));
         assert!(html.contains("/config/.openclaw/workspace"));
+    }
+
+    #[test]
+    fn config_page_exposes_web_memory_and_model_forms() {
+        let html = config_content_v2(&sample_page_config());
+
+        assert!(html.contains("ocSaveWebSearchConfig()"));
+        assert!(html.contains("ocSaveMemorySearchConfig()"));
+        assert!(html.contains("ocSaveModelConfig()"));
+        assert!(html.contains("https://docs.openclaw.ai/tools/web"));
+        assert!(html.contains("https://docs.openclaw.ai/reference/memory-config"));
+        assert!(html.contains("id=\"modelSuggestions\""));
+    }
+
+    #[test]
+    fn apply_model_overlay_writes_primary_and_fallbacks() {
+        let mut config = serde_json::json!({});
+        apply_model_overlay(
+            &mut config,
+            &SaveModelRequest {
+                primary_model: "openai-codex/gpt-5.4".to_string(),
+                fallback_models: "openai/gpt-5.4-mini, google/gemini-2.5-flash".to_string(),
+            },
+        );
+
+        assert_eq!(
+            string_path(&config, "agents.defaults.model.primary").as_deref(),
+            Some("openai-codex/gpt-5.4")
+        );
+        assert_eq!(
+            config["agents"]["defaults"]["model"]["fallbacks"]
+                .as_array()
+                .map(|values| values.len()),
+            Some(2)
+        );
     }
 
     #[test]

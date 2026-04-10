@@ -162,3 +162,10 @@
 ## 2026.04.08.1
 
 - 修复：移除后台每 8 秒启动 Node.js 进程的操作，解决内存不足崩溃循环
+## 2026.04.11.4
+
+- 新增 HA 面板配置页可编辑表单：`Web Search`、`Memory Search`、模型选择
+- `Web Search` 和 `Memory Search` 提供官方文档入口、网页登录/控制台链接、API Key 输入与清除选项
+- 配置保存改为写入独立的 `/config/.openclaw/addon-panel.json`
+- `addon-supervisor` 启动时会把 `addon-panel.json` 合并进 `openclaw.json`，平时不配置时不改动主配置文件
+- 新增保存接口与前端交互，保存后提示“重启插件后应用”
