@@ -1,3 +1,9 @@
+## 2026.04.10.7
+
+- 修复：`mcporter` 配置 Home Assistant MCP 时改用 `--header KEY=value` 语法，兼容当前 CLI
+- 优化：启动阶段 `doctor --fix` 对 `Memory search`、`Gateway port`、`Gateway` 盒子噪音整段抑制
+- 校验：补充 `addon-supervisor` 测试覆盖 `mcporter` header 格式和 doctor section 过滤
+
 ## 2026.04.10.6
 
 - 对齐官方：新增轻量 `healthz` / `readyz` 语义，并让 UI 状态优先读取 readiness

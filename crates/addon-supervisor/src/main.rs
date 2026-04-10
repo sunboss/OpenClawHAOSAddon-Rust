@@ -799,7 +799,7 @@ fn run_status(program: &str, args: &[&str]) -> bool {
 }
 
 fn configure_home_assistant_mcp(mcporter_bin: &str, homeassistant_token: &str) -> bool {
-    let header = format!("Authorization: Bearer {}", homeassistant_token);
+    let header = format!("Authorization=Bearer {}", homeassistant_token);
     let modern_args = [
         "config",
         "add",
@@ -1314,10 +1314,15 @@ where
 {
     let mut lines = BufReader::new(reader).lines();
     let mut suppress_health_details = false;
+    let mut suppressed_section: Option<String> = None;
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
-                if should_suppress_startup_doctor_line(&line, &mut suppress_health_details) {
+                if should_suppress_startup_doctor_line(
+                    &line,
+                    &mut suppress_health_details,
+                    &mut suppressed_section,
+                ) {
                     continue;
                 }
                 if is_stderr {
@@ -1335,8 +1340,33 @@ where
     }
 }
 
-fn should_suppress_startup_doctor_line(line: &str, suppress_health_details: &mut bool) -> bool {
-    let trimmed = line.trim();
+fn should_suppress_startup_doctor_line(
+    line: &str,
+    suppress_health_details: &mut bool,
+    suppressed_section: &mut Option<String>,
+) -> bool {
+    if suppressed_section.is_some() {
+        if let Some(next_section) = startup_doctor_section_title(line) {
+            if should_suppress_startup_doctor_section(&next_section) {
+                *suppressed_section = Some(next_section);
+                return true;
+            }
+            *suppressed_section = None;
+        } else if should_keep_suppressing_startup_doctor_section(line) {
+            return true;
+        } else {
+            *suppressed_section = None;
+        }
+    }
+
+    if let Some(section_title) = startup_doctor_section_title(line)
+        && should_suppress_startup_doctor_section(&section_title)
+    {
+        *suppressed_section = Some(section_title);
+        return true;
+    }
+
+    let trimmed = normalize_startup_doctor_line(line);
 
     if *suppress_health_details {
         if is_startup_doctor_health_detail_line(trimmed) {
@@ -1366,6 +1396,43 @@ fn is_startup_doctor_health_detail_line(line: &str) -> bool {
         || line.starts_with("Source:")
         || line.starts_with("Config:")
         || line.starts_with("Bind:")
+}
+
+fn normalize_startup_doctor_line(line: &str) -> &str {
+    let trimmed = line.trim();
+    let trimmed = trimmed.trim_start_matches(|c: char| {
+        matches!(c, '│' | '┌' | '└' | '├' | '╭' | '╮' | '╯' | '╰' | '─' | ' ')
+    });
+    trimmed.strip_prefix("- ").unwrap_or(trimmed)
+}
+
+fn startup_doctor_section_title(line: &str) -> Option<String> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with('◇') {
+        return None;
+    }
+    let body = trimmed.trim_start_matches('◇').trim_start();
+    let title = body.split('─').next().unwrap_or(body).trim();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title.to_string())
+    }
+}
+
+fn should_suppress_startup_doctor_section(title: &str) -> bool {
+    matches!(title, "Memory search" | "Gateway port" | "Gateway")
+}
+
+fn should_keep_suppressing_startup_doctor_section(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('◇') {
+        return false;
+    }
+    if trimmed.starts_with("└  Doctor complete.") {
+        return false;
+    }
+    true
 }
 
 fn apply_child_env(command: &mut Command) {
@@ -1411,6 +1478,10 @@ fn apply_child_env(command: &mut Command) {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    fn sample_mcporter_header(token: &str) -> String {
+        format!("Authorization=Bearer {}", token)
+    }
 
     fn sample_settings() -> RuntimeSettings {
         RuntimeSettings {
@@ -1467,31 +1538,38 @@ mod tests {
     #[test]
     fn startup_doctor_suppresses_health_timeout_block() {
         let mut suppress_health_details = false;
+        let mut suppressed_section = None;
 
         assert!(should_suppress_startup_doctor_line(
             "Health check failed: Error: gateway timeout after 10000ms",
-            &mut suppress_health_details
+            &mut suppress_health_details,
+            &mut suppressed_section
         ));
         assert!(suppress_health_details);
         assert!(should_suppress_startup_doctor_line(
             "Gateway target: ws://127.0.0.1:18790",
-            &mut suppress_health_details
+            &mut suppress_health_details,
+            &mut suppressed_section
         ));
         assert!(should_suppress_startup_doctor_line(
             "Source: local loopback",
-            &mut suppress_health_details
+            &mut suppress_health_details,
+            &mut suppressed_section
         ));
         assert!(should_suppress_startup_doctor_line(
             "Config: /config/.openclaw/openclaw.json",
-            &mut suppress_health_details
+            &mut suppress_health_details,
+            &mut suppressed_section
         ));
         assert!(should_suppress_startup_doctor_line(
             "Bind: loopback",
-            &mut suppress_health_details
+            &mut suppress_health_details,
+            &mut suppressed_section
         ));
         assert!(!should_suppress_startup_doctor_line(
             "Doctor complete.",
-            &mut suppress_health_details
+            &mut suppress_health_details,
+            &mut suppressed_section
         ));
         assert!(!suppress_health_details);
     }
@@ -1499,6 +1577,7 @@ mod tests {
     #[test]
     fn startup_doctor_suppresses_other_known_noise_lines() {
         let mut suppress_health_details = false;
+        let mut suppressed_section = None;
 
         for line in [
             "Memory search is enabled, but no embedding provider is ready.",
@@ -1510,9 +1589,42 @@ mod tests {
         ] {
             assert!(should_suppress_startup_doctor_line(
                 line,
-                &mut suppress_health_details
+                &mut suppress_health_details,
+                &mut suppressed_section
             ));
         }
+    }
+
+    #[test]
+    fn startup_doctor_suppresses_boxed_noise_sections() {
+        let mut suppress_health_details = false;
+        let mut suppressed_section = None;
+
+        assert!(should_suppress_startup_doctor_line(
+            "◇  Gateway port ──────────────────────────────────────────────────────────╮",
+            &mut suppress_health_details,
+            &mut suppressed_section
+        ));
+        assert!(should_suppress_startup_doctor_line(
+            "│  Port 18790 is already in use.",
+            &mut suppress_health_details,
+            &mut suppressed_section
+        ));
+        assert!(should_suppress_startup_doctor_line(
+            "├─────────────────────────────────────────────────────────────────────────╯",
+            &mut suppress_health_details,
+            &mut suppressed_section
+        ));
+        assert!(!should_suppress_startup_doctor_line(
+            "◇  Security ─────────────────────────────────╮",
+            &mut suppress_health_details,
+            &mut suppressed_section
+        ));
+    }
+
+    #[test]
+    fn mcporter_header_uses_key_value_syntax() {
+        assert_eq!(sample_mcporter_header("abc123"), "Authorization=Bearer abc123");
     }
 
     #[test]

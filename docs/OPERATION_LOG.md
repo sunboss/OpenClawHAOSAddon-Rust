@@ -22,6 +22,38 @@ Copy this block before each push and fill it in:
 - Next handoff:
 ```
 
+## 2026-04-10 20:45 Asia/Shanghai - Fix mcporter header syntax and suppress boxed startup doctor noise
+
+- User request: continue after reviewing the new runtime logs and push the fix.
+- Intent / context:
+  - the latest runtime logs showed two remaining issues after `2026.04.10.6`
+  - `mcporter` still failed because current CLI expects `--header KEY=value`
+  - startup `doctor --fix` still leaked boxed noise sections even though single-line suppression already existed
+- Log findings captured:
+  - `"[mcporter] --header requires KEY=value."`
+  - `"Unknown command 'add'."` remains the legacy fallback path after the modern command fails
+  - startup doctor still surfaced boxed sections for `Memory search`, `Gateway port`, and `Gateway`
+  - the gateway itself still reached ready state later, so `Port 18790 is already in use` stayed classified as startup noise in this supervised container model
+- Files changed:
+  - `crates/addon-supervisor/src/main.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - `cargo test -p addon-supervisor`
+- Version:
+  - target version `2026.04.10.7`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - `mcporter` HA setup now emits header syntax compatible with the current CLI
+  - startup doctor suppression now handles whole boxed noise sections instead of only matching a few raw lines
+- Next handoff:
+  - after push, verify that add-on logs no longer show the `--header requires KEY=value` failure
+  - if loopback websocket timeouts still dominate after startup, inspect which internal probe path is still polling too early
+
 ## 2026-04-10 15:35 Asia/Shanghai - Prepare rollback tag and release 2026.04.10.6 to main
 
 - User request: add a git tag on `sunboss/OpenClawHAOSAddon-Rust` so rollback is easy, then version the latest local changes and push them to the main repository.
