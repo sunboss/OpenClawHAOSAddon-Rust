@@ -1,14 +1,15 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::IntoResponse,
     routing::{get, post},
 };
 use serde::Serialize;
 use std::{collections::HashMap, env, fs, net::SocketAddr, process::Stdio, sync::Arc};
+use tokio::net::TcpStream;
 use tokio::process::Command;
-use tokio::time::{Duration, sleep};
+use tokio::time::{Duration, sleep, timeout};
 
 #[derive(Clone)]
 struct AppState {
@@ -20,6 +21,14 @@ struct ActionResponse {
     ok: bool,
     action: String,
     exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+    error: Option<String>,
+}
+
+struct GatewayProbe {
+    ok: bool,
+    status: StatusCode,
     stdout: String,
     stderr: String,
     error: Option<String>,
@@ -43,6 +52,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/health", get(health))
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/action/{action}", post(run_action))
         .with_state(state);
 
@@ -57,7 +68,45 @@ async fn main() {
 }
 
 async fn health() -> impl IntoResponse {
-    run_command("health", &["openclaw", "health", "--json"], 20).await
+    let probe = local_gateway_probe().await;
+    (
+        probe.status,
+        Json(ActionResponse {
+            ok: probe.ok,
+            action: "health".to_string(),
+            exit_code: Some(if probe.ok { 0 } else { 1 }),
+            stdout: probe.stdout,
+            stderr: probe.stderr,
+            error: probe.error,
+        }),
+    )
+}
+
+async fn healthz() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        "ok\n",
+    )
+}
+
+async fn readyz() -> impl IntoResponse {
+    let probe = local_gateway_probe().await;
+    let body = if probe.ok {
+        format!("ok: {}\n", probe.stdout)
+    } else if !probe.stderr.is_empty() {
+        format!("not ready: {}\n", probe.stderr)
+    } else {
+        format!(
+            "not ready: {}\n",
+            probe.error.unwrap_or_else(|| "unknown".to_string())
+        )
+    };
+    (
+        probe.status,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        body,
+    )
 }
 
 async fn run_action(
@@ -262,5 +311,120 @@ async fn run_command(
                 error: Some("timeout".to_string()),
             }),
         ),
+    }
+}
+
+async fn local_gateway_probe() -> GatewayProbe {
+    let port = env::var("GATEWAY_INTERNAL_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(18790);
+    let gateway_mode = env::var("GATEWAY_MODE").unwrap_or_else(|_| "local".to_string());
+
+    let Some((process_name, pid)) = current_gateway_process() else {
+        return GatewayProbe {
+            ok: false,
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            stdout: String::new(),
+            stderr: "no managed gateway pid file present".to_string(),
+            error: Some("missing_gateway_pid".to_string()),
+        };
+    };
+
+    if !gateway_process_requires_local_port(&gateway_mode, process_name) {
+        return GatewayProbe {
+            ok: true,
+            status: StatusCode::OK,
+            stdout: format!("{process_name} pid {pid} running in {gateway_mode} mode"),
+            stderr: String::new(),
+            error: None,
+        };
+    }
+
+    let target = format!("127.0.0.1:{port}");
+    let port_ready = timeout(Duration::from_millis(800), TcpStream::connect(&target))
+        .await
+        .map(|result| result.is_ok())
+        .unwrap_or(false);
+
+    if port_ready {
+        return GatewayProbe {
+            ok: true,
+            status: StatusCode::OK,
+            stdout: format!("{process_name} pid {pid} listening on {target}"),
+            stderr: String::new(),
+            error: None,
+        };
+    }
+
+    GatewayProbe {
+        ok: false,
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        stdout: format!("{process_name} pid {pid} present"),
+        stderr: format!("gateway port {target} is not accepting connections yet"),
+        error: Some("gateway_port_not_ready".to_string()),
+    }
+}
+
+fn current_gateway_process() -> Option<(&'static str, String)> {
+    select_gateway_process(
+        non_empty_trimmed_file("/run/openclaw-rs/openclaw-gateway.pid"),
+        non_empty_trimmed_file("/run/openclaw-rs/openclaw-node.pid"),
+    )
+}
+
+fn select_gateway_process(
+    gateway_pid: Option<String>,
+    node_pid: Option<String>,
+) -> Option<(&'static str, String)> {
+    gateway_pid
+        .map(|pid| ("openclaw-gateway", pid))
+        .or_else(|| node_pid.map(|pid| ("openclaw-node", pid)))
+}
+
+fn gateway_process_requires_local_port(gateway_mode: &str, process_name: &str) -> bool {
+    !(gateway_mode == "remote" && process_name == "openclaw-node")
+}
+
+fn non_empty_trimmed_file(path: &str) -> Option<String> {
+    fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{gateway_process_requires_local_port, select_gateway_process};
+
+    #[test]
+    fn select_gateway_process_prefers_gateway_pid() {
+        assert_eq!(
+            Some(("openclaw-gateway", "55".to_string())),
+            select_gateway_process(Some("55".to_string()), Some("66".to_string()))
+        );
+    }
+
+    #[test]
+    fn select_gateway_process_falls_back_to_node_pid() {
+        assert_eq!(
+            Some(("openclaw-node", "66".to_string())),
+            select_gateway_process(None, Some("66".to_string()))
+        );
+    }
+
+    #[test]
+    fn select_gateway_process_returns_none_without_pid_files() {
+        assert_eq!(None, select_gateway_process(None, None));
+    }
+
+    #[test]
+    fn remote_node_mode_does_not_require_local_probe_port() {
+        assert!(!gateway_process_requires_local_port("remote", "openclaw-node"));
+    }
+
+    #[test]
+    fn local_gateway_mode_requires_local_probe_port() {
+        assert!(gateway_process_requires_local_port("local", "openclaw-gateway"));
     }
 }

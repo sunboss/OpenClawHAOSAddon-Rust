@@ -22,6 +22,95 @@ Copy this block before each push and fill it in:
 - Next handoff:
 ```
 
+## 2026-04-10 15:35 Asia/Shanghai - Prepare rollback tag and release 2026.04.10.6 to main
+
+- User request: add a git tag on `sunboss/OpenClawHAOSAddon-Rust` so rollback is easy, then version the latest local changes and push them to the main repository.
+- Intent / context:
+  - preserve a stable rollback anchor before publishing the next batch of HAOS add-on changes
+  - publish the official-alignment work from the fresh repo baseline instead of relying on older local directories
+  - keep durable repo memory ahead of the push, per maintainer rule
+- Rollback anchor plan:
+  - tag current `origin/main` / `HEAD` at version `2026.04.10.5`
+  - planned tag name: `rollback-2026.04.10.5`
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `docs/RUNTIME_BOUNDARIES.md`
+  - `crates/actiond/src/main.rs`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+- Commands / validation:
+  - `cargo test -p haos-ui`
+  - `cargo test -p addon-supervisor -p actiond -p ingressd`
+- Version:
+  - target version `2026.04.10.6`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - release record created before push
+  - rollback tag plan and version bump are now captured in-repo for future AI handoff
+- Next handoff:
+  - if the push succeeds, update this entry with final commit hash, pushed tag, and verification summary
+  - if the push fails, keep `rollback-2026.04.10.5` reserved for the pre-release state
+
+## 2026-04-10 15:10 Asia/Shanghai - Track upstream v2026.4.9 focus points and post-release mainline clues
+
+- User request: write the upstream `v2026.4.9` points worth syncing into the durable repo log, then check whether upstream has any newer tag or commit clues beyond `v2026.4.9`.
+- Intent / context:
+  - avoid relying on chat history for upstream tracking
+  - keep HAOS add-on changes aligned with official OpenClaw runtime direction
+  - record whether we should follow a newer release tag or only unreleased mainline commits
+- Upstream release baseline checked:
+  - `openclaw/openclaw` releases page
+  - latest release still `v2026.4.9`
+  - release date: `2026-04-09 02:25`
+  - release commit: `0512059`
+- Upstream `v2026.4.9` points worth syncing / watching for this add-on:
+  - `Reply/doctor`: doctor now leans harder on active runtime snapshots, clearer reauth surfacing, and more explicit remediation commands
+  - `Android/pairing`: pairing bootstrap, stale setup-code cleanup, and token reuse remain active upstream focus areas
+  - `Matrix/gateway startup readiness`: upstream keeps moving toward "only mark startup healthy after readiness is real"
+  - `npm packaging`: fresh-install dependency completeness is now treated as release-critical, relevant for add-on/container builds
+  - `Security`: SSRF, `.env`, remote node event trust boundaries, and auth-choice collision fixes raise the bar for runtime safety assumptions
+- Newer upstream status as of `2026-04-10`:
+  - no newer release tag than `v2026.4.9` was found
+  - upstream `main` does continue beyond the release on `2026-04-10`
+  - notable post-release commits observed on `main`:
+    - `0e54440` `fix(cycles): remove browser cli and tlon runtime seams`
+    - `dbe2a97` `fix(cycles): remove qa-lab and ui runtime seams`
+    - `6c82a91` `refactor: tighten device pairing approval types`
+    - `c2e2b87` `fix(acp): classify gateway chat error kinds`
+- Current add-on comparison:
+  - already aligned in spirit on lightweight readiness and startup-noise handling
+  - already actively working the pairing path (`CHANGELOG.md` entries `2026.04.09.10` through `2026.04.10.5`)
+  - no evidence yet that a new upstream release requires an immediate version sync
+  - the most interesting unreleased upstream clue for us is `6c82a91` on pairing approval typing / stricter protocol shape
+- Files changed:
+  - `docs/OPERATION_LOG.md`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `docs/RUNTIME_BOUNDARIES.md`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+- Commands / validation:
+  - `cargo test -p haos-ui`
+  - `cargo test -p addon-supervisor -p actiond -p ingressd`
+- Version:
+  - not bumped yet
+- Commit:
+  - not created yet
+- Push:
+  - not pushed yet
+- Result summary:
+  - repository memory now records both the official `v2026.4.9` baseline and the fact that upstream `main` moved on `2026-04-10` without a newer release tag
+  - future AI handoff should compare against `6c82a91`-style pairing approval tightening before chasing less relevant runtime seam removals
+- Next handoff:
+  - if the next user asks to sync upstream behavior, inspect post-`v2026.4.9` pairing commits first
+  - if a newer release tag appears later, re-check whether it supersedes these unreleased `main` clues before porting anything
+
 ## 2026-04-03 13:12 Asia/Shanghai - Backfill previous push for OpenClaw CLI window launch
 
 - User request: fix the main Rust add-on so the `OpenClaw CLI` button opens a new window and runs the command there.

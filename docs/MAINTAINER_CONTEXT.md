@@ -47,6 +47,49 @@ Read this before making UI, runtime, or release changes.
   - fallback `/run/openclaw-rs/openclaw-node.pid`
 - If uptime does not reset after restart, the restart path is wrong.
 
+## Probe semantics
+
+- `GET /healthz`
+  - liveness only
+  - confirms `actiond` / ingress path is alive
+  - must stay lightweight and unauthenticated
+- `GET /readyz`
+  - readiness probe for the managed gateway path
+  - checks supervisor-managed PID presence first
+  - in local mode it also requires `127.0.0.1:$GATEWAY_INTERNAL_PORT` to accept connections
+  - the home page and gateway-facing proxy readiness should prefer this endpoint
+- `GET /health`
+  - JSON wrapper around the same lightweight readiness result
+  - do not turn this back into a heavy `openclaw health --json` startup probe
+- Keep probe semantics close to official OpenClaw Docker docs:
+  - lightweight `healthz` / `readyz` for startup and routing
+  - deeper CLI health only when the user explicitly asks for diagnostics
+
+## Config and state boundaries
+
+- Keep moving toward the official `config path / state dir` mental model.
+- Current working boundary in this add-on:
+  - OpenClaw config file:
+    - `/config/.openclaw/openclaw.json`
+  - MCPorter config file:
+    - `/config/.mcporter/mcporter.json`
+  - OpenClaw persistent state root:
+    - `/config/.openclaw`
+  - Workspace:
+    - `/config/.openclaw/workspace`
+  - Runtime-only pid files:
+    - `/run/openclaw-rs`
+  - Runtime compile cache:
+    - `/var/tmp/openclaw-compile-cache`
+  - Certificates:
+    - `/config/certs`
+  - Backups:
+    - `/share/openclaw-backup/latest`
+- Transitional note:
+  - today `openclaw.json` still lives inside the same top-level directory that also carries sessions, identity, and memory data
+  - treat the file itself as config, and the surrounding mutable directories as state
+  - do not describe the whole `/config/.openclaw` tree as "just config"
+
 ## Native Gateway status
 
 - The severe native Gateway `ws closed before connect` problem was largely fixed by:
@@ -96,7 +139,7 @@ Read this before making UI, runtime, or release changes.
   - persistent directories
   - capability status
 - `Commands`
-  - operational buttons
+  - official-style operational groups
   - embedded terminal
 - `Logs`
   - log/doctor actions
@@ -112,6 +155,32 @@ Read this before making UI, runtime, or release changes.
 - If a button cannot do real work reliably, replace it with guidance instead of a fake action.
 
 ## Command-page expectations
+
+- Group command actions in a way that feels close to official helper flows:
+  - `Control / Pairing`
+    - `OpenClaw CLI`
+    - `openclaw devices list`
+    - `openclaw devices approve --latest`
+    - `openclaw onboard`
+  - `Health / Status`
+    - `curl .../healthz`
+    - `curl .../readyz`
+    - `openclaw status --deep`
+    - `openclaw health --json`
+  - `Config / State`
+    - show config files
+    - show workspace / backup dirs
+    - MCP list
+  - `Maintenance`
+    - doctor
+    - doctor --fix
+    - security audit
+    - restart action endpoint
+- This grouping should feel closer to `ClawDock` / `Podman`:
+  - dashboard / shell
+  - devices / approve
+  - health / show-config / workspace
+  - logs / restart
 
 - `Check npm version`
   - should run a real version query

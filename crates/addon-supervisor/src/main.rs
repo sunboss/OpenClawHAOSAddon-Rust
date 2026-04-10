@@ -4,10 +4,16 @@ use serde::Deserialize;
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::{Command as StdCommand, ExitCode},
+    process::{Command as StdCommand, ExitCode, Stdio},
     time::Duration,
 };
-use tokio::{process::Command, signal, sync::watch, time::sleep};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncRead, BufReader},
+    process::Command,
+    signal,
+    sync::watch,
+    time::sleep,
+};
 use url::Url;
 
 #[derive(Parser)]
@@ -208,18 +214,11 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         && !settings.homeassistant_token.is_empty()
         && command_exists(&args.mcporter_bin)
     {
-        let _ = run_status(
-            &args.mcporter_bin,
-            &[
-                "add",
-                "HA",
-                "--http-url",
-                "http://supervisor/core/api/mcp",
-                "--header",
-                &format!("Authorization: Bearer {}", settings.homeassistant_token),
-            ],
-        );
-        mcp_status = "HA configured".to_string();
+        if configure_home_assistant_mcp(&args.mcporter_bin, &settings.homeassistant_token) {
+            mcp_status = "HA configured".to_string();
+        } else {
+            mcp_status = "HA config failed".to_string();
+        }
     }
 
     let web_provider = run_capture(&args.oc_config_bin, &["get", "tools.web.search.provider"])
@@ -462,12 +461,16 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("TZ", &settings.timezone);
         env::set_var("OPENCLAW_CONFIG_DIR", &args.openclaw_config_dir);
         env::set_var("OPENCLAW_CONFIG_PATH", &args.openclaw_config_path);
+        env::set_var("OPENCLAW_STATE_DIR", &args.openclaw_config_dir);
         env::set_var("OPENCLAW_WORKSPACE_DIR", &args.openclaw_workspace_dir);
+        env::set_var("OPENCLAW_RUNTIME_DIR", "/run/openclaw-rs");
         env::set_var("XDG_CONFIG_HOME", "/config");
         env::set_var("OPENCLAW_NO_RESPAWN", "1");
         env::set_var("NODE_COMPILE_CACHE", "/var/tmp/openclaw-compile-cache");
         env::set_var("MCPORTER_HOME_DIR", &args.mcporter_home_dir);
         env::set_var("MCPORTER_CONFIG", &args.mcporter_config);
+        env::set_var("BACKUP_DIR", &args.backup_dir);
+        env::set_var("CERT_DIR", &args.cert_dir);
         env::set_var("ACTION_SERVER_PORT", args.action_server_port.to_string());
         env::set_var("UI_PORT", args.ui_port.to_string());
         env::set_var("INGRESS_PORT", "48099");
@@ -793,6 +796,39 @@ fn run_status(program: &str, args: &[&str]) -> bool {
             false
         }
     }
+}
+
+fn configure_home_assistant_mcp(mcporter_bin: &str, homeassistant_token: &str) -> bool {
+    let header = format!("Authorization: Bearer {}", homeassistant_token);
+    let modern_args = [
+        "config",
+        "add",
+        "HA",
+        "--http-url",
+        "http://supervisor/core/api/mcp",
+        "--header",
+        header.as_str(),
+    ];
+    if run_status(mcporter_bin, &modern_args) {
+        return true;
+    }
+
+    let legacy_args = [
+        "add",
+        "HA",
+        "--http-url",
+        "http://supervisor/core/api/mcp",
+        "--header",
+        header.as_str(),
+    ];
+    if run_status(mcporter_bin, &legacy_args) {
+        return true;
+    }
+
+    eprintln!(
+        "addon-supervisor: failed to configure Home Assistant MCP server with current and legacy mcporter commands"
+    );
+    false
 }
 
 fn command_exists(program: &str) -> bool {
@@ -1221,10 +1257,6 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
     }
 }
 
-fn normalize_command_output(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).trim().to_string()
-}
-
 async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receiver<bool>) {
     tokio::select! {
         _ = shutdown_rx.changed() => return,
@@ -1234,6 +1266,7 @@ async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receive
     println!("--- openclaw doctor --fix ---");
     let mut command = Command::new(&gateway_bin);
     apply_child_env(&mut command);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = match command.args(startup_doctor_args()).spawn() {
         Ok(child) => child,
         Err(err) => {
@@ -1242,6 +1275,14 @@ async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receive
             return;
         }
     };
+    let stdout_task = child
+        .stdout
+        .take()
+        .map(|stdout| tokio::spawn(stream_startup_doctor_output(stdout, false)));
+    let stderr_task = child
+        .stderr
+        .take()
+        .map(|stderr| tokio::spawn(stream_startup_doctor_output(stderr, true)));
 
     tokio::select! {
         _ = shutdown_rx.changed() => {
@@ -1254,11 +1295,77 @@ async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receive
             }
         }
     }
+    if let Some(task) = stdout_task {
+        let _ = task.await;
+    }
+    if let Some(task) = stderr_task {
+        let _ = task.await;
+    }
     println!("--- end doctor ---");
 }
 
 fn startup_doctor_args() -> [&'static str; 2] {
     ["doctor", "--fix"]
+}
+
+async fn stream_startup_doctor_output<R>(reader: R, is_stderr: bool)
+where
+    R: AsyncRead + Unpin,
+{
+    let mut lines = BufReader::new(reader).lines();
+    let mut suppress_health_details = false;
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if should_suppress_startup_doctor_line(&line, &mut suppress_health_details) {
+                    continue;
+                }
+                if is_stderr {
+                    eprintln!("{line}");
+                } else {
+                    println!("{line}");
+                }
+            }
+            Ok(None) => break,
+            Err(err) => {
+                eprintln!("addon-supervisor: failed to read startup doctor output: {err}");
+                break;
+            }
+        }
+    }
+}
+
+fn should_suppress_startup_doctor_line(line: &str, suppress_health_details: &mut bool) -> bool {
+    let trimmed = line.trim();
+
+    if *suppress_health_details {
+        if is_startup_doctor_health_detail_line(trimmed) {
+            return true;
+        }
+        *suppress_health_details = false;
+    }
+
+    if trimmed.starts_with("Health check failed: Error: gateway timeout after ") {
+        *suppress_health_details = true;
+        return true;
+    }
+
+    matches!(
+        trimmed,
+        "Memory search is enabled, but no embedding provider is ready."
+            | "Semantic recall needs at least one embedding provider."
+            | "systemd user services are unavailable; install/enable systemd or run the gateway under your supervisor."
+            | "If you're in a container, run the gateway in the foreground instead of `openclaw gateway`."
+            | "Port 18790 is already in use."
+            | "Gateway already running locally. Stop it (openclaw gateway stop) or use a different port."
+    )
+}
+
+fn is_startup_doctor_health_detail_line(line: &str) -> bool {
+    line.starts_with("Gateway target:")
+        || line.starts_with("Source:")
+        || line.starts_with("Config:")
+        || line.starts_with("Bind:")
 }
 
 fn apply_child_env(command: &mut Command) {
@@ -1267,12 +1374,16 @@ fn apply_child_env(command: &mut Command) {
         "TZ",
         "OPENCLAW_CONFIG_DIR",
         "OPENCLAW_CONFIG_PATH",
+        "OPENCLAW_STATE_DIR",
         "OPENCLAW_WORKSPACE_DIR",
+        "OPENCLAW_RUNTIME_DIR",
         "XDG_CONFIG_HOME",
         "OPENCLAW_NO_RESPAWN",
         "NODE_COMPILE_CACHE",
         "MCPORTER_HOME_DIR",
         "MCPORTER_CONFIG",
+        "BACKUP_DIR",
+        "CERT_DIR",
         "ACTION_SERVER_PORT",
         "UI_PORT",
         "INGRESS_PORT",
@@ -1351,6 +1462,57 @@ mod tests {
     #[test]
     fn startup_doctor_runs_in_fix_mode() {
         assert_eq!(startup_doctor_args(), ["doctor", "--fix"]);
+    }
+
+    #[test]
+    fn startup_doctor_suppresses_health_timeout_block() {
+        let mut suppress_health_details = false;
+
+        assert!(should_suppress_startup_doctor_line(
+            "Health check failed: Error: gateway timeout after 10000ms",
+            &mut suppress_health_details
+        ));
+        assert!(suppress_health_details);
+        assert!(should_suppress_startup_doctor_line(
+            "Gateway target: ws://127.0.0.1:18790",
+            &mut suppress_health_details
+        ));
+        assert!(should_suppress_startup_doctor_line(
+            "Source: local loopback",
+            &mut suppress_health_details
+        ));
+        assert!(should_suppress_startup_doctor_line(
+            "Config: /config/.openclaw/openclaw.json",
+            &mut suppress_health_details
+        ));
+        assert!(should_suppress_startup_doctor_line(
+            "Bind: loopback",
+            &mut suppress_health_details
+        ));
+        assert!(!should_suppress_startup_doctor_line(
+            "Doctor complete.",
+            &mut suppress_health_details
+        ));
+        assert!(!suppress_health_details);
+    }
+
+    #[test]
+    fn startup_doctor_suppresses_other_known_noise_lines() {
+        let mut suppress_health_details = false;
+
+        for line in [
+            "Memory search is enabled, but no embedding provider is ready.",
+            "Semantic recall needs at least one embedding provider.",
+            "systemd user services are unavailable; install/enable systemd or run the gateway under your supervisor.",
+            "If you're in a container, run the gateway in the foreground instead of `openclaw gateway`.",
+            "Port 18790 is already in use.",
+            "Gateway already running locally. Stop it (openclaw gateway stop) or use a different port.",
+        ] {
+            assert!(should_suppress_startup_doctor_line(
+                line,
+                &mut suppress_health_details
+            ));
+        }
     }
 
     #[test]

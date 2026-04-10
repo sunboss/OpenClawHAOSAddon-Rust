@@ -53,6 +53,14 @@ struct PageConfig {
     gateway_url: String,
     openclaw_version: String,
     https_port: String,
+    openclaw_config_path: String,
+    openclaw_state_dir: String,
+    openclaw_workspace_dir: String,
+    openclaw_runtime_dir: String,
+    mcporter_home_dir: String,
+    mcporter_config_path: String,
+    backup_dir: String,
+    cert_dir: String,
     mcp_status: String,
     web_status: String,
     memory_status: String,
@@ -117,6 +125,23 @@ impl PageConfig {
             gateway_url: env_value("GW_PUBLIC_URL", ""),
             openclaw_version: env_value("OPENCLAW_VERSION", "unknown"),
             https_port: env_value("HTTPS_PORT", "18789"),
+            openclaw_config_path: env_path_value(
+                "OPENCLAW_CONFIG_PATH",
+                "/config/.openclaw/openclaw.json",
+            ),
+            openclaw_state_dir: env_path_value("OPENCLAW_STATE_DIR", "/config/.openclaw"),
+            openclaw_workspace_dir: env_path_value(
+                "OPENCLAW_WORKSPACE_DIR",
+                "/config/.openclaw/workspace",
+            ),
+            openclaw_runtime_dir: env_path_value("OPENCLAW_RUNTIME_DIR", "/run/openclaw-rs"),
+            mcporter_home_dir: env_path_value("MCPORTER_HOME_DIR", "/config/.mcporter"),
+            mcporter_config_path: env_path_value(
+                "MCPORTER_CONFIG",
+                "/config/.mcporter/mcporter.json",
+            ),
+            backup_dir: env_path_value("BACKUP_DIR", "/share/openclaw-backup/latest"),
+            cert_dir: env_path_value("CERT_DIR", "/config/certs"),
             mcp_status: env_value("MCP_STATUS", "disabled"),
             web_status,
             memory_status,
@@ -168,8 +193,19 @@ fn env_value(key: &str, fallback: &str) -> String {
     env::var(key).unwrap_or_else(|_| fallback.to_string())
 }
 
+fn env_path_value(key: &str, fallback: &str) -> String {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
 fn load_mcporter_config() -> Option<serde_json::Value> {
-    fs::read_to_string("/config/.mcporter/mcporter.json")
+    fs::read_to_string(env_path_value(
+        "MCPORTER_CONFIG",
+        "/config/.mcporter/mcporter.json",
+    ))
         .ok()
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
 }
@@ -211,15 +247,11 @@ async fn fetch_openclaw_health() -> Option<bool> {
         .build()
         .ok()?;
     let resp = client
-        .get("http://127.0.0.1:48100/health")
+        .get("http://127.0.0.1:48100/readyz")
         .send()
         .await
         .ok()?;
-    if !resp.status().is_success() {
-        return Some(false);
-    }
-    let json: serde_json::Value = resp.json().await.ok()?;
-    json.get("ok").and_then(|v| v.as_bool())
+    Some(resp.status().is_success())
 }
 
 fn pid_value(name: &str) -> String {
@@ -819,6 +851,8 @@ fn home_content(
     )
 }
 
+#[allow(dead_code)]
+#[allow(dead_code)]
 fn config_content(config: &PageConfig) -> String {
     format!(
         r#"<div class="page-grid">
@@ -911,6 +945,8 @@ fn config_content(config: &PageConfig) -> String {
     )
 }
 
+#[allow(dead_code)]
+#[allow(dead_code)]
 fn commands_content() -> String {
     let setup_actions = [
         ("OpenClaw CLI", "openclaw tui"),
@@ -1044,6 +1080,316 @@ fn commands_content() -> String {
         log_stream_actions = log_stream_actions,
         token_action = token_action,
         storage_actions = storage_actions,
+        terminal = terminal_card(
+            "嵌入式终端",
+            "左侧所有按钮都会把命令直接送到这里执行。需要长时间操作时，建议切到新窗口终端。",
+            "加载终端",
+        ),
+    )
+}
+
+fn config_content_v2(config: &PageConfig) -> String {
+    let openclaw_config_cmd = format!("cat {}", config.openclaw_config_path);
+    let mcporter_config_cmd = format!("cat {}", config.mcporter_config_path);
+    let probe_cmd =
+        "curl -fsS http://127.0.0.1:48100/healthz && echo && curl -fsS http://127.0.0.1:48100/readyz";
+
+    format!(
+        r#"<div class="page-grid">
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">基础配置</div>
+        <h2>配置文件、状态目录与探针边界</h2>
+        <p class="muted">这一页按官方 Docker / Podman 的思路拆开看：配置文件放哪里、持续状态写到哪里、运行时目录在哪里，以及应该用哪个探针判断服务是否真正 ready。</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
+        <a class="btn primary" href="./commands">进入命令页</a>
+      </div>
+    </div>
+    <div class="split-grid">
+      <section class="soft-card">
+        <h3>配置文件 vs 持久状态</h3>
+        <ul class="clean-list">
+          <li><code>openclaw.json</code> 和 <code>mcporter.json</code> 是主要配置入口，优先通过这两个文件理解当前设置。</li>
+          <li><code>/config/.openclaw</code> 目前仍同时承载 OpenClaw 的持久状态；这是向官方 <code>config path / state dir</code> 靠拢中的过渡形态。</li>
+          <li><code>workspace</code>、sessions、identity、memory 等可变内容都属于状态数据，不应和“配置是否正确”混为一谈。</li>
+        </ul>
+      </section>
+      <section class="soft-card">
+        <h3>探针语义</h3>
+        <ul class="clean-list">
+          <li><code>/healthz</code> 只表示 ingress / action 服务自身存活，适合轻量 liveness。</li>
+          <li><code>/readyz</code> 才表示受 supervisor 管理的网关进程和本地端口已经 ready，首页状态和代理检查应以它为准。</li>
+          <li><code>/health</code> 现在只是 readiness 的 JSON 包装，不再在启动期跑重型 CLI 健康检查。</li>
+        </ul>
+      </section>
+    </div>
+  </section>
+
+  <div class="three-up">
+    <section class="card">
+      <h3>访问入口</h3>
+      <div class="kv-list">
+        {access}
+        {mode}
+        {https}
+        {openclaw}
+      </div>
+    </section>
+    <section class="card">
+      <h3>配置文件</h3>
+      <div class="kv-list">
+        {oc_config_path}
+        {mcporter_config_path}
+        {cert_dir}
+        {version}
+      </div>
+    </section>
+    <section class="card">
+      <h3>持久状态目录</h3>
+      <div class="kv-list">
+        {oc_state_dir}
+        {workspace_dir}
+        {mcp_dir}
+        {backup_dir}
+      </div>
+    </section>
+  </div>
+
+  <div class="three-up">
+    <section class="card">
+      <h3>运行时目录与探针</h3>
+      <div class="kv-list">
+        {runtime_dir}
+        {healthz}
+        {readyz}
+        {health_json}
+      </div>
+    </section>
+    <section class="card">
+      <h3>能力状态</h3>
+      <div class="kv-list">
+        {mcp}
+        {web}
+        {memory}
+        {model}
+      </div>
+    </section>
+    <section class="card">
+      <h3>建议理解顺序</h3>
+      <div class="kv-list">
+        {step_one}
+        {step_two}
+        {step_three}
+        {step_four}
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h3>建议操作</h3>
+    <div class="action-row">
+      <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
+      <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw tui')">OpenClaw CLI</button>
+      <button class="btn" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
+      <button class="btn" type="button" onclick="ocRunCommand('openclaw onboard')">初始化向导</button>
+      <button class="btn" type="button" onclick="ocRunCommand('{probe_cmd}')">查看探针状态</button>
+      <button class="btn" type="button" onclick="ocRunCommand('{openclaw_config_cmd}')">查看 OpenClaw 配置</button>
+      <button class="btn" type="button" onclick="ocRunCommand('{mcporter_config_cmd}')">查看 MCP 配置</button>
+    </div>
+  </section>
+</div>"#,
+        access = kv_row("访问模式", &config.access_mode),
+        mode = kv_row("网关模式", &config.gateway_mode),
+        https = kv_row("HTTPS 端口", &config.https_port),
+        openclaw = kv_row("OpenClaw 版本", &config.openclaw_version),
+        oc_config_path = kv_row("OpenClaw 配置", &config.openclaw_config_path),
+        mcporter_config_path = kv_row("MCP 配置", &config.mcporter_config_path),
+        cert_dir = kv_row("证书目录", &config.cert_dir),
+        version = kv_row("Add-on 版本", &config.addon_version),
+        oc_state_dir = kv_row("OpenClaw 状态根", &config.openclaw_state_dir),
+        workspace_dir = kv_row("Workspace", &config.openclaw_workspace_dir),
+        mcp_dir = kv_row("MCPorter 状态", &config.mcporter_home_dir),
+        backup_dir = kv_row("备份目录", &config.backup_dir),
+        runtime_dir = kv_row("运行时目录", &config.openclaw_runtime_dir),
+        healthz = kv_row("Liveness", "GET /healthz"),
+        readyz = kv_row("Readiness", "GET /readyz"),
+        health_json = kv_row("JSON 健康", "GET /health"),
+        mcp = kv_row("MCP", &mcp_status_display(config)),
+        web = kv_row("Web Search", display_value(&config.web_status)),
+        memory = kv_row("Memory Search", display_value(&config.memory_status)),
+        model = kv_row("当前模型", &config.current_model),
+        step_one = kv_row("1", "先看 /readyz，再看首页状态"),
+        step_two = kv_row("2", "再看 openclaw.json 与 mcporter.json"),
+        step_three = kv_row("3", "最后检查 workspace / sessions / backup"),
+        step_four = kv_row("4", "需要深查时再运行 doctor 或 status --deep"),
+        probe_cmd = html_attr_escape(probe_cmd),
+        openclaw_config_cmd = html_attr_escape(&openclaw_config_cmd),
+        mcporter_config_cmd = html_attr_escape(&mcporter_config_cmd),
+    )
+}
+
+fn commands_content_v2(config: &PageConfig) -> String {
+    let control_actions = [
+        ("OpenClaw CLI", "openclaw tui"),
+        ("设备列表", "openclaw devices list"),
+        ("批准最新配对", "openclaw devices approve --latest"),
+        ("初始化向导", "openclaw onboard"),
+    ]
+    .iter()
+    .map(|(label, cmd)| {
+        if *cmd == "openclaw tui" {
+            terminal_window_button(label, cmd)
+        } else {
+            action_button(label, cmd)
+        }
+    })
+    .collect::<Vec<_>>()
+    .join("");
+
+    let health_actions = [
+        (
+            "探针状态",
+            "curl -fsS http://127.0.0.1:48100/healthz && echo && curl -fsS http://127.0.0.1:48100/readyz",
+        ),
+        ("JSON 健康", "openclaw health --json"),
+        ("运行状态", "openclaw status --deep"),
+    ]
+    .iter()
+    .map(|(label, cmd)| diag_button(label, cmd))
+    .collect::<Vec<_>>()
+    .join("");
+
+    let maintenance_actions = [
+        ("运行 doctor", "openclaw doctor"),
+        ("doctor --fix", "openclaw doctor --fix"),
+        ("安全审计", "openclaw security audit --deep"),
+        ("记忆状态", "openclaw memory status --deep"),
+        ("本机版本", "openclaw --version"),
+    ]
+    .iter()
+    .map(|(label, cmd)| diag_button(label, cmd))
+    .collect::<Vec<_>>()
+    .join("");
+
+    let log_stream_actions = [
+        ("跟随日志", "openclaw logs --follow"),
+        ("网关日志", "tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
+    ]
+    .iter()
+    .map(|(label, cmd)| terminal_window_button(label, cmd))
+    .collect::<Vec<_>>()
+    .join("");
+
+    let config_actions = [
+        ("MCP 列表", "mcporter list".to_string()),
+        ("OpenClaw 配置", format!("cat {}", config.openclaw_config_path)),
+        ("MCP 配置", format!("cat {}", config.mcporter_config_path)),
+        ("Workspace", format!("ls -la {}", config.openclaw_workspace_dir)),
+        ("状态根目录", format!("ls -la {}", config.openclaw_state_dir)),
+        ("备份目录", format!("ls -la {}", config.backup_dir)),
+        (
+            "立即备份",
+            format!(
+                "set -e; echo '▶ 创建目录…'; mkdir -p {backup}/.openclaw {backup}/.mcporter; echo '▶ 备份 .openclaw…'; rsync -a --delete {oc_state}/ {backup}/.openclaw/; echo '▶ 备份 .mcporter…'; rsync -a --delete {mcp_home}/ {backup}/.mcporter/; echo '✓ 备份完成'",
+                backup = config.backup_dir,
+                oc_state = config.openclaw_state_dir,
+                mcp_home = config.mcporter_home_dir,
+            ),
+        ),
+    ]
+    .iter()
+    .map(|(label, cmd)| action_button(label, cmd))
+    .collect::<Vec<_>>()
+    .join("");
+
+    let token_action = sensitive_button(
+        "读取令牌",
+        &format!("jq -r '.gateway.auth.token' {}", config.openclaw_config_path),
+        "此命令会把 auth token 明文输出到终端，请确认当前环境安全后再执行。",
+    );
+    let restart_action = action_button(
+        "重启网关",
+        "curl -fsS -X POST http://127.0.0.1:48100/action/restart",
+    );
+
+    format!(
+        r#"<div class="page-grid">
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">命令行</div>
+        <h2>命令工作区</h2>
+        <p class="muted">这里按官方 ClawDock / Podman 的使用方式重新分组：先看控制台与配对，再看健康与状态，最后才是目录、备份和深度诊断。按钮显示中文，实际执行命令保持英文，方便直接对照官方文档和日志。</p>
+      </div>
+      <div class="header-actions">
+        {load_terminal}
+        {close_terminal}
+        {open_window}
+        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
+      </div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">控制台与配对</div>
+      <div class="action-row">{control_actions}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">状态与健康</div>
+      <div class="action-row">{health_actions}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">维护与审计</div>
+      <div class="action-row">{maintenance_actions}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">日志流（新窗口）</div>
+      <div class="action-row">{log_stream_actions}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">配置与状态目录</div>
+      <div class="action-row">{token_action}{config_actions}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">网关控制</div>
+      <div class="action-row">{restart_action}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">自定义命令</div>
+      <div class="custom-cmd-row">
+        <input type="text" class="cmd-input" id="customCmdInput"
+               placeholder="输入任意命令，回车或点击运行…"
+               autocomplete="off" spellcheck="false">
+        <button class="btn btn-action" type="button" onclick="ocRunCustomCommand()">运行</button>
+      </div>
+    </div>
+  </section>
+  {terminal}
+  <script>
+    (function() {{
+      var inp = document.getElementById("customCmdInput");
+      if (inp) inp.addEventListener("keydown", function(e) {{ if (e.key === "Enter") ocRunCustomCommand(); }});
+    }})();
+  </script>
+</div>"#,
+        load_terminal = primary_button("打开终端", "ocLoadTerminal()"),
+        close_terminal = ghost_button("关闭终端", "ocCloseTerminal()"),
+        open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
+        control_actions = control_actions,
+        health_actions = health_actions,
+        maintenance_actions = maintenance_actions,
+        log_stream_actions = log_stream_actions,
+        token_action = token_action,
+        config_actions = config_actions,
+        restart_action = restart_action,
         terminal = terminal_card(
             "嵌入式终端",
             "左侧所有按钮都会把命令直接送到这里执行。需要长时间操作时，建议切到新窗口终端。",
@@ -1697,7 +2043,7 @@ async fn config_page(State(state): State<AppState>) -> impl IntoResponse {
         NavPage::Config,
         "基础配置",
         "查看插件当前的访问方式、数据目录位置，以及 Web 搜索、记忆搜索等能力的启用状态。",
-        &config_content(&config),
+        &config_content_v2(&config),
     )
 }
 
@@ -1709,7 +2055,7 @@ async fn commands_page(State(state): State<AppState>) -> impl IntoResponse {
         NavPage::Commands,
         "命令行工作区",
         "在这里重启服务、批准设备配对、执行诊断，或直接打开终端操作。",
-        &commands_content(),
+        &commands_content_v2(&config),
     )
 }
 
@@ -1828,9 +2174,34 @@ async fn main() {
 mod tests {
     use super::*;
 
+    fn sample_page_config() -> PageConfig {
+        PageConfig {
+            addon_version: "2026.04.03.8".to_string(),
+            access_mode: "lan_https".to_string(),
+            gateway_mode: "local".to_string(),
+            gateway_url: String::new(),
+            openclaw_version: "2026.4.2".to_string(),
+            https_port: "18789".to_string(),
+            openclaw_config_path: "/config/.openclaw/openclaw.json".to_string(),
+            openclaw_state_dir: "/config/.openclaw".to_string(),
+            openclaw_workspace_dir: "/config/.openclaw/workspace".to_string(),
+            openclaw_runtime_dir: "/run/openclaw-rs".to_string(),
+            mcporter_home_dir: "/config/.mcporter".to_string(),
+            mcporter_config_path: "/config/.mcporter/mcporter.json".to_string(),
+            backup_dir: "/share/openclaw-backup/latest".to_string(),
+            cert_dir: "/config/certs".to_string(),
+            mcp_status: "enabled".to_string(),
+            web_status: "firecrawl".to_string(),
+            memory_status: "x_search".to_string(),
+            current_model: "gpt-4o".to_string(),
+            mcp_endpoint_count: 0,
+            gateway_token: String::new(),
+        }
+    }
+
     #[test]
     fn commands_page_uses_supervisor_restart_endpoint() {
-        let html = commands_content();
+        let html = commands_content_v2(&sample_page_config());
 
         assert!(html.contains("curl -fsS -X POST http://127.0.0.1:48100/action/restart"));
         assert!(!html.contains("openclaw gateway restart"));
@@ -1838,7 +2209,7 @@ mod tests {
 
     #[test]
     fn commands_page_uses_real_npm_and_pairing_commands() {
-        let html = commands_content();
+        let html = commands_content_v2(&sample_page_config());
 
         assert!(html.contains("openclaw tui"));
         assert!(html.contains("ocOpenTerminalWindow(&quot;openclaw tui&quot;)"));
@@ -1852,21 +2223,19 @@ mod tests {
     }
 
     #[test]
+    fn commands_page_surfaces_probe_and_config_paths() {
+        let html = commands_content_v2(&sample_page_config());
+
+        assert!(html.contains("http://127.0.0.1:48100/healthz"));
+        assert!(html.contains("http://127.0.0.1:48100/readyz"));
+        assert!(html.contains("/config/.openclaw/openclaw.json"));
+        assert!(html.contains("/config/.mcporter/mcporter.json"));
+        assert!(html.contains("/config/.openclaw/workspace"));
+    }
+
+    #[test]
     fn render_shell_includes_fixed_aspect_brand_logo() {
-        let config = PageConfig {
-            addon_version: "2026.04.03.8".to_string(),
-            access_mode: "lan_https".to_string(),
-            gateway_mode: "local".to_string(),
-            gateway_url: String::new(),
-            openclaw_version: "2026.4.2".to_string(),
-            https_port: "18789".to_string(),
-            mcp_status: "enabled".to_string(),
-            web_status: "firecrawl".to_string(),
-            memory_status: "x_search".to_string(),
-            current_model: "gpt-4o".to_string(),
-            mcp_endpoint_count: 0,
-            gateway_token: String::new(),
-        };
+        let config = sample_page_config();
 
         let Html(html) = render_shell(&config, NavPage::Home, "title", "subtitle", "<div></div>");
 

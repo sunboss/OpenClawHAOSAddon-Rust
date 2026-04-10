@@ -1,3 +1,11 @@
+## 2026.04.10.6
+
+- 对齐官方：新增轻量 `healthz` / `readyz` 语义，并让 UI 状态优先读取 readiness
+- 运维：梳理 `config path` / `state dir` / `runtime dir` / `backup dir` 边界，补充文档和环境变量导出
+- 兼容：`mcporter` 优先使用 `config add`，失败时回退旧版 `add`
+- 体验：启动阶段 `doctor --fix` 的已知网关噪音不再直接打到用户界面
+- UI：配置页和命令页按更接近 `ClawDock` / `Podman` 的官方操作模型重组
+
 ## 2026.04.10.5
 
 - 修复：`list_pending_pairs` 改返回 `Option<Vec>` 区分"成功空列表"和"请求失败"
