@@ -149,6 +149,7 @@ fn build_ingress_router(state: AppState) -> Router {
         .route("/health", get(proxy_health))
         .route("/healthz", get(proxy_health))
         .route("/readyz", get(proxy_health))
+        .route("/control-readyz", get(proxy_health))
         .route("/action/{action}", any(proxy_action))
         .route("/token", get(token_file))
         .route("/openclaw-ca.crt", get(cert_file))
@@ -163,6 +164,7 @@ fn build_gateway_router(state: AppState) -> Router {
         .route("/cert/ca.crt", get(cert_file))
         .route("/healthz", get(proxy_health))
         .route("/readyz", get(proxy_health))
+        .route("/control-readyz", get(proxy_health))
         .fallback(any(proxy_gateway))
         .with_state(state)
 }

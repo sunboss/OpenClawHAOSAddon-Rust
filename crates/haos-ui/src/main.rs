@@ -9,7 +9,11 @@ use axum::{
 };
 use futures_util::{StreamExt as _, stream};
 use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command, sync::Arc, time::Duration};
-use tokio::sync::{RwLock, broadcast};
+use tokio::{
+    net::TcpStream,
+    sync::{RwLock, broadcast},
+    time::timeout,
+};
 
 use gateway_ws::PendingPair;
 
@@ -1749,6 +1753,28 @@ fn render_shell(
       gatewayTokenValue = text;
       return gatewayTokenValue;
     }}
+    async function waitForGatewayControlReady(timeoutMs = 150000) {{
+      const deadline = Date.now() + timeoutMs;
+      let stable = 0;
+      while (Date.now() < deadline) {{
+        try {{
+          const response = await fetch(appUrl('./control-readyz'), {{ credentials: 'same-origin', cache: 'no-cache' }});
+          if (response.ok) {{
+            stable += 1;
+            if (stable >= 2) {{
+              await new Promise((resolve) => window.setTimeout(resolve, 2500));
+              return true;
+            }}
+          }} else {{
+            stable = 0;
+          }}
+        }} catch (_) {{
+          stable = 0;
+        }}
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+      }}
+      return false;
+    }}
     function focusTerminal() {{
       const shell = document.querySelector(".terminal-shell");
       if (shell) shell.scrollIntoView({{ behavior: "smooth", block: "start" }});
@@ -1792,15 +1818,20 @@ fn render_shell(
       terminalState.loading = false;
       terminalState.pendingCommand = null;
     }};
-    window.ocOpenGateway = function () {{
+    window.ocOpenGateway = async function () {{
+      const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
       const targetUrl = nativeGatewayUrl();
-      fetchGatewayToken()
-        .then(function (token) {{
-          window.open(withTokenHash(targetUrl, token), "_blank", "noopener,noreferrer");
-        }})
-        .catch(function () {{
-          window.open(targetUrl, "_blank", "noopener,noreferrer");
-        }});
+      await waitForGatewayControlReady();
+      let finalUrl = targetUrl;
+      try {{
+        const token = await fetchGatewayToken();
+        finalUrl = withTokenHash(targetUrl, token);
+      }} catch (_) {{}}
+      if (popup) {{
+        popup.location.replace(finalUrl);
+      }} else {{
+        window.open(finalUrl, "_blank", "noopener,noreferrer");
+      }}
     }};
     window.ocOpenTerminalWindow = function (command) {{
       const targetUrl = new URL(appUrl("./terminal/"));
@@ -1911,9 +1942,7 @@ fn render_shell(
 // ─── 配对轮询后台任务 ────────────────────────────────────────────────────────
 
 async fn pairing_poll_task(pairing: PairingState) {
-    // acpx 运行时通常需要 60-120s 才就绪；先等 90s 再开始轮询，
-    // 避免启动阶段在 gateway 日志里频繁留下 "handshake timeout" 噪音。
-    tokio::time::sleep(Duration::from_secs(90)).await;
+    wait_for_pairing_backend_ready().await;
 
     // 成功后用 10s 间隔；失败时指数退避（最长 120s），成功后重置。
     const POLL_SECS: u64 = 10;
@@ -1943,6 +1972,54 @@ async fn pairing_poll_task(pairing: PairingState) {
             }
         }
         tokio::time::sleep(Duration::from_secs(backoff)).await;
+    }
+}
+
+fn gateway_internal_port_from_env() -> u16 {
+    env::var("GATEWAY_INTERNAL_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(18790)
+}
+
+fn browser_control_port_from_gateway_port(gateway_port: u16) -> u16 {
+    gateway_port.saturating_add(2)
+}
+
+async fn wait_for_pairing_backend_ready() {
+    // 先等 gateway 主进程起来，再用本地 TCP 探针等待 browser/acpx 控制面 ready，
+    // 避免 device.pair.list 在 127.0.0.1:18790 上过早发起 WebSocket 连接。
+    const INITIAL_DELAY_SECS: u64 = 20;
+    const POLL_SECS: u64 = 5;
+    const PROBE_TIMEOUT_MS: u64 = 800;
+    const STABLE_SUCCESSES: u8 = 2;
+    const SETTLE_SECS: u64 = 4;
+
+    tokio::time::sleep(Duration::from_secs(INITIAL_DELAY_SECS)).await;
+
+    let target = format!(
+        "127.0.0.1:{}",
+        browser_control_port_from_gateway_port(gateway_internal_port_from_env())
+    );
+    let mut consecutive_successes = 0u8;
+
+    loop {
+        let ready = timeout(Duration::from_millis(PROBE_TIMEOUT_MS), TcpStream::connect(&target))
+            .await
+            .map(|result| result.is_ok())
+            .unwrap_or(false);
+
+        if ready {
+            consecutive_successes = consecutive_successes.saturating_add(1);
+            if consecutive_successes >= STABLE_SUCCESSES {
+                tokio::time::sleep(Duration::from_secs(SETTLE_SECS)).await;
+                return;
+            }
+        } else {
+            consecutive_successes = 0;
+        }
+
+        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
     }
 }
 
@@ -2241,6 +2318,12 @@ mod tests {
 
         assert!(html.contains("class=\"brand-mark\""));
         assert!(html.contains("preserveAspectRatio=\"xMidYMid meet\""));
+        assert!(html.contains("./control-readyz"));
+    }
+
+    #[test]
+    fn browser_control_port_tracks_gateway_port() {
+        assert_eq!(18792, browser_control_port_from_gateway_port(18790));
     }
 
     #[test]

@@ -54,6 +54,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/control-readyz", get(control_readyz))
         .route("/action/{action}", post(run_action))
         .with_state(state);
 
@@ -92,6 +93,25 @@ async fn healthz() -> impl IntoResponse {
 
 async fn readyz() -> impl IntoResponse {
     let probe = local_gateway_probe().await;
+    let body = if probe.ok {
+        format!("ok: {}\n", probe.stdout)
+    } else if !probe.stderr.is_empty() {
+        format!("not ready: {}\n", probe.stderr)
+    } else {
+        format!(
+            "not ready: {}\n",
+            probe.error.unwrap_or_else(|| "unknown".to_string())
+        )
+    };
+    (
+        probe.status,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        body,
+    )
+}
+
+async fn control_readyz() -> impl IntoResponse {
+    let probe = local_control_probe().await;
     let body = if probe.ok {
         format!("ok: {}\n", probe.stdout)
     } else if !probe.stderr.is_empty() {
@@ -315,10 +335,7 @@ async fn run_command(
 }
 
 async fn local_gateway_probe() -> GatewayProbe {
-    let port = env::var("GATEWAY_INTERNAL_PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(18790);
+    let port = configured_gateway_port();
     let gateway_mode = env::var("GATEWAY_MODE").unwrap_or_else(|_| "local".to_string());
 
     let Some((process_name, pid)) = current_gateway_process() else {
@@ -366,6 +383,56 @@ async fn local_gateway_probe() -> GatewayProbe {
     }
 }
 
+async fn local_control_probe() -> GatewayProbe {
+    let gateway_probe = local_gateway_probe().await;
+    if !gateway_probe.ok {
+        return gateway_probe;
+    }
+
+    let gateway_mode = env::var("GATEWAY_MODE").unwrap_or_else(|_| "local".to_string());
+    if gateway_mode == "remote" {
+        return gateway_probe;
+    }
+
+    let target = format!(
+        "127.0.0.1:{}",
+        browser_control_port_from_gateway_port(configured_gateway_port())
+    );
+    let port_ready = timeout(Duration::from_millis(800), TcpStream::connect(&target))
+        .await
+        .map(|result| result.is_ok())
+        .unwrap_or(false);
+
+    if port_ready {
+        return GatewayProbe {
+            ok: true,
+            status: StatusCode::OK,
+            stdout: format!("{}; browser control on {}", gateway_probe.stdout, target),
+            stderr: String::new(),
+            error: None,
+        };
+    }
+
+    GatewayProbe {
+        ok: false,
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        stdout: gateway_probe.stdout,
+        stderr: format!("browser control port {target} is not accepting connections yet"),
+        error: Some("browser_control_not_ready".to_string()),
+    }
+}
+
+fn configured_gateway_port() -> u16 {
+    env::var("GATEWAY_INTERNAL_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(18790)
+}
+
+fn browser_control_port_from_gateway_port(gateway_port: u16) -> u16 {
+    gateway_port.saturating_add(2)
+}
+
 fn current_gateway_process() -> Option<(&'static str, String)> {
     select_gateway_process(
         non_empty_trimmed_file("/run/openclaw-rs/openclaw-gateway.pid"),
@@ -395,7 +462,10 @@ fn non_empty_trimmed_file(path: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{gateway_process_requires_local_port, select_gateway_process};
+    use super::{
+        browser_control_port_from_gateway_port, gateway_process_requires_local_port,
+        select_gateway_process,
+    };
 
     #[test]
     fn select_gateway_process_prefers_gateway_pid() {
@@ -426,5 +496,10 @@ mod tests {
     #[test]
     fn local_gateway_mode_requires_local_probe_port() {
         assert!(gateway_process_requires_local_port("local", "openclaw-gateway"));
+    }
+
+    #[test]
+    fn browser_control_port_tracks_gateway_port() {
+        assert_eq!(18792, browser_control_port_from_gateway_port(18790));
     }
 }

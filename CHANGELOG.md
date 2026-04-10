@@ -1,3 +1,9 @@
+## 2026.04.10.9
+
+- 修复：新增 `control-readyz`，把“网关端口已开”与“browser/acpx 控制面真正 ready”分开
+- 修复：配对轮询不再固定盲等 90 秒，而是等待控制面 ready 后再开始 `device.pair.list`
+- 修复：`打开网关` 按钮会先等待 stronger-ready，再跳转原生控制台，减少启动期浏览器侧 `ws closed before connect`
+
 ## 2026.04.10.8
 
 - 对齐官方 MCPorter 配置模型：不再依赖启动期 `mcporter config add` CLI 变体，改为直接写入官方 `mcporter.json` 的 `mcpServers -> baseUrl -> headers` 结构

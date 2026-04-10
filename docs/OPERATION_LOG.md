@@ -22,6 +22,47 @@ Copy this block before each push and fill it in:
 - Next handoff:
 ```
 
+## 2026-04-10 21:45 Asia/Shanghai - Gate pairing poll and native gateway open on stronger control readiness
+
+- User request: do not merely suppress remaining websocket noise; solve what can be solved in the add-on layer.
+- Intent / context:
+  - logs after `2026.04.10.8` showed the main MCP setup issue was fixed
+  - remaining `ws closed before connect` lines clustered before `[browser] control listening` and `[plugins] embedded acpx runtime backend ready`
+  - two distinct paths were still racing startup:
+    - local polling from `haos-ui` (`origin=n/a host=127.0.0.1:18790`)
+    - user/browser opening the native gateway before the control plane was ready (`origin=https://<ha-ip>:18789`)
+- Root-cause conclusion:
+  - plain `/readyz` only proves the gateway process and loopback port are up
+  - it does not prove the browser/acpx control layer is ready to accept the webchat/device-pair flow
+- Files changed:
+  - `crates/actiond/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - add `GET /control-readyz` in `actiond`
+  - define control readiness as:
+    - gateway ready
+    - local browser-control port (`gateway port + 2`, usually `18792`) accepting TCP connections
+  - proxy `/control-readyz` through `ingressd`
+  - make `haos-ui` pairing polling wait for control readiness instead of a fixed 90s blind delay
+  - make `ocOpenGateway()` wait for control readiness before opening the native dashboard
+- Commands / validation:
+  - `cargo test -p actiond -p ingressd -p haos-ui`
+- Version:
+  - target version `2026.04.10.9`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - remaining startup websocket failures should be materially reduced by fixing readiness ordering, not by hiding logs
+- Next handoff:
+  - after push, verify whether the `origin=n/a host=127.0.0.1:18790` lines disappear or drop sharply
+  - if Bonjour churn still matters, investigate whether OpenClaw upstream exposes a documented knob for fixed advertised gateway name / hostname or LAN discovery disablement
+
 ## 2026-04-10 21:05 Asia/Shanghai - Switch Home Assistant MCP setup to official mcporter config shape
 
 - User request: handle the remaining MCP setup failure strictly with reference to official documentation.
