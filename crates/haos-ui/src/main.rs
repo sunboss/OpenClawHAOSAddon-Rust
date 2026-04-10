@@ -1565,7 +1565,7 @@ fn render_shell(
 // ─── 配对轮询后台任务 ────────────────────────────────────────────────────────
 
 async fn pairing_poll_task(pairing: PairingState) {
-    const POLL_SECS: u64 = 30;
+    const POLL_SECS: u64 = 10;
     loop {
         let token = PageConfig::from_env().gateway_token;
         if !token.is_empty() {

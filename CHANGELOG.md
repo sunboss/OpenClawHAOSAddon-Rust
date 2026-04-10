@@ -1,3 +1,9 @@
+## 2026.04.10.2
+
+- 调试：`device.pair.list` 打印原始响应 payload，帮助定位响应格式问题
+- 修复：`parse_pending_pairs` 兼容多种响应字段名（`pending` / `requests` / `devices` / `items` / `list` / 直接数组），以及 `requestId` / `request_id` / `id` 写法
+- 优化：配对轮询间隔从 30s 缩短至 10s，减少通知延迟
+
 ## 2026.04.10.1
 
 - 修复：实现完整 Ed25519 设备身份认证，彻底解决 `missing scope: operator.pairing`

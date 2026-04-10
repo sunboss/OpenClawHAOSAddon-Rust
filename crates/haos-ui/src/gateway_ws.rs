@@ -91,10 +91,10 @@ fn load_or_create_identity() -> Result<DeviceIdentity, String> {
 pub async fn list_pending_pairs(gateway_token: &str) -> Vec<PendingPair> {
     match call_gateway(gateway_token, "device.pair.list", json!({})).await {
         Ok(payload) => {
+            // 调试：打印原始响应，帮助确认字段格式
+            println!("haos-ui: device.pair.list raw payload: {payload}");
             let pairs = parse_pending_pairs(&payload);
-            if !pairs.is_empty() {
-                println!("haos-ui: device.pair.list: {} 个待配对请求", pairs.len());
-            }
+            println!("haos-ui: device.pair.list: {} 个待配对请求", pairs.len());
             pairs
         }
         Err(err) => {
@@ -404,15 +404,36 @@ fn new_id() -> String {
 }
 
 fn parse_pending_pairs(payload: &Value) -> Vec<PendingPair> {
-    let Some(pending) = payload.get("pending").and_then(|v| v.as_array()) else {
+    // 兼容多种字段名：pending / requests / devices / items / list
+    // 也兼容 payload 本身就是数组的情况
+    let arr: &[Value] = if let Some(a) = payload.as_array() {
+        a
+    } else if let Some(a) = payload.get("pending").and_then(|v| v.as_array()) {
+        a
+    } else if let Some(a) = payload.get("requests").and_then(|v| v.as_array()) {
+        a
+    } else if let Some(a) = payload.get("devices").and_then(|v| v.as_array()) {
+        a
+    } else if let Some(a) = payload.get("items").and_then(|v| v.as_array()) {
+        a
+    } else if let Some(a) = payload.get("list").and_then(|v| v.as_array()) {
+        a
+    } else {
         return vec![];
     };
-    pending
-        .iter()
+
+    arr.iter()
         .filter_map(|item| {
-            let request_id = item.get("requestId")?.as_str()?.to_string();
+            // requestId 字段兼容多种写法
+            let request_id = item
+                .get("requestId")
+                .or_else(|| item.get("request_id"))
+                .or_else(|| item.get("id"))
+                .and_then(|v| v.as_str())?
+                .to_string();
             let device_name = item
                 .get("deviceName")
+                .or_else(|| item.get("device_name"))
                 .or_else(|| item.get("name"))
                 .or_else(|| item.get("label"))
                 .and_then(|v| v.as_str())
