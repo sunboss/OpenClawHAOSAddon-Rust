@@ -91,10 +91,10 @@ fn load_or_create_identity() -> Result<DeviceIdentity, String> {
 pub async fn list_pending_pairs(gateway_token: &str) -> Vec<PendingPair> {
     match call_gateway(gateway_token, "device.pair.list", json!({})).await {
         Ok(payload) => {
-            // 调试：打印原始响应，帮助确认字段格式
-            println!("haos-ui: device.pair.list raw payload: {payload}");
             let pairs = parse_pending_pairs(&payload);
-            println!("haos-ui: device.pair.list: {} 个待配对请求", pairs.len());
+            if !pairs.is_empty() {
+                println!("haos-ui: device.pair.list: {} 个待配对请求", pairs.len());
+            }
             pairs
         }
         Err(err) => {
