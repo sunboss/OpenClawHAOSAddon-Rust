@@ -22,6 +22,79 @@ Copy this block before each push and fill it in:
 - Next handoff:
 ```
 
+## 2026-04-11 00:55 Asia/Shanghai - Replace gateway popup blank page with a controlled loading page
+
+- User request: the homepage `打开网关` action still opened a blank page.
+- Intent / context:
+  - the mainline had already restored the homepage gateway entry as a visible link
+  - the remaining UX failure was the popup itself staying blank during the async wait before final navigation
+  - current code path opened `about:blank` with `noopener,noreferrer`, then tried to redirect later, which is fragile across browsers
+- Root-cause conclusion:
+  - the blank page was caused by the popup bootstrap strategy, not by the gateway HTTPS proxy itself
+  - the user still needs a pre-opened window to avoid popup blockers, but that window should contain a real loading page instead of an inaccessible `about:blank`
+- Files changed:
+  - `crates/haos-ui/src/main.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - replace `window.open("about:blank", "_blank", "noopener,noreferrer")`
+  - open a controllable popup window first
+  - write a lightweight loading page into the popup immediately
+  - keep the existing stronger-ready wait and token-fetch logic
+  - redirect the popup to the native gateway only after that logic completes
+- Commands / validation:
+  - `cargo test -p haos-ui`
+- Version:
+  - target version `2026.04.11.3`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - clicking `打开网关` should now show a loading page instead of a persistent blank tab/window while waiting for the native gateway flow to complete
+- Next handoff:
+  - after push, verify whether the popup now shows the loading card first and then lands on the native gateway
+  - if the popup still does not navigate, inspect whether the browser blocks later `location.replace` after the async wait on the user's target browser
+
+## 2026-04-11 00:40 Asia/Shanghai - Expose official Bonjour disable switch in HAOS options
+
+- User request: after confirming what Bonjour broadcast is for, continue and wire up the official way to disable it.
+- Intent / context:
+  - idle `127.0.0.1:18790` websocket noise was already reduced on `2026.04.11.1`
+  - remaining recurring noisy lines were now dominated by Bonjour advertiser churn:
+    - `bonjour restarting advertiser`
+    - `watchdog detected non-announced service`
+  - the user chose the path of disabling LAN discovery if the official product supports it
+- Official source checked:
+  - OpenClaw Bonjour discovery docs
+  - documented knob: `OPENCLAW_DISABLE_BONJOUR=1` disables advertisement
+  - source: [OpenClaw Bonjour docs](https://docs.openclaw.ai/zh-CN/gateway/bonjour)
+- Files changed:
+  - `crates/addon-supervisor/src/main.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - add HAOS option `disable_bonjour`
+  - map that option into runtime settings
+  - export official env var `OPENCLAW_DISABLE_BONJOUR` as `1` or `0`
+  - include the env var in the supervisor allowlist so the managed gateway process actually receives it
+- Commands / validation:
+  - `cargo test -p addon-supervisor`
+- Version:
+  - target version `2026.04.11.2`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - the add-on now exposes the official upstream switch for turning off Bonjour advertisement in HAOS
+  - this gives a supported way to stop Bonjour advertiser churn without inventing a custom runtime patch
+- Next handoff:
+  - after push, set `disable_bonjour: true` in the add-on options and restart once
+  - then verify whether the `bonjour ... advertiser` lines disappear while normal WebUI / CLI access still works through HA ingress and `:18789`
+
 ## 2026-04-11 00:25 Asia/Shanghai - Stop background pairing polling from constantly touching 127.0.0.1:18790
 
 - User request: keep digging into `18790`; confirm what it is and continue reducing unnecessary internal connections instead of hiding the logs.

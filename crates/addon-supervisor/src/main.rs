@@ -100,6 +100,7 @@ struct AddonOptions {
     timezone: Option<String>,
     enable_terminal: Option<bool>,
     terminal_port: Option<u16>,
+    disable_bonjour: Option<bool>,
     gateway_mode: Option<String>,
     gateway_remote_url: Option<String>,
     gateway_public_url: Option<String>,
@@ -116,6 +117,7 @@ struct RuntimeSettings {
     timezone: String,
     enable_terminal: bool,
     terminal_port: u16,
+    disable_bonjour: bool,
     gateway_mode: String,
     gateway_remote_url: String,
     gateway_public_url: String,
@@ -265,6 +267,7 @@ fn runtime_settings(options: &AddonOptions) -> RuntimeSettings {
             .unwrap_or_else(|| "Asia/Shanghai".to_string()),
         enable_terminal: options.enable_terminal.unwrap_or(true),
         terminal_port: options.terminal_port.unwrap_or(7681),
+        disable_bonjour: options.disable_bonjour.unwrap_or(false),
         gateway_mode: options
             .gateway_mode
             .clone()
@@ -475,6 +478,10 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("GATEWAY_MODE", &settings.gateway_mode);
         env::set_var("GW_PUBLIC_URL", &settings.gateway_public_url);
         env::set_var("HTTPS_PORT", settings.https_port.to_string());
+        env::set_var(
+            "OPENCLAW_DISABLE_BONJOUR",
+            if settings.disable_bonjour { "1" } else { "0" },
+        );
         env::set_var(
             "ENABLE_TERMINAL",
             if settings.enable_terminal {
@@ -1464,6 +1471,7 @@ fn apply_child_env(command: &mut Command) {
         "GATEWAY_MODE",
         "GW_PUBLIC_URL",
         "HTTPS_PORT",
+        "OPENCLAW_DISABLE_BONJOUR",
         "ENABLE_TERMINAL",
         "ENABLE_HTTPS_PROXY",
         "HTTPS_PROXY_PORT",
@@ -1490,6 +1498,7 @@ mod tests {
             timezone: "Asia/Shanghai".to_string(),
             enable_terminal: true,
             terminal_port: 7681,
+            disable_bonjour: false,
             gateway_mode: "gateway".to_string(),
             gateway_remote_url: String::new(),
             gateway_public_url: String::new(),

@@ -1833,8 +1833,63 @@ fn render_shell(
       terminalState.loading = false;
       terminalState.pendingCommand = null;
     }};
+    function writeGatewayLoadingPage(popup) {{
+      if (!popup || !popup.document) return;
+      popup.document.open();
+      popup.document.write(`<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenClaw Gateway</title>
+  <style>
+    :root {{
+      color-scheme: light;
+    }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, #eaf1ff 0%, #f4f7ff 100%);
+      color: #16345f;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }}
+    .card {{
+      width: min(440px, calc(100vw - 40px));
+      padding: 28px 26px;
+      border-radius: 22px;
+      border: 1px solid rgba(22, 52, 95, .12);
+      background: rgba(255,255,255,.95);
+      box-shadow: 0 20px 48px rgba(18, 40, 75, .12);
+      text-align: center;
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: 24px;
+    }}
+    p {{
+      margin: 0;
+      color: #58729a;
+      line-height: 1.7;
+      font-size: 14px;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>正在打开 OpenClaw Gateway</h1>
+    <p>正在等待原生控制台就绪，请稍候几秒。</p>
+  </div>
+</body>
+</html>`);
+      popup.document.close();
+      try {{ popup.opener = null; }} catch (_) {{}}
+    }}
     window.ocOpenGateway = async function () {{
-      const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+      const popup = window.open("", "_blank");
+      writeGatewayLoadingPage(popup);
       const targetUrl = nativeGatewayUrl();
       await waitForGatewayControlReady();
       let finalUrl = targetUrl;
