@@ -22,6 +22,43 @@ Copy this block before each push and fill it in:
 - Next handoff:
 ```
 
+## 2026-04-10 21:05 Asia/Shanghai - Switch Home Assistant MCP setup to official mcporter config shape
+
+- User request: handle the remaining MCP setup failure strictly with reference to official documentation.
+- Intent / context:
+  - runtime logs still showed `--header requires KEY=value` after the previous CLI-based fix
+  - official MCPorter docs favor the persisted config file shape over ad-hoc startup mutation
+  - the add-on should stop depending on fragile startup CLI syntax for HA MCP registration
+- Official source checked:
+  - MCPorter README / configuration reference
+  - config shape documented as `mcpServers -> <name> -> baseUrl -> headers`
+  - config resolution documented around `MCPORTER_CONFIG` and `~/.mcporter/mcporter.json`
+- Implementation decision:
+  - stop shelling out to `mcporter config add` during startup
+  - directly upsert the `HA` entry in `/config/.mcporter/mcporter.json`
+  - preserve the official structure:
+    - `"baseUrl": "http://supervisor/core/api/mcp"`
+    - `"headers": { "Authorization": "Bearer <token>" }`
+- Files changed:
+  - `crates/addon-supervisor/src/main.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Commands / validation:
+  - `cargo test -p addon-supervisor`
+- Version:
+  - target version `2026.04.10.8`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - HA MCP setup now follows the official persisted config model instead of volatile CLI flag syntax
+  - future startup logs should no longer emit `mcporter` header / subcommand parsing failures for this path
+- Next handoff:
+  - after push, verify `/config/.mcporter/mcporter.json` contains the `HA` entry with `baseUrl` and `headers.Authorization`
+  - if logs still show repeated loopback websocket timeouts after startup, inspect the remaining early internal probe path separately from MCP setup
+
 ## 2026-04-10 20:45 Asia/Shanghai - Fix mcporter header syntax and suppress boxed startup doctor noise
 
 - User request: continue after reviewing the new runtime logs and push the fix.

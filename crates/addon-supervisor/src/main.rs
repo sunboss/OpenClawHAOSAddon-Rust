@@ -210,11 +210,8 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
     }
 
     let mut mcp_status = "disabled".to_string();
-    if settings.auto_configure_mcp
-        && !settings.homeassistant_token.is_empty()
-        && command_exists(&args.mcporter_bin)
-    {
-        if configure_home_assistant_mcp(&args.mcporter_bin, &settings.homeassistant_token) {
+    if settings.auto_configure_mcp && !settings.homeassistant_token.is_empty() {
+        if configure_home_assistant_mcp(&args, &settings.homeassistant_token) {
             mcp_status = "HA configured".to_string();
         } else {
             mcp_status = "HA config failed".to_string();
@@ -798,45 +795,12 @@ fn run_status(program: &str, args: &[&str]) -> bool {
     }
 }
 
-fn configure_home_assistant_mcp(mcporter_bin: &str, homeassistant_token: &str) -> bool {
-    let header = format!("Authorization=Bearer {}", homeassistant_token);
-    let modern_args = [
-        "config",
-        "add",
-        "HA",
-        "--http-url",
-        "http://supervisor/core/api/mcp",
-        "--header",
-        header.as_str(),
-    ];
-    if run_status(mcporter_bin, &modern_args) {
-        return true;
+fn configure_home_assistant_mcp(args: &HaosEntryArgs, homeassistant_token: &str) -> bool {
+    if let Err(err) = upsert_home_assistant_mcp_server(args, homeassistant_token) {
+        eprintln!("addon-supervisor: failed to configure Home Assistant MCP server: {err}");
+        return false;
     }
-
-    let legacy_args = [
-        "add",
-        "HA",
-        "--http-url",
-        "http://supervisor/core/api/mcp",
-        "--header",
-        header.as_str(),
-    ];
-    if run_status(mcporter_bin, &legacy_args) {
-        return true;
-    }
-
-    eprintln!(
-        "addon-supervisor: failed to configure Home Assistant MCP server with current and legacy mcporter commands"
-    );
-    false
-}
-
-fn command_exists(program: &str) -> bool {
-    StdCommand::new(program)
-        .arg("--help")
-        .output()
-        .map(|_| true)
-        .unwrap_or(false)
+    true
 }
 
 fn render_nginx(output: PathBuf) -> ExitCode {
@@ -1406,6 +1370,48 @@ fn normalize_startup_doctor_line(line: &str) -> &str {
     trimmed.strip_prefix("- ").unwrap_or(trimmed)
 }
 
+fn upsert_home_assistant_mcp_server(
+    args: &HaosEntryArgs,
+    homeassistant_token: &str,
+) -> std::io::Result<()> {
+    let contents = fs::read_to_string(&args.mcporter_config).unwrap_or_else(|_| "{\"mcpServers\":{}}\n".to_string());
+    let mut config = serde_json::from_str::<serde_json::Value>(&contents)
+        .unwrap_or_else(|_| serde_json::json!({ "mcpServers": {} }));
+
+    if !config.is_object() {
+        config = serde_json::json!({ "mcpServers": {} });
+    }
+
+    let root = config.as_object_mut().expect("mcporter config root object");
+    let servers = root
+        .entry("mcpServers".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !servers.is_object() {
+        *servers = serde_json::json!({});
+    }
+
+    let server = serde_json::json!({
+        "description": "Home Assistant Supervisor MCP",
+        "baseUrl": "http://supervisor/core/api/mcp",
+        "headers": {
+            "Authorization": format!("Bearer {homeassistant_token}")
+        }
+    });
+
+    servers
+        .as_object_mut()
+        .expect("mcpServers object")
+        .insert("HA".to_string(), server);
+
+    fs::write(
+        &args.mcporter_config,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{\"mcpServers\":{}}".to_string())
+        ),
+    )
+}
+
 fn startup_doctor_section_title(line: &str) -> Option<String> {
     let trimmed = line.trim_start();
     if !trimmed.starts_with('◇') {
@@ -1478,10 +1484,6 @@ fn apply_child_env(command: &mut Command) {
 mod tests {
     use super::*;
     use std::collections::HashSet;
-
-    fn sample_mcporter_header(token: &str) -> String {
-        format!("Authorization=Bearer {}", token)
-    }
 
     fn sample_settings() -> RuntimeSettings {
         RuntimeSettings {
@@ -1623,8 +1625,41 @@ mod tests {
     }
 
     #[test]
-    fn mcporter_header_uses_key_value_syntax() {
-        assert_eq!(sample_mcporter_header("abc123"), "Authorization=Bearer abc123");
+    fn upsert_home_assistant_mcp_server_writes_official_shape() {
+        let unique = format!("openclaw-mcporter-upsert-{}", random::<u64>());
+        let root = std::env::temp_dir().join(unique);
+        let args = HaosEntryArgs {
+            options_file: root.join("options.json"),
+            openclaw_config_dir: root.join(".openclaw"),
+            openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
+            openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
+            mcporter_home_dir: root.join(".mcporter"),
+            mcporter_config: root.join(".mcporter").join("mcporter.json"),
+            cert_dir: root.join("certs"),
+            backup_dir: root.join("backup"),
+            nginx_html_dir: root.join("html"),
+            gateway_internal_port: 18790,
+            action_server_port: 48100,
+            ui_port: 48101,
+            gateway_bin: "openclaw".to_string(),
+            oc_config_bin: "oc-config".to_string(),
+            mcporter_bin: "mcporter".to_string(),
+            ui_bin: "haos-ui".to_string(),
+            action_bin: "actiond".to_string(),
+            ingress_bin: "ingressd".to_string(),
+            nginx_conf: root.join("nginx.conf"),
+        };
+
+        ensure_mcporter_config(&args).expect("seed mcporter config");
+        upsert_home_assistant_mcp_server(&args, "abc123").expect("write ha server");
+
+        let contents = fs::read_to_string(&args.mcporter_config).expect("mcporter config");
+        let config: serde_json::Value = serde_json::from_str(&contents).expect("valid json");
+        let server = &config["mcpServers"]["HA"];
+        assert_eq!(server["baseUrl"], "http://supervisor/core/api/mcp");
+        assert_eq!(server["headers"]["Authorization"], "Bearer abc123");
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

@@ -1,3 +1,9 @@
+## 2026.04.10.8
+
+- 对齐官方 MCPorter 配置模型：不再依赖启动期 `mcporter config add` CLI 变体，改为直接写入官方 `mcporter.json` 的 `mcpServers -> baseUrl -> headers` 结构
+- 修复：避免再出现 `--header requires KEY=value` 和旧版 `add` fallback 噪音
+- 校验：补充 `addon-supervisor` 测试，验证 Home Assistant MCP 条目按官方配置形状写入
+
 ## 2026.04.10.7
 
 - 修复：`mcporter` 配置 Home Assistant MCP 时改用 `--header KEY=value` 语法，兼容当前 CLI

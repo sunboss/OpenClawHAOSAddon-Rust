@@ -73,6 +73,10 @@ Read this before making UI, runtime, or release changes.
     - `/config/.openclaw/openclaw.json`
   - MCPorter config file:
     - `/config/.mcporter/mcporter.json`
+    - Prefer writing the official persisted config shape directly:
+      - `mcpServers.<name>.baseUrl`
+      - `mcpServers.<name>.headers`
+    - Do not rely on startup-time `mcporter config add` flag syntax unless there is a documented upstream requirement to do so.
   - OpenClaw persistent state root:
     - `/config/.openclaw`
   - Workspace:
