@@ -1,0 +1,49 @@
+name: OpenClawHAOSAddon-Rust Official Thin
+version: "2026.04.10.1"
+slug: openclaw_assistant_rust_official_thin
+description: Thin HAOS wrapper around the official OpenClaw gateway and control UI.
+url: https://github.com/sunboss/OpenClawHAOSAddon-Rust
+image: ghcr.io/sunboss/openclawhaosaddon-rust-official-thin
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: manual
+init: false
+host_network: true
+ingress: true
+ingress_port: 48099
+panel_title: OpenClaw Thin
+panel_icon: mdi:robot-industrial
+
+map:
+  - addon_config:rw
+  - share:rw
+
+options:
+  timezone: "Asia/Shanghai"
+  enable_terminal: true
+  terminal_port: 7681
+  gateway_mode: local
+  gateway_remote_url: ""
+  gateway_public_url: ""
+  gateway_port: 18789
+  access_mode: lan_https
+  enable_openai_api: true
+  auto_configure_mcp: true
+  homeassistant_token: ""
+  run_doctor_on_start: false
+
+schema:
+  timezone: str
+  enable_terminal: bool?
+  terminal_port: int(1024,65535)?
+  gateway_mode: list(local|remote)?
+  gateway_remote_url: str?
+  gateway_public_url: str?
+  gateway_port: int(1,65535)?
+  access_mode: list(custom|local_only|lan_https|lan_reverse_proxy|tailnet_https)?
+  enable_openai_api: bool?
+  auto_configure_mcp: bool?
+  homeassistant_token: str?
+  run_doctor_on_start: bool?
