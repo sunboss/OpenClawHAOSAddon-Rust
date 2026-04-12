@@ -2,6 +2,37 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 23:59 Asia/Shanghai - Add repository docs and keep slimming the scheme-3 UI shell
+
+- User request:
+  - create a documentation set modeled after `sunboss/hermes-agent-ha-addon`
+  - keep optimizing and then push
+- Outcome:
+  - added repository-level `README.md`, `INSTALL.md`, and `DOCS.md`
+  - reused the existing `logo.png` and added Mermaid diagrams for runtime structure and first-configuration flow
+  - kept the home page resource collection and service status display intact
+  - made the config page more clearly config-only
+  - kept logs page focused on logs, while concentrating operational actions in the commands page
+  - reduced duplicated Shell action buttons from the commands page
+  - fixed Chinese copy in the ingress terminal page and fallback pages
+- Files changed:
+  - `README.md`
+  - `INSTALL.md`
+  - `DOCS.md`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+  - `cargo test -p ingressd`
+- Version:
+  - bump add-on version to `2026.04.12.14`
+- Next handoff:
+  - verify the new docs render correctly on GitHub and in the HA add-on repository view
+  - if desired, continue by splitting the large `haos-ui` page renderer into modules without changing behavior
+
 ## 2026-04-12 23:59 Asia/Shanghai - Restore lightweight embedded terminal on top of the slimmer UI
 
 - User request:

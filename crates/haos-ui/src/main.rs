@@ -1122,7 +1122,6 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
         <div class="header-actions">
           <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
-          <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('')">OpenClaw CLI</button>
           <a class="btn primary" href="./commands">进入命令页</a>
         </div>
     </div>
@@ -1221,7 +1220,6 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveWebSearchConfig()">保存 Web Search</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">在终端验证</button>
         <span class="form-status" id="webSaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1282,7 +1280,6 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveMemorySearchConfig()">保存 Memory Search</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw memory status --deep')">在终端验证</button>
         <span class="form-status" id="memorySaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1298,7 +1295,6 @@ fn config_content_v2(config: &PageConfig) -> String {
       <div class="header-actions">
         <a class="btn" href="{model_docs}" target="_blank" rel="noopener noreferrer">官方文档</a>
         <a class="btn secondary" href="https://docs.openclaw.ai/onboard" target="_blank" rel="noopener noreferrer">初始化文档</a>
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">打开初始化向导</button>
       </div>
     </div>
     <div class="config-form">
@@ -1316,10 +1312,19 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveModelConfig()">保存模型配置</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在终端查看当前模型</button>
         <span class="form-status" id="modelSaveStatus">保存后需重启插件</span>
       </div>
     </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head compact">
+      <div>
+        <div class="eyebrow">运维入口</div>
+        <h3>保存后如何验证</h3>
+      </div>
+    </div>
+    <div class="mini-tip">配置页现在只负责保存设置。保存完成后，请前往“命令行”页打开 <code>OpenClaw CLI</code> 或 <code>维护 Shell</code> 进行初始化、状态确认和日志排查。</div>
   </section>
 
 </div>"#,
@@ -1420,8 +1425,8 @@ fn commands_content_native(_config: &PageConfig) -> String {
       <div class="action-row">
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw health --json')">在终端执行健康检查</button>
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在终端查看运行状态</button>
-        <button class="btn" type="button" onclick="ocOpenShellWindow('openclaw status --deep')">在 Shell 查看运行状态</button>
       </div>
+      <div class="mini-tip">如果你更习惯传统维护方式，可以先点顶部的“新窗口打开 Shell”，再手动执行这些命令。</div>
     </div>
 
     <div class="command-section">
@@ -1435,7 +1440,6 @@ fn commands_content_native(_config: &PageConfig) -> String {
       <div class="action-row">
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">运行 doctor</button>
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor --fix')">运行 doctor --fix</button>
-        <button class="btn" type="button" onclick="ocOpenShellWindow('openclaw doctor --fix')">在 Shell 运行 doctor --fix</button>
       </div>
       <div class="mini-tip">默认终端是原生 <code>openclaw tui</code>；如果你更习惯旧方式，也可以用上面的 “Shell” 按钮直接打开本机 shell。</div>
     </div>
@@ -1465,23 +1469,21 @@ fn logs_content() -> String {
       <div>
         <div class="eyebrow">日志</div>
         <h2>日志与诊断</h2>
-        <p class="muted">这里保留最常用的日志和诊断命令。你可以直接打开上面的终端，它会进入原生 <code>openclaw tui</code>；也可以在 Home Assistant 的 Terminal &amp; SSH 或 SSH 会话里执行相同命令。</p>
+        <p class="muted">这里专门保留日志查看相关入口。状态检查、初始化和 doctor 等运维动作请前往“命令行”页执行。</p>
       </div>
       <div class="header-actions">
         <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">打开日志终端</button>
         <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">打开日志 Shell</button>
+        <a class="btn" href="./commands">进入命令页</a>
       </div>
     </div>
 
     <ul class="clean-list">
       <li><code>openclaw logs --follow</code></li>
       <li><code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code></li>
-      <li><code>openclaw doctor</code></li>
-      <li><code>openclaw doctor --fix</code></li>
-      <li><code>openclaw status --deep</code></li>
       <li><code>ha addons logs openclaw_assistant_rust</code></li>
     </ul>
-    <div class="mini-tip">如果你要直接看日志或执行维护命令，可以打开上面的终端；如果你只需要原生控制台，请优先点击首页的“打开网关”。</div>
+    <div class="mini-tip">如果你只需要查看日志，优先使用这里的两个入口；如果你要做初始化、doctor 或状态检查，请前往命令页。</div>
   </section>
 </div>"##,
     )

@@ -696,20 +696,11 @@ async fn proxy_ui(State(state): State<AppState>, request: Request) -> impl IntoR
         return response;
     }
 
-    match path.as_str() {
-        "/" | "/index.html" => fallback_ui_response(),
-        "/partials/health" => Html(
-            r#"<h2>Service Status</h2><p class="hint">UI backend is still warming up. Refresh in a few seconds.</p>"#
-                .to_string(),
-        )
-        .into_response(),
-        "/partials/diag" => Html(
-            r#"<h2>Quick Diagnostics</h2><p class="hint">UI backend is temporarily unavailable, but ingress is alive.</p>"#
-                .to_string(),
-        )
-        .into_response(),
-        _ => response,
+    if matches!(path.as_str(), "/" | "/index.html") {
+        return fallback_ui_response();
     }
+
+    response
 }
 
 async fn proxy_gateway(
@@ -1061,7 +1052,7 @@ fn fallback_gateway_response() -> Response<Body> {
 <body>
   <div class="card">
     <h1>OpenClaw Gateway</h1>
-    <p>Gateway 正在启动，通常需要 30–60 秒。<br>页面将自动刷新。</p>
+    <p>Gateway 正在启动，通常需要 30 到 60 秒。<br>页面会自动刷新。</p>
     <button class="btn" onclick="location.reload()">立即刷新</button>
   </div>
 </body>
@@ -1074,7 +1065,7 @@ fn fallback_gateway_response() -> Response<Body> {
 fn fallback_ui_response() -> Response<Body> {
     Html(
         r#"<!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1133,13 +1124,13 @@ fn fallback_ui_response() -> Response<Body> {
     <div class="card">
       <h1>OpenClawHAOSAddon-Rust</h1>
       <p>
-        Ingress is responding, but the Rust UI backend is still starting or restarting.
-        This fallback avoids a blank 502 screen while the UI catches up.
+        Ingress 已响应，但 Rust UI 后端仍在启动或重启中。
+        这个过渡页用来避免在 UI 尚未完全就绪时出现空白 502 页面。
       </p>
       <div class="actions">
-        <button class="btn" type="button" onclick="location.reload()">Reload</button>
-        <a class="btn" href="./terminal/" target="_blank" rel="noopener noreferrer">OpenClaw CLI</a>
-        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">Download CA Cert</a>
+        <button class="btn" type="button" onclick="location.reload()">重新加载</button>
+        <a class="btn" href="./terminal/" target="_blank" rel="noopener noreferrer">打开 OpenClaw CLI</a>
+        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
       </div>
     </div>
   </div>
