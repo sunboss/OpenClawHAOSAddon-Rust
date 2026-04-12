@@ -2,6 +2,34 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 20:30 Asia/Shanghai - Slim the HA commands page toward native OpenClaw
+
+- User request: continue simplifying what can still be reduced after removing `actiond`.
+- Goal:
+  - make `haos-ui` feel more like a thin HA shell instead of a second control surface
+  - keep official entrypoints front and center: Gateway and `openclaw tui`
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - add a new native-leaning commands page renderer and switch `/commands` to it
+  - keep only:
+    - native Gateway entry
+    - `openclaw tui`
+    - onboarding
+    - health / status / doctor / logs / pairing basics
+  - drop from the new commands page:
+    - custom command input
+    - config-file browsing shortcuts
+    - backup script shortcut
+    - other add-on-specific convenience actions
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - `2026.04.12.7`
+
 ## 2026-04-12 18:30 Asia/Shanghai - Collapse actiond into ingressd
 
 - User request: continue simplifying toward upstream-native architecture and specifically answer whether `actiond` had really been removed.

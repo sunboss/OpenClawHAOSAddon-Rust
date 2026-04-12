@@ -1926,6 +1926,110 @@ fn commands_content_v2(config: &PageConfig) -> String {
     )
 }
 
+fn commands_content_native(_config: &PageConfig) -> String {
+    let entry_actions = [
+        terminal_window_button("OpenClaw CLI", "openclaw tui"),
+        primary_link_button(
+            "鍘熺敓 Gateway",
+            "ocGatewayLinkCmd",
+            "return ocOpenGatewayLink(event, this)",
+        ),
+        terminal_window_button("鍒濆鍖栧悜瀵?", "openclaw onboard"),
+    ]
+    .join("");
+
+    let status_actions = [
+        diag_button("鍋ュ悍妫€鏌?", "openclaw health --json"),
+        diag_button("杩愯鐘舵€?", "openclaw status --deep"),
+        diag_button(
+            "鏈湴探针",
+            "curl -fsS http://127.0.0.1:48099/healthz && echo && curl -fsS http://127.0.0.1:48099/readyz",
+        ),
+    ]
+    .join("");
+
+    let pair_actions = [
+        action_button("璁惧鍒楄〃", "openclaw devices list"),
+        action_button("鎵瑰噯鏈€鏂伴厤瀵?", "openclaw devices approve --latest"),
+    ]
+    .join("");
+
+    let maintenance_actions = [
+        diag_button("杩愯 doctor", "openclaw doctor"),
+        diag_button("doctor --fix", "openclaw doctor --fix"),
+        diag_button("瀹夊叏瀹¤", "openclaw security audit --deep"),
+        diag_button("璁板繂鐘舵€?", "openclaw memory status --deep"),
+        diag_button("鏈満鐗堟湰", "openclaw --version"),
+    ]
+    .join("");
+
+    let log_actions = [
+        terminal_window_button("璺熼殢鏃ュ織", "openclaw logs --follow"),
+        terminal_window_button("缃戝叧鏃ュ織", "tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
+    ]
+    .join("");
+
+    format!(
+        r#"<div class="page-grid">
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">鍛戒护琛?/div>
+        <h2>鍘熺敓鍏ュ彛</h2>
+        <p class="muted">杩欎釜椤甸潰鍙繚鐣欐洿鎺ヨ繎瀹樻柟鐨勫叆鍙ｃ€?code>OpenClaw CLI</code> 鎵撳紑鐨勬槸鍘熺敓 <code>openclaw tui</code>锛涘湪 TUI 閲岃緭鍏?code>!鍛戒护</code> 鍙互鎵ц鏈満 shell 鍛戒护銆?/p>
+      </div>
+      <div class="header-actions">
+        {load_terminal}
+        {close_terminal}
+        {open_window}
+        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">涓嬭浇 CA 璇佷功</a>
+      </div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">鍘熺敓鍏ュ彛</div>
+      <div class="action-row">{entry_actions}</div>
+      <div class="mini-tip">TUI 绀轰緥锛氳緭鍏?code>!openclaw status</code> 鎴?code>!ha addons logs openclaw_assistant_rust</code> 鎵ц鏈満鍛戒护銆?/div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">鐘舵€佷笌鍋ュ悍</div>
+      <div class="action-row">{status_actions}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">璁惧涓庨厤瀵?/div>
+      <div class="action-row">{pair_actions}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">缁存姢涓庡璁?/div>
+      <div class="action-row">{maintenance_actions}</div>
+    </div>
+
+    <div class="command-section">
+      <div class="section-label">鏃ュ織娴侊紙鏂扮獥鍙ｏ級</div>
+      <div class="action-row">{log_actions}</div>
+    </div>
+  </section>
+  {terminal}
+</div>"#,
+        load_terminal = primary_button("鍔犺浇缁堢", "ocLoadTerminal()"),
+        close_terminal = ghost_button("鍏抽棴缁堢", "ocCloseTerminal()"),
+        open_window = secondary_button("鏂扮獥鍙ｆ墦寮€缁堢", "ocOpenTerminalWindow()"),
+        entry_actions = entry_actions,
+        status_actions = status_actions,
+        pair_actions = pair_actions,
+        maintenance_actions = maintenance_actions,
+        log_actions = log_actions,
+        terminal = terminal_card(
+            "宓屽叆寮忕粓绔?",
+            "杩欎釜鍖哄煙閫傚悎涓€娆℃€у懡浠ゅ拰鏃ュ織鏌ョ湅锛屽鏋滀綘闇€瑕佹洿鍘熺敓鐨勪氦浜掑紡浣撻獙锛岃浣跨敤涓婇潰鐨?OpenClaw CLI 鎵撳紑 TUI銆?",
+            "鍔犺浇缁堢",
+        ),
+    )
+}
+
 fn logs_content() -> String {
     let log_actions = [
         ("跟随日志", "openclaw logs --follow"),
@@ -3107,7 +3211,7 @@ async fn commands_page(State(state): State<AppState>) -> impl IntoResponse {
         NavPage::Commands,
         "命令行工作区",
         "在这里重启服务、批准设备配对、执行诊断，或直接打开终端操作。",
-        &commands_content_v2(&config),
+        &commands_content_native(&config),
     )
 }
 
@@ -3293,6 +3397,19 @@ mod tests {
         assert!(html.contains("/config/.openclaw/openclaw.json"));
         assert!(html.contains("/config/.mcporter/mcporter.json"));
         assert!(html.contains("/config/.openclaw/workspace"));
+    }
+
+    #[test]
+    fn native_commands_page_stays_close_to_official_entrypoints() {
+        let html = commands_content_native(&sample_page_config());
+
+        assert!(html.contains("openclaw tui"));
+        assert!(html.contains("openclaw onboard"));
+        assert!(html.contains("openclaw health --json"));
+        assert!(html.contains("openclaw status --deep"));
+        assert!(!html.contains("ocRunCustomCommand"));
+        assert!(!html.contains("/config/.openclaw/openclaw.json"));
+        assert!(!html.contains("rsync -a --delete"));
     }
 
     #[test]
