@@ -2,12 +2,6 @@ configuration:
   timezone:
     name: Timezone
     description: Timezone used inside the add-on container.
-  enable_terminal:
-    name: Enable Web Terminal
-    description: Expose the embedded ttyd terminal in Home Assistant ingress.
-  terminal_port:
-    name: Terminal Port
-    description: Port used by ttyd inside the add-on.
   gateway_mode:
     name: Gateway Mode
     description: Run a local gateway or connect to a remote one.

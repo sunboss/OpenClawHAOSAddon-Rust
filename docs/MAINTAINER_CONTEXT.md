@@ -27,10 +27,10 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 - `crates/ingressd`
   - HA ingress
   - external HTTPS gateway proxy
-  - native `openclaw tui` terminal transport
   - local health/readiness endpoints
 - `crates/haos-ui`
   - multi-page HAOS UI shell
+  - keeps home-page status and resource overview
 - `crates/oc-config`
   - JSON helpers for `openclaw.json`
 
@@ -95,28 +95,25 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
     - `/config/certs`
   - Backups:
     - `/share/openclaw-backup/latest`
-- Treat `openclaw.json` as config, but do not describe the whole `/config/.openclaw` tree as “just config”.
 
 ## Native Gateway status
 
-- Native Gateway and embedded TUI are separate paths.
-  - If embedded TUI works, that does not automatically mean native Gateway works.
-- The severe native Gateway `ws closed before connect` problem was largely reduced by:
-  - preserving forwarded headers
-  - allowing the correct control UI origins
-  - opening the native dashboard with `#token=...`
+- Native Gateway and HA panel are separate paths.
+  - If the HA panel loads, that does not automatically mean native Gateway works.
+- The most important native Gateway fixes already in place are:
+  - preserve forwarded headers
+  - allow the correct control UI origins
+  - open the native dashboard with `#token=...`
+  - keep remote browser access on HTTPS
 
 ## Known noisy logs
 
 - `actiond`
   - no longer part of the runtime architecture
   - if it appears in logs or docs again, treat that as regression drift
-- `No pending device pairing requests to approve`
-  - not an error
-  - just the old auto-approve poller finding nothing to approve
 - `Health check failed: Error: gateway timeout after 10000ms` during startup doctor
   - not a primary add-on failure
-  - doctor can race early startup while acpx/browser sidecars are still warming up
+  - doctor can race early startup while browser/acpx sidecars are still warming up
 - `Gateway port: Port 18790 is already in use` in doctor output
   - expected in the current HTTPS-preserving architecture
 - `Memory search is enabled, but no embedding provider is ready`
@@ -148,10 +145,9 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
   - Web Search / Memory Search / model forms
 - `Commands`
   - official-style native entrypoints
-  - embedded TUI
+  - copyable command reference only
 - `Logs`
-  - log/doctor actions
-  - log TUI
+  - log/doctor command reference only
 
 ## Pending recurring cleanup themes
 
@@ -165,7 +161,7 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 
 - Group command actions in a way that feels close to official helper flows:
   - `Native entrypoints`
-    - `OpenClaw CLI`
+    - `openclaw tui`
     - native Gateway
     - `openclaw onboard`
   - `Health / Status`
@@ -187,19 +183,16 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 - Device pairing / approval should stay with native Control UI or upstream TUI flows.
 - Do not rebuild a separate HA-only pairing control surface.
 
-## Terminal rendering
+## Shell boundary
 
-- The embedded terminal previously rendered ANSI/TUI output poorly.
-- The terminal was upgraded to handle more complete ANSI/TUI behavior.
-- If output becomes garbled again, check terminal rendering before blaming Chinese text.
-- `新窗口打开终端` should behave like a native terminal page.
-  - Do not depend on a separate input box at the bottom.
-  - The page itself should take focus and accept direct keyboard input and paste.
-- Official TUI model to preserve:
-  - `OpenClaw CLI` should mean native `openclaw tui`.
-  - Plain input inside the TUI is chat/session input.
-  - Host-local shell commands should use the official `!command` prefix.
-  - Avoid inventing a second pseudo-CLI model when upstream TUI already supports local shell execution.
+- The add-on no longer ships its own embedded terminal.
+- Commands and logs pages should stay as guidance/reference pages, not become another pseudo-shell.
+- If users need a shell, guide them to Home Assistant `Terminal & SSH`, SSH, or another host-local shell.
+- Keep the command examples aligned with official upstream flows:
+  - `openclaw tui`
+  - `openclaw onboard`
+  - `openclaw doctor`
+  - `openclaw status --deep`
 
 ## Workflow note
 

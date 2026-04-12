@@ -725,65 +725,9 @@ fn nav_link(active: NavPage, current: NavPage, href: &str, label: &str) -> Strin
     format!(r#"<a class="{class_name}" href="{href}">{label}</a>"#)
 }
 
-fn action_button(label: &str, command: &str) -> String {
-    // Restart / kill commands get a danger tint; everything else gets the action tint.
-    let extra_class = if command.contains("restart") || command.contains("kill") {
-        " btn-danger"
-    } else {
-        " btn-action"
-    };
-    format!(
-        r#"<button class="btn{extra_class}" type="button" data-command="{}" onclick="ocRunButton(this)">{label}</button>"#,
-        html_attr_escape(command),
-    )
-}
-
-fn primary_button(label: &str, onclick: &str) -> String {
-    format!(r#"<button class="btn primary" type="button" onclick="{onclick}">{label}</button>"#)
-}
-
 fn primary_link_button(label: &str, id: &str, onclick: &str) -> String {
     format!(
         r##"<a class="btn primary" id="{id}" href="#" target="_blank" rel="noopener noreferrer" onclick="{onclick}">{label}</a>"##
-    )
-}
-
-fn secondary_button(label: &str, onclick: &str) -> String {
-    format!(r#"<button class="btn secondary" type="button" onclick="{onclick}">{label}</button>"#)
-}
-
-fn ghost_button(label: &str, onclick: &str) -> String {
-    format!(r#"<button class="btn" type="button" onclick="{onclick}">{label}</button>"#)
-}
-
-fn tui_shell(command: &str) -> String {
-    if command.trim().is_empty() {
-        String::new()
-    } else {
-        format!("!{}", command.trim())
-    }
-}
-
-fn diag_button(label: &str, command: &str) -> String {
-    format!(
-        r#"<button class="btn btn-diag" type="button" data-command="{}" onclick="ocRunButton(this)">{label}</button>"#,
-        html_attr_escape(command),
-    )
-}
-
-fn terminal_window_button(label: &str, command: &str) -> String {
-    let command = html_attr_escape(&js_string(command));
-    format!(
-        r#"<button class="btn" type="button" onclick="ocOpenTerminalWindow({})">{label}</button>"#,
-        command
-    )
-}
-
-fn secondary_terminal_window_button(label: &str, command: &str) -> String {
-    let command = html_attr_escape(&js_string(command));
-    format!(
-        r#"<button class="btn secondary" type="button" onclick="ocOpenTerminalWindow({})">{label}</button>"#,
-        command
     )
 }
 
@@ -840,35 +784,6 @@ fn time_card(label: &str, value: &str, sub: &str) -> String {
 
 fn hero_action_link(label: &str, href: &str) -> String {
     format!(r#"<a class="btn" href="{href}">{label}</a>"#)
-}
-
-fn terminal_card(title: &str, subtitle: &str, button_label: &str) -> String {
-    format!(
-        r#"<section class="card terminal-card">
-  <div class="card-head">
-    <div>
-      <div class="eyebrow">OpenClaw CLI</div>
-      <h2>{title}</h2>
-      <p class="muted">{subtitle}</p>
-    </div>
-  </div>
-  <div class="terminal-shell">
-    <div class="terminal-head">
-      <strong>原生 TUI 终端</strong>
-      <span>这里承载原生 <code>openclaw tui</code>；在 TUI 里输入 <code>!命令</code> 可以执行本机 shell 命令。</span>
-    </div>
-    <div class="terminal-stage" id="terminalStage">
-      <div class="terminal-placeholder">
-        <div class="terminal-placeholder-inner">
-          <h3>TUI 按需加载</h3>
-          <p>默认不抢占首屏资源。点击上方按钮或任意命令按钮后，会自动连接到 <code>openclaw tui</code>。普通输入用于 TUI 交互；本机 shell 用 <code>!pwd</code>、<code>!openclaw status</code> 这类前缀命令。</p>
-          <button class="btn primary" type="button" onclick="ocLoadTerminal()">{button_label}</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>"#
-    )
 }
 
 fn service_badge(label: &str, pid: &str) -> String {
@@ -946,7 +861,6 @@ fn home_content(
       </div>
       <div class="header-actions">
         {open_gateway}
-        {open_cli}
         {goto_commands}
       </div>
     </div>
@@ -1033,7 +947,6 @@ fn home_content(
             "ocGatewayLink",
             "return ocOpenGatewayLink(event, this)"
         ),
-        open_cli = secondary_terminal_window_button("OpenClaw CLI", ""),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
         stat_mode = stat_tile(
@@ -1138,7 +1051,6 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="header-actions">
         <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow()">OpenClaw CLI</button>
         <a class="btn primary" href="./commands">进入命令页</a>
       </div>
     </div>
@@ -1220,7 +1132,6 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveWebSearchConfig()">保存 Web Search</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">在终端验证</button>
         <span class="form-status" id="webSaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1281,7 +1192,6 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveMemorySearchConfig()">保存 Memory Search</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw memory status --deep')">在终端验证</button>
         <span class="form-status" id="memorySaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1296,7 +1206,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="header-actions">
         <a class="btn" href="{model_docs}" target="_blank" rel="noopener noreferrer">官方文档</a>
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">打开初始化向导</button>
+        <a class="btn secondary" href="https://docs.openclaw.ai/onboard" target="_blank" rel="noopener noreferrer">初始化文档</a>
       </div>
     </div>
     <div class="config-form">
@@ -1314,7 +1224,6 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveModelConfig()">保存模型配置</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在终端查看当前模型</button>
         <span class="form-status" id="modelSaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1371,141 +1280,89 @@ fn config_content_v2(config: &PageConfig) -> String {
 }
 
 fn commands_content_native(_config: &PageConfig) -> String {
-    let entry_actions = [
-        terminal_window_button("OpenClaw CLI", ""),
-        primary_link_button(
-            "原生 Gateway",
-            "ocGatewayLinkCmd",
-            "return ocOpenGatewayLink(event, this)",
-        ),
-        terminal_window_button("首次引导", &tui_shell("openclaw onboard")),
-    ]
-    .join("");
-
-    let status_actions = [
-        diag_button("健康检查", &tui_shell("openclaw health --json")),
-        diag_button("运行状态", &tui_shell("openclaw status --deep")),
-        diag_button(
-            "本地探针",
-            &tui_shell(
-                "curl -fsS http://127.0.0.1:48099/healthz && echo && curl -fsS http://127.0.0.1:48099/readyz",
-            ),
-        ),
-    ]
-    .join("");
-
-    let maintenance_actions = [
-        diag_button("运行 doctor", &tui_shell("openclaw doctor")),
-        diag_button("手动 doctor --fix", &tui_shell("openclaw doctor --fix")),
-        diag_button("安全审计", &tui_shell("openclaw security audit --deep")),
-        diag_button("记忆状态", &tui_shell("openclaw memory status --deep")),
-        diag_button("版本信息", &tui_shell("openclaw --version")),
-    ]
-    .join("");
-
-    let log_actions = [
-        terminal_window_button("跟随日志", &tui_shell("openclaw logs --follow")),
-        terminal_window_button(
-            "网关日志",
-            &tui_shell("tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
-        ),
-    ]
-    .join("");
-
     format!(
-        r#"<div class="page-grid">
+        r##"<div class="page-grid">
   <section class="card">
     <div class="card-head">
       <div>
         <div class="eyebrow">命令行</div>
-        <h2>原生入口</h2>
-        <p class="muted">这里保留更接近官方文档的入口。<code>OpenClaw CLI</code> 打开的就是原生 <code>openclaw tui</code>；在 TUI 里输入 <code>!命令</code> 可以执行本机 shell 命令。</p>
+        <h2>原生命令参考</h2>
+        <p class="muted">Add-on 不再内置终端。这里保留官方命令参考，方便你在 Home Assistant 的 Terminal &amp; SSH、SSH 会话，或其它本机 shell 里直接执行。</p>
       </div>
       <div class="header-actions">
-        {load_terminal}
-        {close_terminal}
-        {open_window}
+        <a class="btn" href="https://docs.openclaw.ai/tui" target="_blank" rel="noopener noreferrer">TUI 文档</a>
+        <a class="btn" href="https://docs.openclaw.ai/cli/index" target="_blank" rel="noopener noreferrer">CLI 文档</a>
+        <a class="btn primary" href="#" id="ocGatewayLinkCmd" target="_blank" rel="noopener noreferrer" onclick="return ocOpenGatewayLink(event, this)">打开网关</a>
         <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
       </div>
     </div>
 
     <div class="command-section">
-      <div class="section-label">原生入口</div>
-      <div class="action-row">{entry_actions}</div>
-      <div class="mini-tip">TUI 示例：输入 <code>!openclaw status</code>、<code>!openclaw doctor</code> 或 <code>!ha addons logs openclaw_assistant_rust</code> 执行本机命令。</div>
+      <div class="section-label">官方入口</div>
+      <ul class="clean-list">
+        <li><code>openclaw tui</code>：进入官方 TUI。</li>
+        <li><code>openclaw onboard</code>：执行首次初始化向导。</li>
+        <li><code>openclaw --version</code>：查看当前运行时版本。</li>
+      </ul>
     </div>
 
     <div class="command-section">
       <div class="section-label">状态与健康</div>
-      <div class="action-row">{status_actions}</div>
+      <ul class="clean-list">
+        <li><code>openclaw health --json</code></li>
+        <li><code>openclaw status --deep</code></li>
+        <li><code>curl -fsS http://127.0.0.1:48099/healthz</code></li>
+        <li><code>curl -fsS http://127.0.0.1:48099/readyz</code></li>
+      </ul>
     </div>
 
     <div class="command-section">
       <div class="section-label">维护与诊断</div>
-      <div class="action-row">{maintenance_actions}</div>
-      <div class="mini-tip">设备配对与批准已收回原生 Control UI 或 TUI 处理，HA 面板不再单独维护这条链路。</div>
+      <ul class="clean-list">
+        <li><code>openclaw doctor</code></li>
+        <li><code>openclaw doctor --fix</code></li>
+        <li><code>openclaw security audit --deep</code></li>
+        <li><code>openclaw memory status --deep</code></li>
+      </ul>
+      <div class="mini-tip">设备配对与批准已收回原生 Control UI 处理，HA 面板不再维护自定义终端链路。</div>
     </div>
 
     <div class="command-section">
-      <div class="section-label">日志跟踪（新窗口）</div>
-      <div class="action-row">{log_actions}</div>
+      <div class="section-label">日志命令</div>
+      <ul class="clean-list">
+        <li><code>openclaw logs --follow</code></li>
+        <li><code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code></li>
+        <li><code>ha addons logs openclaw_assistant_rust</code></li>
+      </ul>
     </div>
   </section>
-  {terminal}
-</div>"#,
-        load_terminal = primary_button("加载终端", "ocLoadTerminal()"),
-        close_terminal = ghost_button("关闭终端", "ocCloseTerminal()"),
-        open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
-        entry_actions = entry_actions,
-        status_actions = status_actions,
-        maintenance_actions = maintenance_actions,
-        log_actions = log_actions,
-        terminal = terminal_card(
-            "嵌入式 TUI",
-            "这里适合一次性命令和日志查看；如果你需要完整的原生交互体验，请使用上面的 OpenClaw CLI。",
-            "加载 TUI",
-        ),
+</div>"##,
     )
 }
 
 fn logs_content() -> String {
-    let log_actions = [
-        ("跟随日志", tui_shell("openclaw logs --follow")),
-        (
-            "网关日志",
-            tui_shell("tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
-        ),
-        ("运行 doctor", tui_shell("openclaw doctor")),
-        ("手动 doctor --fix", tui_shell("openclaw doctor --fix")),
-        ("状态深查", tui_shell("openclaw status --deep")),
-    ]
-    .iter()
-    .map(|(label, cmd)| action_button(label, cmd))
-    .collect::<Vec<_>>()
-    .join("");
-
     format!(
-        r#"<div class="page-grid">
+        r##"<div class="page-grid">
   <section class="card">
     <div class="card-head">
       <div>
         <div class="eyebrow">日志</div>
         <h2>日志与诊断</h2>
-        <p class="muted">当你需要持续观察运行输出、排查报错、或者确认修复结果时，就来这一页。上面的按钮会把常用日志命令直接送到下面的日志终端里执行。</p>
+        <p class="muted">这里保留最常用的日志和诊断命令。请在 Home Assistant 的 Terminal &amp; SSH、SSH 会话，或者其它本机 shell 中执行。</p>
       </div>
     </div>
 
-    <div class="action-row">{log_actions}</div>
+    <ul class="clean-list">
+      <li><code>openclaw logs --follow</code></li>
+      <li><code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code></li>
+      <li><code>openclaw doctor</code></li>
+      <li><code>openclaw doctor --fix</code></li>
+      <li><code>openclaw status --deep</code></li>
+      <li><code>ha addons logs openclaw_assistant_rust</code></li>
+    </ul>
+    <div class="mini-tip">如果你只需要使用原生控制台，请优先点击首页的“打开网关”。</div>
   </section>
-
-  {terminal}
-</div>"#,
-        log_actions = log_actions,
-        terminal = terminal_card(
-            "日志 TUI",
-            "点击上方按钮后，命令会以 <code>!命令</code> 的形式送入 TUI，输出结果会显示在这里。",
-            "加载日志 TUI",
-        ),
+</div>"##,
     )
 }
 
@@ -1828,16 +1685,6 @@ fn render_shell(
     .section-label{{ color:#7a9ab8; font-size:11px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px; }}
     .ghost-field{{ min-height:38px; display:inline-flex; align-items:center; padding:0 12px; border-radius:9px; border:1px solid var(--line); background:#f8fbff; color:#67809e; font-size:13px; white-space:nowrap; }}
     .ghost-field.wide{{ min-width:200px; }}
-    .terminal-card{{ padding-bottom:20px; }}
-    .terminal-shell{{ border-radius:14px; border:1px solid #1e3356; background:#0d1929; overflow:hidden; }}
-    .terminal-head{{ display:flex; justify-content:space-between; gap:12px; padding:11px 16px; border-bottom:1px solid #1e3356; color:#c8d8f4; font-size:13px; font-weight:800; }}
-    .terminal-head span{{ color:#8aaad4; font-weight:600; }}
-    .terminal-stage,.terminal-placeholder,iframe{{ min-height:520px; }}
-    .terminal-placeholder{{ display:grid; place-items:center; text-align:center; padding:28px; color:#8aaad4; }}
-    .terminal-placeholder-inner{{ max-width:360px; }}
-    .terminal-placeholder h3{{ margin:0 0 10px; color:#c8d8f4; font-size:19px; }}
-    .terminal-placeholder p{{ margin:0 0 16px; line-height:1.8; font-size:13px; }}
-    iframe{{ display:block; width:100%; border:0; background:#0d1929; }}
     code{{ padding:2px 6px; border-radius:6px; background:#eff6ff; color:#1d4ed8; font-family:Consolas,"SFMono-Regular",monospace; font-size:.88em; }}
     @media (max-width:1100px){{
       .two-col,.three-up,.split-grid,.status-panel{{ grid-template-columns:1fr; }}
@@ -1850,7 +1697,6 @@ fn render_shell(
       .wrap{{ padding:14px 14px 36px; }} .page-header{{ padding:16px 14px 0; }}
       .app-header{{ padding:0 14px; gap:10px; }} .app-brand-sub{{ display:none; }}
       .summary-strip,.feature-grid,.resource-grid{{ grid-template-columns:1fr; }}
-      .terminal-stage,.terminal-placeholder,iframe{{ min-height:400px; }}
     }}
   </style>
 </head>
@@ -1877,8 +1723,6 @@ fn render_shell(
   <script>
     const configuredGatewayUrl = {gateway_url};
     const httpsPort = {https_port};
-    const terminalState = {{ loaded:false, loading:false, pendingCommand:null }};
-    const initialTerminalStageHtml = document.getElementById("terminalStage") ? document.getElementById("terminalStage").innerHTML : "";
     let gatewayTokenValue = "";
     function appUrl(relativePath) {{ return new URL(relativePath, location.href).toString(); }}
     function nativeGatewayUrl() {{
@@ -1925,49 +1769,6 @@ fn render_shell(
       }}
       return false;
     }}
-    function focusTerminal() {{
-      const shell = document.querySelector(".terminal-shell");
-      if (shell) shell.scrollIntoView({{ behavior: "smooth", block: "start" }});
-      const frame = document.getElementById("termFrame");
-      if (frame && frame.contentWindow) frame.contentWindow.postMessage({{ type: "openclaw-focus-terminal" }}, "*");
-    }}
-    function ensureTerminalLoaded() {{
-      if (terminalState.loaded || terminalState.loading) return;
-      const stage = document.getElementById("terminalStage");
-      if (!stage) return;
-      terminalState.loading = true;
-      stage.innerHTML = `<iframe id="termFrame" src="${{appUrl('./terminal/')}}" title="terminal"></iframe>`;
-      const frame = document.getElementById("termFrame");
-      frame.addEventListener("load", function () {{
-        terminalState.loading = false;
-        terminalState.loaded = true;
-        focusTerminal();
-        if (terminalState.pendingCommand) {{
-          const next = terminalState.pendingCommand;
-          terminalState.pendingCommand = null;
-          window.setTimeout(() => injectTerminalCommand(next), 180);
-        }}
-      }}, {{ once: true }});
-    }}
-    function injectTerminalCommand(command) {{
-      if (!command) return;
-      if (!terminalState.loaded) {{
-        terminalState.pendingCommand = command;
-        ensureTerminalLoaded();
-        return;
-      }}
-      const frame = document.getElementById("termFrame");
-      if (!frame || !frame.contentWindow) return;
-      frame.contentWindow.postMessage({{ type: "openclaw-run-command", command }}, "*");
-    }}
-    window.ocCloseTerminal = function () {{
-      const stage = document.getElementById("terminalStage");
-      if (!stage) return;
-      stage.innerHTML = initialTerminalStageHtml;
-      terminalState.loaded = false;
-      terminalState.loading = false;
-      terminalState.pendingCommand = null;
-    }};
     function writeGatewayLoadingPage(popup) {{
       if (!popup || !popup.document) return;
       popup.document.open();
@@ -2043,28 +1844,6 @@ fn render_shell(
       syncGatewayLink(anchor);
       await window.ocOpenGateway();
       return false;
-    }};
-    window.ocOpenTerminalWindow = function (command) {{
-      const targetUrl = new URL(appUrl("./terminal/"));
-      if (typeof command === "string" && command.trim()) targetUrl.searchParams.set("command", command);
-      window.open(targetUrl.toString(), "_blank", "noopener,noreferrer");
-    }};
-    window.ocLoadTerminal = function () {{ ensureTerminalLoaded(); window.setTimeout(focusTerminal, 120); }};
-    window.ocRunCommand = function (command) {{ injectTerminalCommand(command || ""); }};
-    window.ocRunButton = function (button) {{
-      if (!button) return;
-      const command = button.getAttribute("data-command") || "";
-      injectTerminalCommand(command);
-    }};
-    window.ocRunSensitive = function (command, warning) {{
-      if (!confirm(warning)) return;
-      injectTerminalCommand(command);
-    }};
-    window.ocRunCustomCommand = function () {{
-      const inp = document.getElementById("customCmdInput");
-      if (!inp || !inp.value.trim()) return;
-      injectTerminalCommand(inp.value.trim());
-      inp.value = "";
     }};
     function ocSetFormStatus(id, text, ok) {{
       const el = document.getElementById(id);
@@ -2432,8 +2211,8 @@ async fn commands_page(State(state): State<AppState>) -> impl IntoResponse {
     render_shell(
         &config,
         NavPage::Commands,
-        "命令行工作区",
-        "在这里进入原生 TUI、查看健康状态、执行手动维护命令，或直接打开终端操作。",
+        "命令参考",
+        "在这里查看官方命令、健康检查和维护指令，然后到 Home Assistant 的 Terminal & SSH 或其它本机 shell 中执行。",
         &commands_content_native(&config),
     )
 }

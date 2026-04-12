@@ -2,6 +2,46 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 23:55 Asia/Shanghai - Remove embedded terminal and keep status-first home page
+
+- User request:
+  - if the terminal is not needed, delete it
+  - continue aligning with the latest official OpenClaw docs
+  - keep the home page resource collection and status display
+- Official direction followed:
+  - keep Gateway / Control UI access on the official HTTPS path
+  - stop maintaining an add-on-local pseudo terminal
+  - move shell usage guidance back to Home Assistant `Terminal & SSH`, SSH, or another host-local shell
+- Outcome:
+  - removed the add-on's embedded terminal end-to-end
+  - command and logs pages now act as copyable/reference pages instead of a built-in terminal shell
+  - kept the home page status cards, PID display, and resource sampling
+- Files changed:
+  - `Cargo.lock`
+  - `Dockerfile`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `translations/en.yaml`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/Cargo.toml`
+  - `crates/ingressd/src/main.rs`
+  - `docs/MAINTAINER_CONTEXT.md`
+- Implementation:
+  - remove `enable_terminal` / `terminal_port` options and translations
+  - stop exporting terminal-related runtime env from `addon-supervisor`
+  - delete terminal routes, terminal protocol leftovers, and the fallback `Open Terminal` link from `ingressd`
+  - remove `portable-pty` and xterm npm packages
+  - remove all HA UI terminal buttons, iframe loading logic, and command injection scripts
+  - replace command/log pages with official command references
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - bump add-on version to `2026.04.12.11`
+- Next handoff:
+  - after push, verify that no `/terminal` references remain in runtime behavior
+  - verify that command/log pages still provide useful guidance without regressing the home page status panels
+
 ## 2026-04-12 23:20 Asia/Shanghai - Deep native-TUI cleanup and dependency slimming
 
 - User request:

@@ -1,3 +1,10 @@
+## 2026.04.12.11
+
+- 精简：彻底移除 Add-on 自带终端，HA 面板不再提供嵌入式终端或终端新窗口入口
+- 对齐官方：命令页与日志页改为官方命令参考页，引导用户在 Home Assistant `Terminal & SSH`、SSH 或其它本机 shell 中执行
+- 精简：删除 `ingressd` 终端路由与协议残留，移除 `portable-pty`、xterm npm 资源以及对应配置项
+- 保留：首页资源采集、状态显示、Gateway HTTPS 主链路不变
+
 ## 2026.04.12.10
 
 - 对齐官方：嵌入式终端默认直接启动 `openclaw tui`，不再把裸 shell 作为默认主入口

@@ -40,10 +40,6 @@ enum Commands {
         gateway_remote_url: String,
         #[arg(long, default_value_t = true)]
         run_doctor_on_start: bool,
-        #[arg(long, default_value_t = 7681)]
-        terminal_port: u16,
-        #[arg(long, default_value_t = true)]
-        enable_terminal: bool,
     },
 }
 
@@ -86,8 +82,6 @@ struct HaosEntryArgs {
 #[derive(Debug, Clone, Deserialize, Default)]
 struct AddonOptions {
     timezone: Option<String>,
-    enable_terminal: Option<bool>,
-    terminal_port: Option<u16>,
     disable_bonjour: Option<bool>,
     gateway_mode: Option<String>,
     gateway_remote_url: Option<String>,
@@ -103,8 +97,6 @@ struct AddonOptions {
 #[derive(Debug, Clone)]
 struct RuntimeSettings {
     timezone: String,
-    enable_terminal: bool,
-    terminal_port: u16,
     disable_bonjour: bool,
     gateway_mode: String,
     gateway_remote_url: String,
@@ -134,17 +126,13 @@ fn main() -> ExitCode {
             gateway_mode,
             gateway_remote_url,
             run_doctor_on_start,
-            terminal_port,
-            enable_terminal,
         }) => run_services(
-                gateway_bin,
-                ui_bin,
-                ingress_bin,
-                gateway_mode,
-                gateway_remote_url,
+            gateway_bin,
+            ui_bin,
+            ingress_bin,
+            gateway_mode,
+            gateway_remote_url,
             run_doctor_on_start,
-            terminal_port,
-            enable_terminal,
         ),
         None => {
             println!("addon-supervisor scaffold ready");
@@ -211,8 +199,6 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         settings.gateway_mode,
         settings.gateway_remote_url,
         settings.run_doctor_on_start,
-        settings.terminal_port,
-        settings.enable_terminal,
     )
 }
 
@@ -229,8 +215,6 @@ fn runtime_settings(options: &AddonOptions) -> RuntimeSettings {
             .timezone
             .clone()
             .unwrap_or_else(|| "Asia/Shanghai".to_string()),
-        enable_terminal: options.enable_terminal.unwrap_or(true),
-        terminal_port: options.terminal_port.unwrap_or(7681),
         disable_bonjour: options.disable_bonjour.unwrap_or(false),
         gateway_mode: options
             .gateway_mode
@@ -453,14 +437,6 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var(
             "OPENCLAW_DISABLE_BONJOUR",
             if settings.disable_bonjour { "1" } else { "0" },
-        );
-        env::set_var(
-            "ENABLE_TERMINAL",
-            if settings.enable_terminal {
-                "true"
-            } else {
-                "false"
-            },
         );
         env::set_var("ENABLE_HTTPS_PROXY", "true");
         env::set_var("HTTPS_PROXY_PORT", settings.https_port.to_string());
@@ -837,8 +813,6 @@ fn run_services(
     gateway_mode: String,
     gateway_remote_url: String,
     run_doctor_on_start: bool,
-    _terminal_port: u16,
-    _enable_terminal: bool,
 ) -> ExitCode {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     rt.block_on(async move {
@@ -1296,7 +1270,6 @@ fn apply_child_env(command: &mut Command) {
         "GW_PUBLIC_URL",
         "HTTPS_PORT",
         "OPENCLAW_DISABLE_BONJOUR",
-        "ENABLE_TERMINAL",
         "ENABLE_HTTPS_PROXY",
         "HTTPS_PROXY_PORT",
         "GATEWAY_INTERNAL_PORT",
@@ -1317,8 +1290,6 @@ mod tests {
     fn sample_settings() -> RuntimeSettings {
         RuntimeSettings {
             timezone: "Asia/Shanghai".to_string(),
-            enable_terminal: true,
-            terminal_port: 7681,
             disable_bonjour: false,
             gateway_mode: "gateway".to_string(),
             gateway_remote_url: String::new(),
