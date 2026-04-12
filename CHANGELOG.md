@@ -1,3 +1,13 @@
+## 2026.04.12.2
+
+- UI：把 HA 面板里的 CLI/终端说明对齐到官方 TUI 文档，明确 `OpenClaw CLI = openclaw tui`
+- UX：在命令页、嵌入式终端和独立终端页都补充了 `!命令` 即本地 shell 的官方用法提示
+
+## 2026.04.12.1
+
+- 升级：Docker 镜像内的 upstream OpenClaw runtime 从 `v2026.4.9` 提升到 `v2026.4.11`
+- 兼容：`haos-ui` 的 gateway WebSocket `client.version` 改为优先读取运行时 `OPENCLAW_VERSION`，避免继续写死在旧版本号上
+
 ## 2026.04.11.3
 
 - 修复：`打开网关` 不再先打开一张空白页，改为先显示可控的加载页，再跳转到原生 Gateway

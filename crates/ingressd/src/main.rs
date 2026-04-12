@@ -354,7 +354,7 @@ async fn terminal_page(
         <div class="brand-badge">__BRAND_MARK__</div>
         <div class="brand-copy">
           <strong class="brand-title">OpenClaw Terminal</strong>
-          <span class="brand-sub">Commands sent from the home page run directly in this terminal window.</span>
+          <span class="brand-sub">This page hosts the native OpenClaw TUI. Use normal input for chat, and prefix local shell commands with !.</span>
         </div>
       </div>
     </div>
@@ -362,7 +362,7 @@ async fn terminal_page(
       <div id="terminalShell" class="terminal-shell"></div>
     </div>
     <div class="foot">
-      <span class="muted">Selection, copy, paste, IME input, ANSI/TUI rendering, and terminal resize sync are supported.</span>
+      <span class="muted">Selection, copy, paste, IME input, ANSI/TUI rendering, resize sync, and local shell commands like <code>!pwd</code> are supported.</span>
       <span class="actions">
         <button id="copyBtn" class="btn" type="button">Copy Selection</button>
         <button id="pasteBtn" class="btn" type="button">Paste</button>

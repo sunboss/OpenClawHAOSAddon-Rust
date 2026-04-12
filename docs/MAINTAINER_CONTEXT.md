@@ -203,6 +203,11 @@ Read this before making UI, runtime, or release changes.
 - `新窗口打开终端` should behave like a native terminal page.
   - Do not depend on a separate input box at the bottom.
   - The page itself should take focus and accept direct keyboard input and paste.
+- Official TUI model to preserve:
+  - `OpenClaw CLI` should mean native `openclaw tui`.
+  - Plain input inside the TUI is chat/session input.
+  - Host-local shell commands should use the official `!command` prefix.
+  - Avoid inventing a second pseudo-CLI model when upstream TUI already supports local shell execution.
 
 ## Workflow note
 

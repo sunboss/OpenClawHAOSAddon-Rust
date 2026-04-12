@@ -1,6 +1,6 @@
 /// 通过 WebSocket webchat 协议与 openclaw gateway 通信。
 ///
-/// 协议流程（逆向自 openclaw 2026.4.9 dist/）：
+/// 协议流程（逆向自 openclaw webchat dist；客户端版本默认跟随 OPENCLAW_VERSION）：
 ///   1. 建立 ws://127.0.0.1:18790 连接（id="cli" + mode="cli"，不带 Origin 头）
 ///   2. 服务端推送 { type:"event", event:"connect.challenge", payload:{nonce:"..."} }
 ///   3. 客户端用本地 Ed25519 私钥对 payload 签名，发送 connect 请求
@@ -18,6 +18,7 @@
 use futures_util::{SinkExt, StreamExt};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde_json::{json, Value};
+use std::env;
 use std::fs;
 use std::path::Path;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -26,6 +27,10 @@ const CONNECT_TIMEOUT_SECS: u64 = 30;
 const REQUEST_TIMEOUT_SECS: u64 = 25;
 
 const IDENTITY_PATH: &str = "/config/.openclaw/haos-ui-identity.json";
+
+fn ws_client_version() -> String {
+    env::var("OPENCLAW_VERSION").unwrap_or_else(|_| "2026.4.11".to_string())
+}
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -195,7 +200,7 @@ async fn call_gateway_inner(token: &str, method: &str, params: Value) -> Result<
             "maxProtocol": 3,
             "client": {
                 "id": "cli",
-                "version": "2026.4.9",
+                "version": ws_client_version(),
                 "mode": "cli",
                 "platform": platform,
                 "instanceId": new_id()

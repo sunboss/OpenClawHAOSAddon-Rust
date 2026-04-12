@@ -969,13 +969,13 @@ fn terminal_card(title: &str, subtitle: &str, button_label: &str) -> String {
   <div class="terminal-shell">
     <div class="terminal-head">
       <strong>工作区终端</strong>
-      <span>左侧按钮发送的命令会直接注入到这里执行。</span>
+      <span>这里承载原生 OpenClaw TUI；在 TUI 里输入 <code>!命令</code> 可以执行本机 shell 命令。</span>
     </div>
     <div class="terminal-stage" id="terminalStage">
       <div class="terminal-placeholder">
         <div class="terminal-placeholder-inner">
           <h3>终端按需加载</h3>
-          <p>默认不抢占首屏资源。点击上方按钮或任意命令按钮后，会自动连接终端并继续执行。</p>
+          <p>默认不抢占首屏资源。点击上方按钮或任意命令按钮后，会自动连接终端。若打开的是 <code>openclaw tui</code>，普通输入就是 TUI 会话；本机 shell 用 <code>!pwd</code>、<code>!openclaw status</code> 这类前缀命令。</p>
           <button class="btn primary" type="button" onclick="ocLoadTerminal()">{button_label}</button>
         </div>
       </div>
@@ -1441,7 +1441,7 @@ fn commands_content() -> String {
       <div class="section-label">自定义命令</div>
       <div class="custom-cmd-row">
         <input type="text" class="cmd-input" id="customCmdInput"
-               placeholder="输入任意命令，回车或点击运行…"
+               placeholder="输入一次性 shell 命令；如果你想要官方交互式 CLI，请优先点上面的 OpenClaw CLI"
                autocomplete="off" spellcheck="false">
         <button class="btn btn-action" type="button" onclick="ocRunCustomCommand()">运行</button>
       </div>
@@ -1455,7 +1455,7 @@ fn commands_content() -> String {
     }})();
   </script>
 </div>"#,
-        load_terminal = primary_button("打开终端", "ocLoadTerminal()"),
+        load_terminal = primary_button("加载终端", "ocLoadTerminal()"),
         close_terminal = ghost_button("关闭终端", "ocCloseTerminal()"),
         open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
         setup_actions = setup_actions,
@@ -1465,7 +1465,7 @@ fn commands_content() -> String {
         storage_actions = storage_actions,
         terminal = terminal_card(
             "嵌入式终端",
-            "左侧所有按钮都会把命令直接送到这里执行。需要长时间操作时，建议切到新窗口终端。",
+            "这个区域更适合一次性命令和日志查看；如果你需要官方交互式体验，请使用上面的 OpenClaw CLI 打开原生 TUI。",
             "加载终端",
         ),
     )
@@ -1857,7 +1857,7 @@ fn commands_content_v2(config: &PageConfig) -> String {
       <div>
         <div class="eyebrow">命令行</div>
         <h2>命令工作区</h2>
-        <p class="muted">这里按官方 ClawDock / Podman 的使用方式重新分组：先看控制台与配对，再看健康与状态，最后才是目录、备份和深度诊断。按钮显示中文，实际执行命令保持英文，方便直接对照官方文档和日志。</p>
+        <p class="muted">这里按官方操作模型重组。<code>OpenClaw CLI</code> 实际打开的是原生 <code>openclaw tui</code>；进入后普通输入发给 Gateway，本机 shell 命令请使用 <code>!命令</code> 前缀。</p>
       </div>
       <div class="header-actions">
         {load_terminal}
@@ -1870,6 +1870,7 @@ fn commands_content_v2(config: &PageConfig) -> String {
     <div class="command-section">
       <div class="section-label">控制台与配对</div>
       <div class="action-row">{control_actions}</div>
+      <div class="mini-tip">TUI 示例：直接输入问题开始会话；输入 <code>!openclaw status</code>、<code>!ha addons logs openclaw_assistant_rust</code> 执行本机命令。</div>
     </div>
 
     <div class="command-section">
@@ -1901,7 +1902,7 @@ fn commands_content_v2(config: &PageConfig) -> String {
       <div class="section-label">自定义命令</div>
       <div class="custom-cmd-row">
         <input type="text" class="cmd-input" id="customCmdInput"
-               placeholder="输入任意命令，回车或点击运行…"
+               placeholder="输入一次性 shell 命令；如果你想要官方交互式 CLI，请优先点上面的 OpenClaw CLI"
                autocomplete="off" spellcheck="false">
         <button class="btn btn-action" type="button" onclick="ocRunCustomCommand()">运行</button>
       </div>
@@ -1915,7 +1916,7 @@ fn commands_content_v2(config: &PageConfig) -> String {
     }})();
   </script>
 </div>"#,
-        load_terminal = primary_button("打开终端", "ocLoadTerminal()"),
+        load_terminal = primary_button("加载终端", "ocLoadTerminal()"),
         close_terminal = ghost_button("关闭终端", "ocCloseTerminal()"),
         open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
         control_actions = control_actions,
@@ -1927,7 +1928,7 @@ fn commands_content_v2(config: &PageConfig) -> String {
         restart_action = restart_action,
         terminal = terminal_card(
             "嵌入式终端",
-            "左侧所有按钮都会把命令直接送到这里执行。需要长时间操作时，建议切到新窗口终端。",
+            "这个区域更适合一次性命令和日志查看；如果你需要官方交互式体验，请使用上面的 OpenClaw CLI 打开原生 TUI。",
             "加载终端",
         ),
     )

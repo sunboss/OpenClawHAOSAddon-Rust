@@ -2,6 +2,86 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 10:45 Asia/Shanghai - Align HAOS terminal UX with official TUI local-shell model
+
+- User request: review the official TUI docs, especially local shell commands, then continue.
+- Intent / context:
+  - the add-on already launched `openclaw tui`, but the HA panel wording still made the terminal feel like a custom command runner
+  - official docs clarify that the TUI itself is the primary CLI, and local shell execution is built into that TUI via `!command`
+  - the user wanted behavior and mental model to stay close to upstream, not drift into a separate local UX
+- Official source checked:
+  - `https://docs.openclaw.ai/web/tui#local-shell-commands`
+- Key official points preserved:
+  - `openclaw tui` is the official terminal interface
+  - local shell commands are prefixed with `!`
+  - those commands run on the TUI host in a fresh non-interactive shell
+- Files changed:
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - revise the commands page copy so `OpenClaw CLI` is explicitly described as native `openclaw tui`
+  - add `!command` examples to the commands page and terminal placeholders
+  - update the standalone terminal page subtitle/footer to describe native TUI + local shell usage
+  - record the official TUI model in maintainer notes so future edits do not reintroduce a pseudo-CLI mental model
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd`
+- Version:
+  - target version `2026.04.12.2`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - users should now see the correct upstream mental model in the HA panel: TUI for interactive control, `!command` for host-local shell execution
+- Next handoff:
+  - run `cargo test -p haos-ui -p ingressd`
+  - after push, verify the commands page and terminal page both visibly mention `!command`
+
+## 2026-04-12 10:15 Asia/Shanghai - Upgrade bundled OpenClaw runtime to upstream v2026.4.11
+
+- User request: verify whether the latest upstream release fixes the observed Dreaming and websocket behaviors, then proceed with upgrading if appropriate.
+- Intent / context:
+  - the user correctly pointed out that upstream had already published a newer stable release than the runtime currently bundled in the add-on
+  - current HAOS logs still showed `current v2026.4.9`, so the add-on image had not yet caught up to upstream stable
+  - upstream latest stable was re-verified as `v2026.4.11`, released on 2026-04-12 00:18, with explicit `Gateway/startup` websocket-availability fixes
+- Official sources checked:
+  - `https://github.com/openclaw/openclaw/releases/tag/v2026.4.11`
+  - `https://github.com/openclaw/openclaw/tags`
+- Findings that drove the implementation:
+  - `v2026.4.11` release notes explicitly include `Gateway/startup: keep WebSocket RPC available while channels and plugin sidecars start`
+  - release notes do not explicitly mention a fix for `memory-core ... must have required property 'idempotencyKey'`
+  - upgrading is still worthwhile because the add-on runtime was one full stable release behind and the startup/websocket fixes match the observed HAOS symptoms
+- Files changed:
+  - `Dockerfile`
+  - `crates/haos-ui/src/gateway_ws.rs`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - bump Docker build arg `OPENCLAW_VERSION` from `2026.4.9` to `2026.4.11`
+  - remove the stale hardcoded webchat client version in `gateway_ws.rs`
+  - make websocket `client.version` follow runtime `OPENCLAW_VERSION`, with `2026.4.11` as the fallback
+- Commands / validation:
+  - `cargo test -p haos-ui`
+  - `cargo test -p addon-supervisor`
+- Version:
+  - target version `2026.04.12.1`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - rebuilt add-on images will install upstream OpenClaw `v2026.4.11`
+  - the HAOS webchat helper will no longer present itself as `2026.4.9` after the runtime upgrade
+- Next handoff:
+  - run `cargo test -p haos-ui -p addon-supervisor`
+  - after push and HA rebuild, verify whether the gateway log now reports `current v2026.4.11`
+  - if `memory-core ... idempotencyKey` still persists on `v2026.4.11`, treat it as an upstream Dreaming bug and expose a HA panel Dreaming toggle to disable it safely
+
 ## Entry template
 
 Copy this block before each push and fill it in:
