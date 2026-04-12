@@ -3,20 +3,32 @@ use axum::{
     Router,
     body::{Body, Bytes, to_bytes},
     extract::{
-        ConnectInfo, Request, State,
+        ConnectInfo, Query, Request, State,
         ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode, header},
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect},
     routing::{any, get},
 };
 use axum_server::tls_rustls::RustlsConfig;
 use futures_util::{SinkExt, StreamExt};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use reqwest::Client;
 use rustls::crypto::aws_lc_rs;
-use serde::Serialize;
-use std::{env, fs, net::SocketAddr, path::PathBuf};
-use tokio::{net::TcpStream, time::{Duration, timeout}};
+use serde::{Deserialize, Serialize};
+use std::{
+    env, fs,
+    io::{Read, Write},
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    thread,
+};
+use tokio::{
+    net::TcpStream,
+    sync::mpsc,
+    time::{Duration, timeout},
+};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{
@@ -49,6 +61,18 @@ struct GatewayProbe {
     stdout: String,
     stderr: String,
     error: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum TerminalClientMessage {
+    Input { data: String },
+    Resize { cols: u16, rows: u16 },
+}
+
+#[derive(Default, Deserialize)]
+struct TerminalPageQuery {
+    command: Option<String>,
 }
 
 #[tokio::main]
@@ -126,6 +150,15 @@ async fn main() {
 
 fn build_ingress_router(state: AppState) -> Router {
     Router::new()
+        .route("/terminal", get(terminal_redirect))
+        .route("/terminal/", get(terminal_page))
+        .route("/terminal/ws", any(terminal_ws))
+        .route("/terminal/assets/xterm.js", get(terminal_xterm_js))
+        .route("/terminal/assets/xterm.css", get(terminal_xterm_css))
+        .route(
+            "/terminal/assets/addon-fit.js",
+            get(terminal_xterm_addon_fit_js),
+        )
         .route("/health", get(proxy_health))
         .route("/healthz", get(proxy_health))
         .route("/readyz", get(proxy_health))
@@ -144,6 +177,472 @@ fn build_gateway_router(state: AppState) -> Router {
         .route("/readyz", get(proxy_health))
         .fallback(any(proxy_gateway))
         .with_state(state)
+}
+
+async fn terminal_redirect() -> impl IntoResponse {
+    Redirect::temporary("/terminal/")
+}
+
+async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoResponse {
+    let boot_command = serde_json::to_string(&query.command.unwrap_or_default())
+        .unwrap_or_else(|_| "\"\"".to_string());
+    Html(
+        r##"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenClaw CLI (TUI)</title>
+  <link rel="stylesheet" href="./assets/xterm.css">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg2: #111c33;
+      --line: #223252;
+      --text: #dbe8ff;
+      --muted: #8ea5c8;
+    }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Consolas, "SFMono-Regular", "Microsoft YaHei", monospace;
+    }
+    .shell {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+    }
+    .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.02);
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    .brand-copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .brand-title {
+      display: block;
+      color: #f2f7ff;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -.02em;
+    }
+    .brand-sub {
+      color: #9fb5d7;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .terminal-wrap {
+      position: relative;
+      min-height: 0;
+      padding: 14px;
+      background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+    }
+    .terminal-shell {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(62, 84, 126, .9);
+      box-shadow: inset 0 0 0 1px rgba(12, 20, 38, .8);
+    }
+    .terminal-shell.is-focused {
+      box-shadow: inset 0 0 0 1px rgba(37,99,235,.65), 0 0 0 1px rgba(37,99,235,.18);
+    }
+    .foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px;
+      border-top: 1px solid var(--line);
+      background: rgba(255,255,255,.02);
+    }
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .status {
+      color: #9bc1ff;
+      font-size: 12px;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      white-space: nowrap;
+    }
+    .actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid #39537d;
+      border-radius: 999px;
+      background: rgba(17,28,51,.85);
+      color: #dbe8ff;
+      font: inherit;
+      cursor: pointer;
+    }
+    .btn:hover {
+      background: rgba(33, 52, 90, .95);
+    }
+    .xterm, .xterm-viewport, .xterm-screen {
+      height: 100%;
+    }
+    .xterm .xterm-viewport {
+      background-color: transparent !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="head">
+      <div class="brand-copy">
+        <strong class="brand-title">OpenClaw CLI (TUI)</strong>
+        <span class="brand-sub">这里直接承载原生 <code>openclaw tui</code>。在 TUI 里执行本机命令，请使用 <code>!命令</code> 前缀。</span>
+      </div>
+    </div>
+    <div class="terminal-wrap">
+      <div id="terminalShell" class="terminal-shell"></div>
+    </div>
+    <div class="foot">
+      <span class="muted">普通输入用于 TUI 交互。本机命令示例：<code>!pwd</code>、<code>!openclaw status</code>、<code>!openclaw doctor</code>。</span>
+      <span class="actions">
+        <button id="copyBtn" class="btn" type="button">复制选区</button>
+        <button id="pasteBtn" class="btn" type="button">粘贴</button>
+        <span id="status" class="status">连接中</span>
+      </span>
+    </div>
+  </div>
+  <script src="./assets/xterm.js"></script>
+  <script src="./assets/addon-fit.js"></script>
+  <script>
+    const terminalShell = document.getElementById("terminalShell");
+    const statusEl = document.getElementById("status");
+    const copyBtn = document.getElementById("copyBtn");
+    const pasteBtn = document.getElementById("pasteBtn");
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = new URL("./ws", location.href);
+    wsUrl.protocol = scheme + ":";
+    const bootCommand = __BOOT_COMMAND__;
+    const pending = [];
+    const socket = new WebSocket(wsUrl.toString());
+    socket.binaryType = "arraybuffer";
+    const decoder = new TextDecoder();
+    let statusResetTimer = null;
+    let resizeTimer = null;
+    let bootCommandSent = false;
+    const term = new Terminal({
+      allowTransparency: true,
+      convertEol: true,
+      cursorBlink: true,
+      fontFamily: 'Cascadia Mono, Consolas, "SFMono-Regular", Menlo, Monaco, "PingFang SC", monospace',
+      fontSize: 14,
+      lineHeight: 1.2,
+      scrollback: 5000,
+      theme: {
+        background: "#111c33",
+        foreground: "#dbe8ff",
+        cursor: "#9bc1ff",
+        selectionBackground: "rgba(96, 165, 250, 0.30)"
+      }
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(terminalShell);
+
+    function flushPending() {
+      while (pending.length && socket.readyState === WebSocket.OPEN) {
+        socket.send(pending.shift());
+      }
+    }
+    function setStatus(text) { statusEl.textContent = text; }
+    function resetStatusSoon() {
+      if (statusResetTimer) window.clearTimeout(statusResetTimer);
+      statusResetTimer = window.setTimeout(() => {
+        setStatus(socket.readyState === WebSocket.OPEN ? "已连接" : "已断开");
+      }, 1200);
+    }
+    function sendPayload(payload) {
+      if (!payload) return;
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(payload);
+        return;
+      }
+      pending.push(payload);
+      if (socket.readyState === WebSocket.CONNECTING) return;
+      term.writeln("[终端尚未就绪，命令已排队]");
+    }
+    function sendTerminalInput(data) {
+      if (!data) return;
+      sendPayload(JSON.stringify({ type: "input", data }));
+    }
+    function sendResize() {
+      if (!term.cols || !term.rows) return;
+      sendPayload(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+    }
+    function sendCommand(command) {
+      if (!command) return;
+      sendTerminalInput(command + "\n");
+    }
+    function fitTerminal() {
+      try { fitAddon.fit(); } catch (_) { return; }
+      sendResize();
+    }
+    function scheduleFit() {
+      if (resizeTimer) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(fitTerminal, 40);
+    }
+    function focusTerminal() {
+      term.focus();
+      terminalShell.classList.add("is-focused");
+    }
+    function blurTerminal() {
+      terminalShell.classList.remove("is-focused");
+    }
+
+    socket.addEventListener("open", () => {
+      setStatus("已连接");
+      term.writeln("[终端已连接]");
+      flushPending();
+      sendResize();
+      if (!bootCommandSent && typeof bootCommand === "string" && bootCommand.trim()) {
+        sendCommand(bootCommand);
+        bootCommandSent = true;
+      }
+    });
+    socket.addEventListener("message", (event) => {
+      const decoded = typeof event.data === "string"
+        ? event.data
+        : decoder.decode(new Uint8Array(event.data), { stream: true });
+      term.write(decoded);
+    });
+    socket.addEventListener("close", () => {
+      setStatus("已断开");
+      term.writeln("");
+      term.writeln("[终端已断开]");
+    });
+    socket.addEventListener("error", () => {
+      setStatus("错误");
+      term.writeln("");
+      term.writeln("[终端 WebSocket 错误]");
+    });
+
+    term.onData((data) => { sendTerminalInput(data); });
+    term.onSelectionChange(() => { copyBtn.disabled = term.getSelection().length === 0; });
+
+    async function copySelection() {
+      const selected = term.getSelection();
+      if (!selected) return;
+      try {
+        await navigator.clipboard.writeText(selected);
+        setStatus("已复制");
+        resetStatusSoon();
+      } catch (_) {
+        setStatus("复制失败");
+      }
+    }
+    async function pasteClipboardText(text) {
+      if (!text) return;
+      sendTerminalInput(text);
+      setStatus("已粘贴");
+      resetStatusSoon();
+    }
+    async function pasteFromClipboard() {
+      try {
+        const text = await navigator.clipboard.readText();
+        await pasteClipboardText(text);
+      } catch (_) {
+        setStatus("粘贴失败");
+      }
+    }
+    copyBtn.addEventListener("click", async () => { await copySelection(); });
+    pasteBtn.addEventListener("click", async () => { await pasteFromClipboard(); });
+
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const key = event.key.toLowerCase();
+      const isAccel = event.ctrlKey || event.metaKey;
+      if (isAccel && event.shiftKey && key === "c" && term.getSelection()) {
+        void copySelection();
+        return false;
+      }
+      if (isAccel && event.shiftKey && key === "v") {
+        void pasteFromClipboard();
+        return false;
+      }
+      return true;
+    });
+    terminalShell.addEventListener("paste", (event) => {
+      const text = event.clipboardData ? event.clipboardData.getData("text") : "";
+      if (!text) return;
+      event.preventDefault();
+      void pasteClipboardText(text);
+    });
+    terminalShell.addEventListener("click", focusTerminal);
+    terminalShell.addEventListener("focusin", focusTerminal);
+    terminalShell.addEventListener("focusout", blurTerminal);
+    window.addEventListener("focus", focusTerminal);
+    window.addEventListener("resize", scheduleFit);
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(scheduleFit).observe(terminalShell);
+    }
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(scheduleFit).catch(() => {});
+    }
+    if (bootCommand) {
+      const cleanUrl = new URL(location.href);
+      cleanUrl.searchParams.delete("command");
+      window.history.replaceState(null, "", cleanUrl.toString());
+    }
+    copyBtn.disabled = true;
+    fitTerminal();
+    focusTerminal();
+  </script>
+</body>
+</html>"##
+            .replace("__BOOT_COMMAND__", &boot_command),
+    )
+}
+
+async fn terminal_xterm_js() -> impl IntoResponse {
+    cached_file_response(
+        "/usr/local/lib/node_modules/@xterm/xterm/lib/xterm.js",
+        "application/javascript; charset=utf-8",
+    )
+    .await
+}
+
+async fn terminal_xterm_css() -> impl IntoResponse {
+    cached_file_response(
+        "/usr/local/lib/node_modules/@xterm/xterm/css/xterm.css",
+        "text/css; charset=utf-8",
+    )
+    .await
+}
+
+async fn terminal_xterm_addon_fit_js() -> impl IntoResponse {
+    cached_file_response(
+        "/usr/local/lib/node_modules/@xterm/addon-fit/lib/addon-fit.js",
+        "application/javascript; charset=utf-8",
+    )
+    .await
+}
+
+async fn terminal_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
+    println!("ingressd: terminal websocket upgrade requested");
+    ws.on_upgrade(handle_terminal_socket).into_response()
+}
+
+async fn handle_terminal_socket(socket: WebSocket) {
+    println!("ingressd: terminal websocket connected");
+    let pty_system = native_pty_system();
+    let Ok(pair) = pty_system.openpty(PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    }) else {
+        eprintln!("ingressd: failed to open PTY");
+        return;
+    };
+
+    let mut cmd = CommandBuilder::new("openclaw");
+    cmd.arg("tui");
+    let Ok(mut child) = pair.slave.spawn_command(cmd) else {
+        eprintln!("ingressd: failed to spawn openclaw tui in PTY");
+        return;
+    };
+    drop(pair.slave);
+
+    let Ok(mut reader) = pair.master.try_clone_reader() else {
+        eprintln!("ingressd: failed to clone PTY reader");
+        let _ = child.kill();
+        return;
+    };
+    let Ok(writer) = pair.master.take_writer() else {
+        eprintln!("ingressd: failed to take PTY writer");
+        let _ = child.kill();
+        return;
+    };
+    let writer = Arc::new(Mutex::new(writer));
+
+    let (mut sender, mut receiver) = socket.split();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+
+    thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let send_task = tokio::spawn(async move {
+        while let Some(chunk) = rx.recv().await {
+            if sender
+                .send(AxumWsMessage::Binary(chunk.into()))
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+    });
+
+    let write_task = {
+        let writer = writer.clone();
+        let master = pair.master;
+        tokio::spawn(async move {
+            while let Some(Ok(message)) = receiver.next().await {
+                match message {
+                    AxumWsMessage::Text(text) => match parse_terminal_client_text(&text) {
+                        TerminalClientAction::Input(data) => {
+                            if let Ok(mut handle) = writer.lock() {
+                                let _ = handle.write_all(&data);
+                                let _ = handle.flush();
+                            }
+                        }
+                        TerminalClientAction::Resize(size) => {
+                            let _ = master.resize(size);
+                        }
+                    },
+                    AxumWsMessage::Binary(data) => {
+                        if let Ok(mut handle) = writer.lock() {
+                            let _ = handle.write_all(&data);
+                            let _ = handle.flush();
+                        }
+                    }
+                    AxumWsMessage::Close(_) => break,
+                    _ => {}
+                }
+            }
+        })
+    };
+
+    let _ = tokio::join!(send_task, write_task);
+    println!("ingressd: terminal websocket disconnected");
+    let _ = child.kill();
 }
 
 async fn proxy_health(State(_state): State<AppState>, request: Request) -> impl IntoResponse {
@@ -359,6 +858,23 @@ fn public_share_dir() -> PathBuf {
 async fn file_response(path: PathBuf, content_type: &str) -> impl IntoResponse {
     match fs::read(path) {
         Ok(bytes) => ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn cached_file_response(path: &str, content_type: &str) -> impl IntoResponse {
+    match fs::read(path) {
+        Ok(bytes) => (
+            [
+                (axum::http::header::CONTENT_TYPE, content_type),
+                (
+                    axum::http::header::CACHE_CONTROL,
+                    "public, max-age=86400, immutable",
+                ),
+            ],
+            bytes,
+        )
+            .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -588,6 +1104,7 @@ fn fallback_ui_response() -> Response<Body> {
       </p>
       <div class="actions">
         <button class="btn" type="button" onclick="location.reload()">Reload</button>
+        <a class="btn" href="./terminal/" target="_blank" rel="noopener noreferrer">OpenClaw CLI</a>
         <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">Download CA Cert</a>
       </div>
     </div>
@@ -641,6 +1158,30 @@ fn should_skip_response_header(name: &HeaderName) -> bool {
         name.as_str().to_ascii_lowercase().as_str(),
         "content-length" | "connection" | "transfer-encoding"
     )
+}
+
+enum TerminalClientAction {
+    Input(Vec<u8>),
+    Resize(PtySize),
+}
+
+fn parse_terminal_client_text(text: &str) -> TerminalClientAction {
+    match serde_json::from_str::<TerminalClientMessage>(text) {
+        Ok(TerminalClientMessage::Input { data }) => TerminalClientAction::Input(data.into_bytes()),
+        Ok(TerminalClientMessage::Resize { cols, rows }) => {
+            TerminalClientAction::Resize(normalized_terminal_size(cols, rows))
+        }
+        Err(_) => TerminalClientAction::Input(text.as_bytes().to_vec()),
+    }
+}
+
+fn normalized_terminal_size(cols: u16, rows: u16) -> PtySize {
+    PtySize {
+        rows: rows.max(2),
+        cols: cols.max(10),
+        pixel_width: 0,
+        pixel_height: 0,
+    }
 }
 
 async fn local_health() -> (StatusCode, Json<ActionResponse>) {

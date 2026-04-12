@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm config set fund false && npm config set audit false \
-    && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION}
+    && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @xterm/xterm @xterm/addon-fit
 
 # Pre-install all openclaw bundled plugin deps into openclaw's own node_modules so that
 # `openclaw doctor --fix` reports them as already installed (no per-startup npm download).

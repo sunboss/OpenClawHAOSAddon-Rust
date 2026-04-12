@@ -760,6 +760,13 @@ fn primary_link_button(label: &str, id: &str, onclick: &str) -> String {
     )
 }
 
+fn terminal_window_button(label: &str, command: &str) -> String {
+    let command = html_attr_escape(&js_string(command));
+    format!(
+        r#"<button class="btn secondary" type="button" onclick="ocOpenTerminalWindow({command})">{label}</button>"#
+    )
+}
+
 fn kv_row(label: &str, value: &str) -> String {
     format!(
         r#"<div class="kv-row"><span class="kv-label">{label}</span><span class="kv-value">{value}</span></div>"#
@@ -890,6 +897,7 @@ fn home_content(
       </div>
       <div class="header-actions">
         {open_gateway}
+        {open_cli}
         {goto_commands}
       </div>
     </div>
@@ -997,6 +1005,7 @@ fn home_content(
             "ocGatewayLink",
             "return ocOpenGatewayLink(event, this)"
         ),
+        open_cli = terminal_window_button("OpenClaw CLI", ""),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
         stat_mode = stat_tile(
@@ -1102,10 +1111,11 @@ fn config_content_v2(config: &PageConfig) -> String {
         <h2>Web Search、Memory Search 与模型选择</h2>
         <p class="muted">这一页按官方文档提供可编辑配置，但不会在后台悄悄改 <code>openclaw.json</code>。只有你点击保存时，才会把配置写入独立的 Add-on 配置文件；重启插件后再合并应用，稳定性更高。</p>
       </div>
-      <div class="header-actions">
-        <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
-        <a class="btn primary" href="./commands">进入命令页</a>
-      </div>
+        <div class="header-actions">
+          <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
+          <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('')">OpenClaw CLI</button>
+          <a class="btn primary" href="./commands">进入命令页</a>
+        </div>
     </div>
     <div class="notice-badge warn">
       保存后会写入 <code>{panel_config_path}</code>。要真正应用到 OpenClaw，请重启插件；这样不配置的时候不会改动 <code>openclaw.json</code>。
@@ -1202,6 +1212,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveWebSearchConfig()">保存 Web Search</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">在终端验证</button>
         <span class="form-status" id="webSaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1262,6 +1273,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveMemorySearchConfig()">保存 Memory Search</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw memory status --deep')">在终端验证</button>
         <span class="form-status" id="memorySaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1277,6 +1289,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       <div class="header-actions">
         <a class="btn" href="{model_docs}" target="_blank" rel="noopener noreferrer">官方文档</a>
         <a class="btn secondary" href="https://docs.openclaw.ai/onboard" target="_blank" rel="noopener noreferrer">初始化文档</a>
+        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">打开初始化向导</button>
       </div>
     </div>
     <div class="config-form">
@@ -1294,6 +1307,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveModelConfig()">保存模型配置</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在终端查看当前模型</button>
         <span class="form-status" id="modelSaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1360,11 +1374,12 @@ fn commands_content_native(_config: &PageConfig) -> String {
       <div>
         <div class="eyebrow">命令行</div>
         <h2>原生命令参考</h2>
-        <p class="muted">Add-on 不再内置终端。这里保留官方命令参考，方便你在 Home Assistant 的 Terminal &amp; SSH、SSH 会话，或其它本机 shell 里直接执行。</p>
+        <p class="muted">这里保留官方命令参考，并提供一个最轻量的原生 TUI 终端入口。打开后会直接进入 <code>openclaw tui</code>，需要执行本机命令时请使用 <code>!命令</code>。</p>
       </div>
       <div class="header-actions">
         <a class="btn" href="https://docs.openclaw.ai/tui" target="_blank" rel="noopener noreferrer">TUI 文档</a>
         <a class="btn" href="https://docs.openclaw.ai/cli/index" target="_blank" rel="noopener noreferrer">CLI 文档</a>
+        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('')">OpenClaw CLI</button>
         <a class="btn primary" href="#" id="ocGatewayLinkCmd" target="_blank" rel="noopener noreferrer" onclick="return ocOpenGatewayLink(event, this)">打开网关</a>
         <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
       </div>
@@ -1377,6 +1392,10 @@ fn commands_content_native(_config: &PageConfig) -> String {
         <li><code>openclaw onboard</code>：执行首次初始化向导。</li>
         <li><code>openclaw --version</code>：查看当前运行时版本。</li>
       </ul>
+      <div class="action-row">
+        <button class="btn primary" type="button" onclick="ocOpenTerminalWindow('')">打开 OpenClaw CLI</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">运行初始化向导</button>
+      </div>
     </div>
 
     <div class="command-section">
@@ -1387,6 +1406,10 @@ fn commands_content_native(_config: &PageConfig) -> String {
         <li><code>curl -fsS http://127.0.0.1:48099/healthz</code></li>
         <li><code>curl -fsS http://127.0.0.1:48099/readyz</code></li>
       </ul>
+      <div class="action-row">
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw health --json')">在终端执行健康检查</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在终端查看运行状态</button>
+      </div>
     </div>
 
     <div class="command-section">
@@ -1397,7 +1420,11 @@ fn commands_content_native(_config: &PageConfig) -> String {
         <li><code>openclaw security audit --deep</code></li>
         <li><code>openclaw memory status --deep</code></li>
       </ul>
-      <div class="mini-tip">设备配对与批准已收回原生 Control UI 处理，HA 面板不再维护自定义终端链路。</div>
+      <div class="action-row">
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">运行 doctor</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor --fix')">运行 doctor --fix</button>
+      </div>
+      <div class="mini-tip">终端默认直接进入原生 <code>openclaw tui</code>；这里的按钮会把命令按官方 <code>!命令</code> 方式送进去。</div>
     </div>
 
     <div class="command-section">
@@ -1407,6 +1434,9 @@ fn commands_content_native(_config: &PageConfig) -> String {
         <li><code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code></li>
         <li><code>ha addons logs openclaw_assistant_rust</code></li>
       </ul>
+      <div class="action-row">
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">在终端跟随日志</button>
+      </div>
     </div>
   </section>
 </div>"##,
@@ -1421,7 +1451,10 @@ fn logs_content() -> String {
       <div>
         <div class="eyebrow">日志</div>
         <h2>日志与诊断</h2>
-        <p class="muted">这里保留最常用的日志和诊断命令。请在 Home Assistant 的 Terminal &amp; SSH、SSH 会话，或者其它本机 shell 中执行。</p>
+        <p class="muted">这里保留最常用的日志和诊断命令。你可以直接打开上面的终端，它会进入原生 <code>openclaw tui</code>；也可以在 Home Assistant 的 Terminal &amp; SSH 或 SSH 会话里执行相同命令。</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">打开日志终端</button>
       </div>
     </div>
 
@@ -1433,7 +1466,7 @@ fn logs_content() -> String {
       <li><code>openclaw status --deep</code></li>
       <li><code>ha addons logs openclaw_assistant_rust</code></li>
     </ul>
-    <div class="mini-tip">如果你只需要使用原生控制台，请优先点击首页的“打开网关”。</div>
+    <div class="mini-tip">如果你要直接看日志或执行维护命令，可以打开上面的终端；如果你只需要原生控制台，请优先点击首页的“打开网关”。</div>
   </section>
 </div>"##,
     )
@@ -1917,6 +1950,13 @@ fn render_shell(
       syncGatewayLink(anchor);
       await window.ocOpenGateway();
       return false;
+    }};
+    window.ocOpenTerminalWindow = function (command) {{
+      const targetUrl = new URL(appUrl("./terminal/"));
+      if (typeof command === "string" && command.trim()) {{
+        targetUrl.searchParams.set("command", command);
+      }}
+      window.open(targetUrl.toString(), "_blank", "noopener,noreferrer");
     }};
     function ocSetFormStatus(id, text, ok) {{
       const el = document.getElementById(id);
