@@ -728,10 +728,25 @@ fn openclaw_brand_svg(class_name: &str) -> String {
       <stop offset="0.55" stop-color="#0a1827"/>
       <stop offset="1" stop-color="#060d16"/>
     </linearGradient>
+    <linearGradient id="ocCoreGlow" x1="24" y1="20" x2="72" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b6fbff"/>
+      <stop offset="0.55" stop-color="#63dbe8"/>
+      <stop offset="1" stop-color="#356da6"/>
+    </linearGradient>
+    <radialGradient id="ocField" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(48 48) rotate(90) scale(33)">
+      <stop offset="0" stop-color="#1a3a59"/>
+      <stop offset="1" stop-color="#17324e"/>
+    </radialGradient>
   </defs>
-  <circle cx="48" cy="48" r="33" fill="#17324e"/>
-  <path d="M48 20 72 34v28L48 76 24 62V34Z" fill="#0d1e31"/>
-  <path d="M48 29 61 36.5v15L48 59 35 51.5v-15Z" fill="#08131f"/>
+  <rect x="5.5" y="5.5" width="85" height="85" rx="17" fill="url(#ocPanelBg)" stroke="#8cc7ee" stroke-opacity=".14"/>
+  <circle cx="48" cy="48" r="34" fill="url(#ocField)"/>
+  <path d="M48 17.5 68.5 29.4v23.2L48 64.5 27.5 52.6V29.4Z" fill="#0d1e31" stroke="url(#ocCoreGlow)" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M48 28 58.8 34.2v12.6L48 53 37.2 46.8V34.2Z" fill="#08131f" stroke="#9eeaf0" stroke-opacity=".9" stroke-width="2.1" stroke-linejoin="round"/>
+  <path d="M31 56.2 23.6 64.8" fill="none" stroke="#f08a38" stroke-width="3.8" stroke-linecap="round"/>
+  <path d="M65 56.2 72.4 64.8" fill="none" stroke="#f08a38" stroke-width="3.8" stroke-linecap="round"/>
+  <path d="M40 59.2 48 53.8l8 5.4" fill="none" stroke="#f5c66c" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 34.2v10.8" stroke="#eef9ff" stroke-width="3.7" stroke-linecap="round"/>
+  <path d="M43.2 38.9 48 34.2l4.8 4.7" fill="none" stroke="#eef9ff" stroke-width="3.7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>"##
     )
 }

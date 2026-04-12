@@ -5,10 +5,24 @@
       <stop offset="0.55" stop-color="#0A1827"/>
       <stop offset="1" stop-color="#060D16"/>
     </linearGradient>
+    <radialGradient id="field" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(384 372) rotate(90) scale(274)">
+      <stop offset="0" stop-color="#1B4263"/>
+      <stop offset="1" stop-color="#17324E"/>
+    </radialGradient>
+    <linearGradient id="coreStroke" x1="214" y1="176" x2="560" y2="564" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B6FBFF"/>
+      <stop offset="0.55" stop-color="#63DBE8"/>
+      <stop offset="1" stop-color="#356DA6"/>
+    </linearGradient>
   </defs>
   <rect x="8" y="8" width="752" height="752" rx="92" fill="url(#bg)"/>
   <rect x="8" y="8" width="752" height="752" rx="92" stroke="#A5DBFF" stroke-opacity="0.08"/>
-  <circle cx="384" cy="372" r="274" fill="#17324E"/>
-  <path d="M384 148L535 235V409L384 496L233 409V235L384 148Z" fill="#0D1E31"/>
-  <path d="M384 240L465 286V378L384 424L303 378V286L384 240Z" fill="#08131F"/>
+  <circle cx="384" cy="372" r="274" fill="url(#field)"/>
+  <path d="M384 148L535 235V409L384 496L233 409V235L384 148Z" fill="#0D1E31" stroke="url(#coreStroke)" stroke-width="24" stroke-linejoin="round"/>
+  <path d="M384 240L465 286V378L384 424L303 378V286L384 240Z" fill="#08131F" stroke="#9EEAF0" stroke-opacity="0.92" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M262 448L211 506" fill="none" stroke="#F08A38" stroke-width="18" stroke-linecap="round"/>
+  <path d="M506 448L557 506" fill="none" stroke="#F08A38" stroke-width="18" stroke-linecap="round"/>
+  <path d="M324 470L384 430L444 470" fill="none" stroke="#F5C66C" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M384 283V375" stroke="#EEF9FF" stroke-width="22" stroke-linecap="round"/>
+  <path d="M350 320L384 288L418 320" stroke="#EEF9FF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

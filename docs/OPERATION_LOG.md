@@ -2,6 +2,26 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-13 01:20 Asia/Shanghai - Restore colorful brand direction
+
+- User request:
+  - the add-on logo had become too dull after the dark simplification and needed to regain the earlier colorful feel
+- Outcome:
+  - restored the repository `logo.png` and `icon.png` to the earlier colorful base assets
+  - updated the UI header logo and vector assets to match the colorful brand direction instead of the flat dark variant
+  - kept the overall console UI dark, but made the brand mark visibly brighter and easier to recognize
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `logo.png`
+  - `icon.png`
+  - `logo.svg`
+  - `icon.svg`
+- Next handoff:
+  - verify the new colorful mark looks balanced in both the HA add-on list and the in-panel header
+
 ## 2026-04-13 00:08 Asia/Shanghai - Make managed ttyd shell writable
 
 - User request:
