@@ -209,7 +209,7 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
         "OpenClaw CLI (TUI)"
     };
     let page_subtitle = if shell_mode {
-        "这里恢复的是维护用本机 Shell。适合直接执行 bash/sh 命令、高级排障和手动维护。"
+        "这里提供的是完整的本机维护 Shell，适合直接执行 bash/sh 命令、高级排障和手动维护。"
     } else {
         "这里直接承载原生 <code>openclaw tui</code>。在 TUI 里执行本机命令，请使用 <code>!命令</code> 前缀。"
     };
@@ -355,7 +355,7 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
       <span class="actions">
         <button id="copyBtn" class="btn" type="button">复制选区</button>
         <button id="pasteBtn" class="btn" type="button">粘贴</button>
-        <span id="status" class="status">连接中</span>
+        <span id="status" class="status">连接中…</span>
       </span>
     </div>
   </div>
@@ -405,7 +405,7 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
     function resetStatusSoon() {
       if (statusResetTimer) window.clearTimeout(statusResetTimer);
       statusResetTimer = window.setTimeout(() => {
-        setStatus(socket.readyState === WebSocket.OPEN ? "已连接" : "已断开");
+        setStatus(socket.readyState === WebSocket.OPEN ? "瀹歌尪绻涢幒? : "瀹稿弶鏌囧鈧?);
       }, 1200);
     }
     function sendPayload(payload) {
@@ -416,7 +416,7 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
       }
       pending.push(payload);
       if (socket.readyState === WebSocket.CONNECTING) return;
-      term.writeln("[终端尚未就绪，命令已排队]");
+      term.writeln("[缂佸牏顏亸姘弓鐏忚京鍗庨敍灞芥嚒娴犮倕鍑￠幒鎺楁Е]");
     }
     function sendTerminalInput(data) {
       if (!data) return;
@@ -447,8 +447,8 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
     }
 
     socket.addEventListener("open", () => {
-      setStatus("已连接");
-      term.writeln("[终端已连接]");
+      setStatus("瀹歌尪绻涢幒?);
+      term.writeln("[缂佸牏顏鑼剁箾閹侯櫍");
       flushPending();
       sendResize();
       if (!bootCommandSent && typeof bootCommand === "string" && bootCommand.trim()) {
@@ -463,14 +463,14 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
       term.write(decoded);
     });
     socket.addEventListener("close", () => {
-      setStatus("已断开");
+      setStatus("瀹稿弶鏌囧鈧?);
       term.writeln("");
-      term.writeln("[终端已断开]");
+      term.writeln("[缂佸牏顏鍙夋焽瀵偓]");
     });
     socket.addEventListener("error", () => {
-      setStatus("错误");
+      setStatus("闁挎瑨顕?);
       term.writeln("");
-      term.writeln("[终端 WebSocket 错误]");
+      term.writeln("[缂佸牏顏?WebSocket 闁挎瑨顕");
     });
 
     term.onData((data) => { sendTerminalInput(data); });
@@ -481,16 +481,16 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
       if (!selected) return;
       try {
         await navigator.clipboard.writeText(selected);
-        setStatus("已复制");
+        setStatus("瀹告彃顦查崚?);
         resetStatusSoon();
       } catch (_) {
-        setStatus("复制失败");
+        setStatus("婢跺秴鍩楁径杈Е");
       }
     }
     async function pasteClipboardText(text) {
       if (!text) return;
       sendTerminalInput(text);
-      setStatus("已粘贴");
+      setStatus("瀹歌尙鐭樼拹?);
       resetStatusSoon();
     }
     async function pasteFromClipboard() {
@@ -498,7 +498,7 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
         const text = await navigator.clipboard.readText();
         await pasteClipboardText(text);
       } catch (_) {
-        setStatus("粘贴失败");
+        setStatus("绮樿创婢惰精瑙?);
       }
     }
     copyBtn.addEventListener("click", async () => { await copySelection(); });
@@ -1145,8 +1145,8 @@ fn fallback_gateway_response() -> Response<Body> {
 <body>
   <div class="card">
     <h1>OpenClaw Gateway</h1>
-    <p>Gateway 正在启动，通常需要 30 到 60 秒。<br>页面会自动刷新。</p>
-    <button class="btn" onclick="location.reload()">立即刷新</button>
+    <p>Gateway 濮濓絽婀崥顖氬З閿涘矂鈧艾鐖堕棁鈧憰?30 閸?60 缁夋帇鈧?br>妞ょ敻娼版导姘冲殰閸斻劌鍩涢弬鑸偓?/p>
+    <button class="btn" onclick="location.reload()">缁斿宓嗛崚閿嬫煀</button>
   </div>
 </body>
 </html>"#
@@ -1163,7 +1163,7 @@ fn fallback_shell_response() -> Response<Body> {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="refresh" content="5">
-  <title>维护 Shell</title>
+  <title>缂佸瓨濮?Shell</title>
   <style>
     body {
       margin: 0;
@@ -1201,9 +1201,9 @@ fn fallback_shell_response() -> Response<Body> {
 </head>
 <body>
   <div class="card">
-    <h1>维护 Shell 正在启动</h1>
-    <p>ttyd 服务还没就绪，页面会自动刷新。通常只需要几秒。</p>
-    <button class="btn" onclick="location.reload()">立即刷新</button>
+    <h1>缂佸瓨濮?Shell 濮濓絽婀崥顖氬З</h1>
+    <p>ttyd 閺堝秴濮熸潻妯荤梾鐏忚京鍗庨敍宀勩€夐棃顫窗閼奉亜濮╅崚閿嬫煀閵嗗倿鈧艾鐖堕崣顏堟付鐟曚礁鍤戠粔鎺嬧偓?/p>
+    <button class="btn" onclick="location.reload()">缁斿宓嗛崚閿嬫煀</button>
   </div>
 </body>
 </html>"#
@@ -1274,13 +1274,13 @@ fn fallback_ui_response() -> Response<Body> {
     <div class="card">
       <h1>OpenClawHAOSAddon-Rust</h1>
       <p>
-        Ingress 已响应，但 Rust UI 后端仍在启动或重启中。
-        这个过渡页用来避免在 UI 尚未完全就绪时出现空白 502 页面。
+        Ingress 瀹告彃鎼锋惔鏃撶礉娴?Rust UI 閸氬海顏禒宥呮躬閸氼垰濮╅幋鏍櫢閸氼垯鑵戦妴?
+        鏉╂瑤閲滄潻鍥ㄦ诞妞ょ數鏁ら弶銉╀缉閸忓秴婀?UI 鐏忔碍婀€瑰苯鍙忕亸杈╁崕閺冭泛鍤悳鎵敄閻?502 妞ょ敻娼伴妴?
       </p>
       <div class="actions">
-        <button class="btn" type="button" onclick="location.reload()">重新加载</button>
-        <a class="btn" href="./terminal/" target="_blank" rel="noopener noreferrer">打开 OpenClaw CLI</a>
-        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
+        <button class="btn" type="button" onclick="location.reload()">闁插秵鏌婇崝鐘烘祰</button>
+        <a class="btn" href="./terminal/" target="_blank" rel="noopener noreferrer">閹垫挸绱?OpenClaw CLI</a>
+        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">娑撳娴?CA 鐠囦椒鍔?/a>
       </div>
     </div>
   </div>

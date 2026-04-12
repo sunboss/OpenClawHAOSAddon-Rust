@@ -1,3 +1,9 @@
+## 2026.04.12.18
+
+- Shell：为受管 `ttyd` 增加可写参数，修复“维护 Shell”进入后仅只读不可输入的问题
+- 运行时：保持 `ttyd 1.7.7` 与现有 `/shell/` 反向代理结构不变，仅修正交互能力
+- 验证：`cargo test -p addon-supervisor -p haos-ui -p ingressd`
+
 ## 2026.04.12.17
 
 - Shell：将“维护 Shell”从原先的自定义内嵌 shell 页面升级为真正的 `ttyd` Web Shell，全屏直达、无额外说明框

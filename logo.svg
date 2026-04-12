@@ -1,0 +1,14 @@
+<svg width="768" height="768" viewBox="0 0 768 768" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenClawHAOSAddon-Rust logo">
+  <defs>
+    <linearGradient id="bg" x1="112" y1="88" x2="656" y2="692" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#11263B"/>
+      <stop offset="0.55" stop-color="#0A1827"/>
+      <stop offset="1" stop-color="#060D16"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="752" height="752" rx="92" fill="url(#bg)"/>
+  <rect x="8" y="8" width="752" height="752" rx="92" stroke="#A5DBFF" stroke-opacity="0.08"/>
+  <circle cx="384" cy="372" r="274" fill="#17324E"/>
+  <path d="M384 148L535 235V409L384 496L233 409V235L384 148Z" fill="#0D1E31"/>
+  <path d="M384 240L465 286V378L384 424L303 378V286L384 240Z" fill="#08131F"/>
+</svg>

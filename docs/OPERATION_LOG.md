@@ -2,6 +2,33 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-13 00:08 Asia/Shanghai - Make managed ttyd shell writable
+
+- User request:
+  - directly fix the current maintenance shell issue after logs showed ttyd starting in readonly mode
+- Outcome:
+  - updated the managed `ttyd` launch flags to enable writable mode
+  - kept the rest of the `ttyd 1.7.7` setup unchanged, including supervisor management and `/shell/` proxying
+  - prepared a version bump so Home Assistant can clearly pick up the fixed build
+  - synchronized the add-on brand assets so the repository `logo.png` / `icon.png`, new `logo.svg` / `icon.svg`, and the UI header mark all use the same command-core symbol language
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+  - `logo.png`
+  - `icon.png`
+  - `logo.svg`
+  - `icon.svg`
+- Commands / validation:
+  - `cargo test -p addon-supervisor -p haos-ui -p ingressd`
+- Version:
+  - bump add-on version to `2026.04.12.18`
+- Next handoff:
+  - confirm the log no longer prints readonly-mode warning and verify interactive input works in the full-screen maintenance shell
+
 ## 2026-04-12 23:59 Asia/Shanghai - Switch Maintenance Shell to official ttyd web shell
 
 - User request:

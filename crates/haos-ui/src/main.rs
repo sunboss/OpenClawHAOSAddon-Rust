@@ -723,26 +723,15 @@ fn openclaw_brand_svg(class_name: &str) -> String {
     format!(
         r##"<svg class="{class_name}" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenClaw logo" preserveAspectRatio="xMidYMid meet">
   <defs>
-    <linearGradient id="ocCoreGlow" x1="24" y1="20" x2="72" y2="76" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#a7f3f5"/>
-      <stop offset="0.55" stop-color="#65d8e3"/>
-      <stop offset="1" stop-color="#377ab6"/>
-    </linearGradient>
-    <linearGradient id="ocShell" x1="24" y1="24" x2="72" y2="72" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0f2238"/>
-      <stop offset="1" stop-color="#08131f"/>
+    <linearGradient id="ocPanelBg" x1="12" y1="10" x2="84" y2="88" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#11263b"/>
+      <stop offset="0.55" stop-color="#0a1827"/>
+      <stop offset="1" stop-color="#060d16"/>
     </linearGradient>
   </defs>
-  <path d="M21 30a34 34 0 0 1 54 0" fill="none" stroke="#82aeca" stroke-opacity=".72" stroke-width="4.5" stroke-linecap="round"/>
-  <path d="M25 66a34 34 0 0 0 46 8" fill="none" stroke="#5f8db4" stroke-opacity=".64" stroke-width="4" stroke-linecap="round"/>
-  <path d="M71 66a34 34 0 0 1-6 6" fill="none" stroke="#9adfe5" stroke-opacity=".82" stroke-width="4" stroke-linecap="round"/>
-  <path d="M48 18 67 29v22L48 62 29 51V29Z" fill="url(#ocShell)" stroke="url(#ocCoreGlow)" stroke-width="4.5" stroke-linejoin="round"/>
-  <path d="M48 27 59 33.4v13.2L48 53 37 46.6V33.4Z" fill="#07111d" stroke="#9eeaf0" stroke-opacity=".88" stroke-width="2.3" stroke-linejoin="round"/>
-  <path d="M48 33.5v13" stroke="#eafcff" stroke-width="4" stroke-linecap="round"/>
-  <path d="M42.8 38.5 48 33.5l5.2 5" fill="none" stroke="#eafcff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M39.5 58.5 48 52.8l8.5 5.7" fill="none" stroke="#d6b16f" stroke-opacity=".95" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M30 55.5 23.5 63" fill="none" stroke="#7adce1" stroke-opacity=".86" stroke-width="3.4" stroke-linecap="round"/>
-  <path d="M66 55.5 72.5 63" fill="none" stroke="#7adce1" stroke-opacity=".86" stroke-width="3.4" stroke-linecap="round"/>
+  <circle cx="48" cy="48" r="33" fill="#17324e"/>
+  <path d="M48 20 72 34v28L48 76 24 62V34Z" fill="#0d1e31"/>
+  <path d="M48 29 61 36.5v15L48 59 35 51.5v-15Z" fill="#08131f"/>
 </svg>"##
     )
 }
