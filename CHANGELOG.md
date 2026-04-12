@@ -1,8 +1,8 @@
-## 2026.04.12.3
+## 2026.04.12.4
 
-- 架构：把默认网关访问重新收敛到官方原生 `http://<host>:18789/`
-- 简化：默认不再让 `ingressd` 占用 `18789` 做 HTTPS 包装，外部访问改为由 upstream Gateway 直接提供
-- 对齐：内部 WebSocket / 就绪探针默认端口从 `18790` 收回到 `18789`
+- 修复：恢复远程浏览器访问所需的 HTTPS secure context，避免 Control UI 因 `device identity` 要求拒绝 `http://<lan-ip>:18789`
+- 架构：保留外部 `https://<host>:18789` 访问，同时让内部 Gateway 继续运行在 loopback `18790`
+- 对齐：这次回退仅限访问策略，保留 `v2026.4.11` runtime、TUI 官方文案和新配置页能力
 
 ## 2026.04.12.2
 

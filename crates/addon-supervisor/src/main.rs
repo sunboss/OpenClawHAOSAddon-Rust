@@ -75,7 +75,7 @@ struct HaosEntryArgs {
     backup_dir: PathBuf,
     #[arg(long, default_value = "/etc/nginx/html")]
     nginx_html_dir: PathBuf,
-    #[arg(long, default_value_t = 18789)]
+    #[arg(long, default_value_t = 18790)]
     gateway_internal_port: u16,
     #[arg(long, default_value_t = 48100)]
     action_server_port: u16,
@@ -503,7 +503,7 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
                 "false"
             },
         );
-        env::set_var("ENABLE_HTTPS_PROXY", "false");
+        env::set_var("ENABLE_HTTPS_PROXY", "true");
         env::set_var("HTTPS_PROXY_PORT", settings.https_port.to_string());
         env::set_var(
             "GATEWAY_INTERNAL_PORT",
@@ -536,7 +536,7 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
             "apply-gateway-settings",
             &settings.gateway_mode,
             &settings.gateway_remote_url,
-            "lan",
+            "loopback",
             &args.gateway_internal_port.to_string(),
             if settings.enable_openai_api {
                 "true"

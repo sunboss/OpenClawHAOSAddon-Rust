@@ -36,7 +36,7 @@ fn gateway_ws_url() -> String {
     let port = env::var("GATEWAY_INTERNAL_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(18789);
+        .unwrap_or(18790);
     format!("ws://127.0.0.1:{port}")
 }
 

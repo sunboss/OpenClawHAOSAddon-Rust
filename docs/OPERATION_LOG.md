@@ -2,17 +2,17 @@
 
 This file preserves task and push history for future AI handoff.
 
-## 2026-04-12 14:45 Asia/Shanghai - Restore native gateway access on official port 18789
+## 2026-04-12 15:20 Asia/Shanghai - Restore HTTPS secure-context access after native-HTTP regression
 
-- User request: simplify the add-on further and make gateway access match upstream native behavior as closely as possible.
+- User request: after testing the latest build, fix the broken LAN browser access path that now fails with `control ui requires device identity (use HTTPS or localhost secure context)`.
 - Intent / context:
-  - the user explicitly questioned whether internal port `18790` was official and asked what else could be simplified toward a native upstream layout
-  - official docs show the native gateway/dashboard flow centered on port `18789`, not a custom internal `18790` plus external wrapper
-  - after reviewing the current Rust add-on architecture, the user chose the path where upstream gateway should reclaim `18789` directly
+  - version `2026.04.12.3` proved that remote LAN browsers cannot use plain `http://<lan-ip>:18789` for Control UI because browser device identity requires a secure context
+  - user testing showed repeated `code=1008 reason=control ui requires device identity (use HTTPS or localhost secure context)`
+  - official docs confirm that HTTPS or localhost secure context is required for device identity / Control UI auth
 - Official sources checked:
-  - `https://docs.openclaw.ai/gateway`
-  - `https://docs.openclaw.ai/gateway/configuration-reference`
-  - `https://docs.openclaw.ai/web`
+  - `https://docs.openclaw.ai/web/control-ui`
+  - `https://docs.openclaw.ai/gateway/security`
+  - `https://docs.openclaw.ai/gateway/troubleshooting`
 - Files changed:
   - `crates/addon-supervisor/src/main.rs`
   - `crates/actiond/src/main.rs`
@@ -24,26 +24,25 @@ This file preserves task and push history for future AI handoff.
   - `CHANGELOG.md`
   - `docs/OPERATION_LOG.md`
 - Implementation:
-  - change the default managed gateway port from `18790` back to `18789`
-  - stop enabling the add-on HTTPS wrapper on `18789` by default
-  - switch gateway bind mode from `loopback` back to upstream-style `lan`
-  - make HA UI native-gateway links default to `http://<host>:18789/`
-  - update internal websocket helpers and readiness probes to use the same restored native port
-  - make doctor noise suppression and tests port-agnostic or align them to `18789`
+  - revert the previous native-HTTP access experiment
+  - restore the HTTPS proxy on external port `18789`
+  - move the managed gateway back to loopback `18790`
+  - switch HA UI gateway links back to `https://<host>:18789/`
+  - restore internal websocket helpers and readiness probes to `18790`
 - Commands / validation:
-  - `cargo test -p addon-supervisor -p actiond -p haos-ui -p ingressd`
+  - pending
 - Version:
-  - target version `2026.04.12.3`
+  - target version `2026.04.12.4`
 - Commit:
   - pending
 - Push:
   - pending
 - Result summary:
-  - the add-on now defaults much closer to upstream native access, with gateway directly reclaiming `18789`
-  - `ingressd` remains for HA ingress and terminal hosting, but no longer needs to be the default external gateway facade on `18789`
+  - HAOS LAN browser access should again satisfy the official secure-context requirement for device identity
+  - the add-on keeps the newer runtime and UI improvements, while rolling back only the broken plain-HTTP access path
 - Next handoff:
-  - after push and HA rebuild, verify that the dashboard opens via `http://<ha-ip>:18789/`
-  - confirm logs no longer refer to the old internal `18790` path during normal startup
+  - rerun the relevant Rust tests
+  - after push and HA rebuild, verify that `https://<ha-ip>:18789/` opens normally again
 
 ## 2026-04-12 10:45 Asia/Shanghai - Align HAOS terminal UX with official TUI local-shell model
 

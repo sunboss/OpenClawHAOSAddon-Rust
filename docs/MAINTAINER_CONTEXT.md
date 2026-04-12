@@ -34,10 +34,10 @@ Read this before making UI, runtime, or release changes.
 ## Important behavioral decisions
 
 - The managed OpenClaw process is the foreground `openclaw gateway run` process.
-- Default native gateway access should stay close to upstream:
-  - gateway binds on the real public port `18789`
-  - external dashboard access should be `http://<host>:18789/` unless the user explicitly asks for another proxy layer
-  - do not reintroduce a separate default HTTPS wrapper on `18789` unless there is a strong HAOS-specific reason
+- For HAOS LAN browser access, keep the official secure-context requirement in mind:
+  - remote Control UI over plain `http://<lan-ip>:18789` is rejected because device identity requires HTTPS or localhost secure context
+  - in this add-on, external dashboard access should remain `https://<host>:18789`
+  - keeping an internal loopback gateway port is acceptable when it is required to preserve remote HTTPS access
 - Startup self-heal should run `openclaw doctor --fix`.
   - This is intentional so config/runtime migrations such as `x_search` / Firecrawl changes do not depend on manual repair.
 - Do not use `openclaw gateway restart` for the add-on restart button.
@@ -115,7 +115,7 @@ Read this before making UI, runtime, or release changes.
   - not an error
   - doctor runs 15s after boot; CLI WebSocket needs acpx runtime (ready in 90-120s)
   - health check always times out on startup doctor run; does not abort doctor
-- `Gateway port: Port 18789 is already in use` (in doctor output)
+- `Gateway port: Port 18790 is already in use` (in doctor output)
   - not an error; expected — doctor detects the supervisor-managed gateway is running
 - `systemd user services are unavailable` (in doctor output)
   - not an error; container has no systemd, gateway runs under our supervisor instead
