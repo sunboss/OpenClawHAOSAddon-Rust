@@ -1091,7 +1091,7 @@ fn home_content(
         </div>
 
         {token_section}
-        <div id="pairing-banner" style="display:none"></div>
+        
         {device_notice}
         <div class="note-box">有新设备需要配对时，上方会自动出现通知。也可前往命令行页手动执行 <code>openclaw devices approve --latest</code>。<br>若设备连接时提示 token 错误或被拒绝，请在该设备浏览器中清除此站点的 Cookies 与本地存储，然后重新打开页面。</div>
       </section>

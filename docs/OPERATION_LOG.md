@@ -2,6 +2,23 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 21:30 Asia/Shanghai - Stop browser-side pairing SSE from the HA home page
+
+- User request: continue reducing remaining early-connect / repeated connection noise.
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - remove the home-page mount point that triggered the browser pairing banner flow
+  - this prevents the HA home page from auto-starting the `/events/pairing` browser subscription path
+  - keep pairing available through native Control UI and CLI commands instead
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - bump add-on version to `2026.04.12.9`
+
 ## 2026-04-12 21:05 Asia/Shanghai - Force visible HA UI text back to Chinese
 
 - User request: some pages had been rendered as garbled/Korean-looking text and needed to be forced back to Chinese.
