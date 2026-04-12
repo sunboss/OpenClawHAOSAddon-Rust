@@ -686,6 +686,35 @@ fn text_or_placeholder(value: &str, placeholder: &str) -> String {
     }
 }
 
+fn access_mode_label(mode: &str) -> &'static str {
+    match mode {
+        "local_only" => "仅本机访问",
+        "lan_https" => "局域网 HTTPS",
+        "lan_reverse_proxy" => "局域网反向代理",
+        "tailnet_https" => "Tailnet HTTPS",
+        "custom" => "自定义",
+        _ => "当前模式",
+    }
+}
+
+fn access_mode_help(mode: &str) -> &'static str {
+    match mode {
+        "local_only" => "只建议在本机或受控隧道下访问，适合保守部署。",
+        "lan_https" => "这是当前 HAOS 最常见的推荐模式：浏览器通过 HTTPS 打开 Gateway，满足官方 secure context 要求。",
+        "lan_reverse_proxy" => "适合你已有上层反向代理和证书，由上层统一做 HTTPS 与域名入口。",
+        "tailnet_https" => "适合通过 Tailscale / Tailnet 远程访问，优先保证安全上下文和设备身份。",
+        "custom" => "表示你正在使用自定义入口，请重点确认最终访问地址仍满足官方 HTTPS / localhost 要求。",
+        _ => "访问模式决定浏览器如何进入 Gateway，也决定是否满足官方设备身份与 HTTPS 要求。",
+    }
+}
+
+fn gateway_mode_help(mode: &str) -> &'static str {
+    match mode {
+        "remote" => "当前 Add-on 主要作为 HA 壳与入口，真正的 Gateway 在远端运行。",
+        _ => "当前 Add-on 在本机启动并管理 OpenClaw Gateway，本页展示的状态和资源信息都以本机运行时为准。",
+    }
+}
+
 fn js_string(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
@@ -890,7 +919,28 @@ fn home_content(
         </div>
 
         {token_section}
-        
+
+        <section class="card">
+          <div class="card-head compact">
+            <div>
+              <div class="eyebrow">首次安装</div>
+              <h3>推荐路径</h3>
+            </div>
+          </div>
+          <ol class="clean-list">
+            <li>先确认上方总状态为“运行正常”，再点击“打开网关”。</li>
+            <li>首次进入原生 Control UI 时，按官方引导完成初始化、登录或模型配置。</li>
+            <li>如果网页提示权限、身份或 token 问题，优先检查 HTTPS 入口，然后再重新打开页面。</li>
+          </ol>
+          <div class="mini-tip">如果你需要进一步初始化模型、Web Search 或 Memory Search，请继续到“基础配置”页完成保存，然后重启插件让配置生效。</div>
+        </section>
+
+        <div class="note-box">
+          <strong>{access_title}</strong><br>
+          {access_help}<br>
+          <span class="muted">{gateway_mode_help}</span>
+        </div>
+
         <div class="note-box">设备配对已收回原生入口处理。建议优先在原生 Control UI 中完成批准，或前往命令行页手动执行 <code>openclaw devices approve --latest</code>。<br>若设备连接时提示 token 错误或被拒绝，请在该设备浏览器中清除此站点的 Cookies 与本地存储，然后重新打开页面。</div>
       </section>
 
@@ -957,6 +1007,9 @@ fn home_content(
         stat_addon = stat_tile("Add-on 版本", &config.addon_version, "插件发布版本"),
         stat_openclaw = stat_tile("OpenClaw 版本", &config.openclaw_version, "上游运行时版本"),
         stat_model = stat_tile("AI 模型", &config.current_model, "当前 OpenClaw 使用的对话模型"),
+        access_title = access_mode_label(&config.access_mode),
+        access_help = access_mode_help(&config.access_mode),
+        gateway_mode_help = gateway_mode_help(&config.gateway_mode),
         token_section = {
             let tok = &config.gateway_token;
             if tok.is_empty() {
@@ -1057,6 +1110,7 @@ fn config_content_v2(config: &PageConfig) -> String {
     <div class="notice-badge warn">
       保存后会写入 <code>{panel_config_path}</code>。要真正应用到 OpenClaw，请重启插件；这样不配置的时候不会改动 <code>openclaw.json</code>。
     </div>
+    <div class="mini-tip">推荐顺序：先确认“打开网关”能进入原生页面，再在这里保存配置，最后重启插件并回到 Gateway 验证效果。</div>
   </section>
 
   <div class="three-up">
@@ -1068,6 +1122,22 @@ fn config_content_v2(config: &PageConfig) -> String {
         {https}
         {model}
       </div>
+    </section>
+    <section class="card">
+      <h3>访问模式说明</h3>
+      <div class="kv-list">
+        {access_label}
+        {access_help}
+        {gateway_help}
+      </div>
+    </section>
+    <section class="card">
+      <h3>首次配置路径</h3>
+      <ul class="clean-list">
+        <li>先打开原生 Gateway，确认页面能正常进入。</li>
+        <li>如果需要联网搜索、记忆检索或自定义模型，再回到这里保存配置。</li>
+        <li>保存后重启插件，再回到 Gateway 做实际验证。</li>
+      </ul>
     </section>
     <section class="card">
       <h3>Web Search 概览</h3>
@@ -1235,6 +1305,9 @@ fn config_content_v2(config: &PageConfig) -> String {
         mode = kv_row("网关模式", &config.gateway_mode),
         https = kv_row("HTTPS 端口", &config.https_port),
         model = kv_row("当前对话模型", &config.current_model),
+        access_label = kv_row("当前模式", access_mode_label(&config.access_mode)),
+        access_help = kv_row("适用说明", access_mode_help(&config.access_mode)),
+        gateway_help = kv_row("网关运行", gateway_mode_help(&config.gateway_mode)),
         web_status = kv_row("Web Search", if config.web_enabled { "enabled" } else { "disabled" }),
         web_provider = kv_row("Provider", &config.web_provider),
         web_model = kv_row("Provider Model", &web_model_display),

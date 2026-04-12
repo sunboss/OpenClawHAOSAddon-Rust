@@ -2,6 +2,38 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 23:59 Asia/Shanghai - Improve onboarding guidance, access-mode copy, and first-run path
+
+- User request:
+  - use the external `DOCS.md` as a reference for
+    - installation guidance
+    - access-mode explanation
+    - first configuration path
+  - keep the home page resource collection and status display
+- Reference reviewed:
+  - `https://github.com/techartdev/OpenClawHomeAssistant/blob/main/DOCS.md`
+- Outcome:
+  - homepage now includes a clearer first-install flow
+  - config page now explains access mode more directly and shows a recommended first-configuration sequence
+  - no terminal was reintroduced
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Implementation:
+  - add a first-install guidance block to the home page
+  - add access-mode explanation helpers
+  - add a first-configuration path card to the config page
+  - keep Gateway HTTPS access and the status/resource overview untouched
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - bump add-on version to `2026.04.12.12`
+- Next handoff:
+  - after push, verify that the new guidance reads naturally in Chinese
+  - confirm the home page still feels concise and not overloaded
+
 ## 2026-04-12 23:55 Asia/Shanghai - Remove embedded terminal and keep status-first home page
 
 - User request:
