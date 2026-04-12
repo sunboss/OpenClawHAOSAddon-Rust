@@ -767,6 +767,13 @@ fn terminal_window_button(label: &str, command: &str) -> String {
     )
 }
 
+fn shell_window_button(label: &str, command: &str) -> String {
+    let command = html_attr_escape(&js_string(command));
+    format!(
+        r#"<button class="btn" type="button" onclick="ocOpenShellWindow({command})">{label}</button>"#
+    )
+}
+
 fn kv_row(label: &str, value: &str) -> String {
     format!(
         r#"<div class="kv-row"><span class="kv-label">{label}</span><span class="kv-value">{value}</span></div>"#
@@ -898,6 +905,7 @@ fn home_content(
       <div class="header-actions">
         {open_gateway}
         {open_cli}
+        {open_shell}
         {goto_commands}
       </div>
     </div>
@@ -1006,6 +1014,7 @@ fn home_content(
             "return ocOpenGatewayLink(event, this)"
         ),
         open_cli = terminal_window_button("OpenClaw CLI", ""),
+        open_shell = shell_window_button("维护 Shell", ""),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
         stat_mode = stat_tile(
@@ -1380,6 +1389,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
         <a class="btn" href="https://docs.openclaw.ai/tui" target="_blank" rel="noopener noreferrer">TUI 文档</a>
         <a class="btn" href="https://docs.openclaw.ai/cli/index" target="_blank" rel="noopener noreferrer">CLI 文档</a>
         <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('')">OpenClaw CLI</button>
+        <button class="btn" type="button" onclick="ocOpenShellWindow('')">新窗口打开 Shell</button>
         <a class="btn primary" href="#" id="ocGatewayLinkCmd" target="_blank" rel="noopener noreferrer" onclick="return ocOpenGatewayLink(event, this)">打开网关</a>
         <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
       </div>
@@ -1395,6 +1405,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocOpenTerminalWindow('')">打开 OpenClaw CLI</button>
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">运行初始化向导</button>
+        <button class="btn" type="button" onclick="ocOpenShellWindow('openclaw onboard')">在 Shell 中运行初始化</button>
       </div>
     </div>
 
@@ -1409,6 +1420,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
       <div class="action-row">
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw health --json')">在终端执行健康检查</button>
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在终端查看运行状态</button>
+        <button class="btn" type="button" onclick="ocOpenShellWindow('openclaw status --deep')">在 Shell 查看运行状态</button>
       </div>
     </div>
 
@@ -1423,8 +1435,9 @@ fn commands_content_native(_config: &PageConfig) -> String {
       <div class="action-row">
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">运行 doctor</button>
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor --fix')">运行 doctor --fix</button>
+        <button class="btn" type="button" onclick="ocOpenShellWindow('openclaw doctor --fix')">在 Shell 运行 doctor --fix</button>
       </div>
-      <div class="mini-tip">终端默认直接进入原生 <code>openclaw tui</code>；这里的按钮会把命令按官方 <code>!命令</code> 方式送进去。</div>
+      <div class="mini-tip">默认终端是原生 <code>openclaw tui</code>；如果你更习惯旧方式，也可以用上面的 “Shell” 按钮直接打开本机 shell。</div>
     </div>
 
     <div class="command-section">
@@ -1436,6 +1449,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
       </ul>
       <div class="action-row">
         <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">在终端跟随日志</button>
+        <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">在 Shell 跟随网关日志</button>
       </div>
     </div>
   </section>
@@ -1455,6 +1469,7 @@ fn logs_content() -> String {
       </div>
       <div class="header-actions">
         <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">打开日志终端</button>
+        <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">打开日志 Shell</button>
       </div>
     </div>
 
@@ -1953,6 +1968,14 @@ fn render_shell(
     }};
     window.ocOpenTerminalWindow = function (command) {{
       const targetUrl = new URL(appUrl("./terminal/"));
+      if (typeof command === "string" && command.trim()) {{
+        targetUrl.searchParams.set("command", command);
+      }}
+      window.open(targetUrl.toString(), "_blank", "noopener,noreferrer");
+    }};
+    window.ocOpenShellWindow = function (command) {{
+      const targetUrl = new URL(appUrl("./terminal/"));
+      targetUrl.searchParams.set("mode", "shell");
       if (typeof command === "string" && command.trim()) {{
         targetUrl.searchParams.set("command", command);
       }}

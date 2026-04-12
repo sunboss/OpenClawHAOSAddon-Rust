@@ -73,6 +73,7 @@ enum TerminalClientMessage {
 #[derive(Default, Deserialize)]
 struct TerminalPageQuery {
     command: Option<String>,
+    mode: Option<String>,
 }
 
 #[tokio::main]
@@ -186,13 +187,29 @@ async fn terminal_redirect() -> impl IntoResponse {
 async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoResponse {
     let boot_command = serde_json::to_string(&query.command.unwrap_or_default())
         .unwrap_or_else(|_| "\"\"".to_string());
+    let shell_mode = query.mode.as_deref() == Some("shell");
+    let page_title = if shell_mode {
+        "维护 Shell"
+    } else {
+        "OpenClaw CLI (TUI)"
+    };
+    let page_subtitle = if shell_mode {
+        "这里恢复的是维护用本机 Shell。适合直接执行 bash/sh 命令、高级排障和手动维护。"
+    } else {
+        "这里直接承载原生 <code>openclaw tui</code>。在 TUI 里执行本机命令，请使用 <code>!命令</code> 前缀。"
+    };
+    let page_hint = if shell_mode {
+        "这里是本机 Shell，不需要 <code>!</code> 前缀。示例：<code>pwd</code>、<code>openclaw status</code>、<code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code>。"
+    } else {
+        "普通输入用于 TUI 交互。本机命令示例：<code>!pwd</code>、<code>!openclaw status</code>、<code>!openclaw doctor</code>。"
+    };
     Html(
         r##"<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenClaw CLI (TUI)</title>
+  <title>__PAGE_TITLE__</title>
   <link rel="stylesheet" href="./assets/xterm.css">
   <style>
     :root {
@@ -311,15 +328,15 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
   <div class="shell">
     <div class="head">
       <div class="brand-copy">
-        <strong class="brand-title">OpenClaw CLI (TUI)</strong>
-        <span class="brand-sub">这里直接承载原生 <code>openclaw tui</code>。在 TUI 里执行本机命令，请使用 <code>!命令</code> 前缀。</span>
+        <strong class="brand-title">__PAGE_TITLE__</strong>
+        <span class="brand-sub">__PAGE_SUBTITLE__</span>
       </div>
     </div>
     <div class="terminal-wrap">
       <div id="terminalShell" class="terminal-shell"></div>
     </div>
     <div class="foot">
-      <span class="muted">普通输入用于 TUI 交互。本机命令示例：<code>!pwd</code>、<code>!openclaw status</code>、<code>!openclaw doctor</code>。</span>
+      <span class="muted">__PAGE_HINT__</span>
       <span class="actions">
         <button id="copyBtn" class="btn" type="button">复制选区</button>
         <button id="pasteBtn" class="btn" type="button">粘贴</button>
@@ -514,6 +531,9 @@ async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoRespo
   </script>
 </body>
 </html>"##
+            .replace("__PAGE_TITLE__", page_title)
+            .replace("__PAGE_SUBTITLE__", page_subtitle)
+            .replace("__PAGE_HINT__", page_hint)
             .replace("__BOOT_COMMAND__", &boot_command),
     )
 }
@@ -542,12 +562,17 @@ async fn terminal_xterm_addon_fit_js() -> impl IntoResponse {
     .await
 }
 
-async fn terminal_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
+async fn terminal_ws(
+    Query(query): Query<TerminalPageQuery>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    let shell_mode = query.mode.as_deref() == Some("shell");
     println!("ingressd: terminal websocket upgrade requested");
-    ws.on_upgrade(handle_terminal_socket).into_response()
+    ws.on_upgrade(move |socket| handle_terminal_socket(socket, shell_mode))
+        .into_response()
 }
 
-async fn handle_terminal_socket(socket: WebSocket) {
+async fn handle_terminal_socket(socket: WebSocket, shell_mode: bool) {
     println!("ingressd: terminal websocket connected");
     let pty_system = native_pty_system();
     let Ok(pair) = pty_system.openpty(PtySize {
@@ -560,10 +585,19 @@ async fn handle_terminal_socket(socket: WebSocket) {
         return;
     };
 
-    let mut cmd = CommandBuilder::new("openclaw");
-    cmd.arg("tui");
+    let cmd = if shell_mode {
+        let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
+        CommandBuilder::new(shell)
+    } else {
+        let mut cmd = CommandBuilder::new("openclaw");
+        cmd.arg("tui");
+        cmd
+    };
     let Ok(mut child) = pair.slave.spawn_command(cmd) else {
-        eprintln!("ingressd: failed to spawn openclaw tui in PTY");
+        eprintln!(
+            "ingressd: failed to spawn {} in PTY",
+            if shell_mode { "shell" } else { "openclaw tui" }
+        );
         return;
     };
     drop(pair.slave);
