@@ -2,6 +2,33 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 21:55 Asia/Shanghai - Polish the control-deck UI, replace the brand mark, and improve mobile adaptation
+
+- User request:
+  - keep refining the redesigned AI Agent command-center UI
+  - improve the cinematic feel of the home hero/buttons and the premium quality of the left navigation / brand area
+  - consider mobile adaptation
+  - stop showing screenshots and push the final result
+- Outcome:
+  - refined the left rail with higher-end brand treatment, stronger navigation affordances, and calmer premium spacing
+  - pushed the home hero and action buttons further toward a cinematic control-room feel
+  - redesigned the inline UI logo into a more restrained command-core mark and removed the old `Rs` project-signifier feel
+  - darkened and unified the service-state panel so it no longer looked like a bright warning-card cluster inside the dashboard
+  - added dedicated mobile rules for small screens so the shell, hero, buttons, nav, cards, and chips collapse more gracefully
+  - kept the home resource collection, status display, Gateway entry, TUI entry, and Shell entry intact
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - bump add-on version to `2026.04.12.16`
+- Next handoff:
+  - verify the updated control-deck UI in the real HA panel on both desktop and mobile
+  - if desired, sync the repository `logo.png` / `icon.png` to the new inline brand direction
+
 ## 2026-04-12 21:12 Asia/Shanghai - Redesign the HA panel into an AI Agent command center
 
 - User request:

@@ -722,16 +722,27 @@ fn js_string(value: &str) -> String {
 fn openclaw_brand_svg(class_name: &str) -> String {
     format!(
         r##"<svg class="{class_name}" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenClaw logo" preserveAspectRatio="xMidYMid meet">
-  <rect x="8" y="8" width="80" height="80" rx="24" fill="#10284c"/>
-  <rect x="14" y="14" width="68" height="68" rx="20" fill="#14355f"/>
-  <path d="M30 34 19 27 18 41 29 42Z" fill="#60cbff"/>
-  <path d="M66 34 77 27 78 41 67 42Z" fill="#60cbff"/>
-  <path d="M31 49c0-10 6-18 17-21" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
-  <path d="M65 49c0-10-6-18-17-21" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
-  <path d="M34 61c7 8 21 8 28 0" stroke="#8be0ff" stroke-width="6" stroke-linecap="round"/>
-  <circle cx="48" cy="49" r="10" fill="#eef7ff"/>
-  <circle cx="44" cy="46" r="2.6" fill="#14355f"/>
-  <circle cx="52" cy="46" r="2.6" fill="#14355f"/>
+  <defs>
+    <linearGradient id="ocCoreGlow" x1="24" y1="20" x2="72" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a7f3f5"/>
+      <stop offset="0.55" stop-color="#65d8e3"/>
+      <stop offset="1" stop-color="#377ab6"/>
+    </linearGradient>
+    <linearGradient id="ocShell" x1="24" y1="24" x2="72" y2="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f2238"/>
+      <stop offset="1" stop-color="#08131f"/>
+    </linearGradient>
+  </defs>
+  <path d="M21 30a34 34 0 0 1 54 0" fill="none" stroke="#82aeca" stroke-opacity=".72" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M25 66a34 34 0 0 0 46 8" fill="none" stroke="#5f8db4" stroke-opacity=".64" stroke-width="4" stroke-linecap="round"/>
+  <path d="M71 66a34 34 0 0 1-6 6" fill="none" stroke="#9adfe5" stroke-opacity=".82" stroke-width="4" stroke-linecap="round"/>
+  <path d="M48 18 67 29v22L48 62 29 51V29Z" fill="url(#ocShell)" stroke="url(#ocCoreGlow)" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="M48 27 59 33.4v13.2L48 53 37 46.6V33.4Z" fill="#07111d" stroke="#9eeaf0" stroke-opacity=".88" stroke-width="2.3" stroke-linejoin="round"/>
+  <path d="M48 33.5v13" stroke="#eafcff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M42.8 38.5 48 33.5l5.2 5" fill="none" stroke="#eafcff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M39.5 58.5 48 52.8l8.5 5.7" fill="none" stroke="#d6b16f" stroke-opacity=".95" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M30 55.5 23.5 63" fill="none" stroke="#7adce1" stroke-opacity=".86" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M66 55.5 72.5 63" fill="none" stroke="#7adce1" stroke-opacity=".86" stroke-width="3.4" stroke-linecap="round"/>
 </svg>"##
     )
 }
@@ -1984,12 +1995,35 @@ fn render_shell(
       box-shadow:inset -1px 0 0 rgba(255,255,255,.03);
       backdrop-filter:blur(20px);
     }}
+    .app-header::before {{
+      content:"";
+      position:absolute;
+      inset:18px 16px auto 16px;
+      height:1px;
+      background:linear-gradient(90deg, rgba(120,215,216,.22), rgba(120,215,216,0));
+      pointer-events:none;
+    }}
+    .app-header::after {{
+      content:"";
+      position:absolute;
+      right:-40px;
+      top:15%;
+      width:120px;
+      height:280px;
+      background:radial-gradient(circle, rgba(120,215,216,.08), transparent 72%);
+      filter:blur(26px);
+      pointer-events:none;
+    }}
     .app-brand {{ gap:14px; }}
     .app-brand-badge {{
       width:48px; height:48px; border-radius:16px;
       background:linear-gradient(145deg, rgba(120,215,216,.18), rgba(58,94,137,.16));
       border:1px solid rgba(120,215,216,.16);
       box-shadow:0 16px 32px rgba(0,0,0,.24);
+    }}
+    .app-brand:hover .app-brand-badge {{
+      border-color:rgba(120,215,216,.24);
+      box-shadow:0 18px 36px rgba(0,0,0,.3), 0 0 0 1px rgba(120,215,216,.08) inset;
     }}
     .brand-mark {{ width:28px; height:28px; }}
     .app-brand-name {{ color:#f3f9ff; font-size:17px; font-weight:800; }}
@@ -2007,13 +2041,35 @@ fn render_shell(
       min-height:46px; border-radius:14px; padding:0 16px;
       border:1px solid transparent; color:#90a7c6; background:transparent;
       transition:transform .16s ease, border-color .16s ease, background .16s ease, color .16s ease;
+      position:relative;
+      overflow:hidden;
+    }}
+    .nav-link::before {{
+      content:"";
+      position:absolute;
+      left:10px;
+      top:50%;
+      width:6px;
+      height:6px;
+      border-radius:999px;
+      background:rgba(125,148,178,.4);
+      transform:translateY(-50%);
+      transition:background .16s ease, box-shadow .16s ease;
     }}
     .nav-link:hover {{
       color:#ebf5ff; background:rgba(18,33,56,.72); border-color:rgba(136,174,214,.12); transform:translateX(2px);
     }}
+    .nav-link:hover::before {{
+      background:rgba(120,215,216,.8);
+      box-shadow:0 0 0 4px rgba(120,215,216,.08);
+    }}
     .nav-link.active {{
       color:#f3fcff; background:linear-gradient(135deg, rgba(25,46,73,.92), rgba(15,29,52,.92));
       border-color:rgba(120,215,216,.22); box-shadow:0 12px 24px rgba(0,0,0,.2);
+    }}
+    .nav-link.active::before {{
+      background:rgba(120,215,216,.96);
+      box-shadow:0 0 0 4px rgba(120,215,216,.12);
     }}
     .rail-stack {{ display:grid; gap:14px; margin-top:auto; }}
     .rail-panel {{
@@ -2037,11 +2093,20 @@ fn render_shell(
       background:radial-gradient(circle at top right, rgba(120,215,216,.12), transparent 34%);
       pointer-events:none;
     }}
+    .page-header::after {{
+      content:"";
+      position:absolute;
+      inset:auto 36px 0 36px;
+      height:1px;
+      background:linear-gradient(90deg, rgba(120,215,216,.34), rgba(120,215,216,0));
+      opacity:.75;
+    }}
     .hero-grid {{ position:relative; display:grid; grid-template-columns:minmax(0,1.45fr) minmax(260px,.7fr); gap:22px; align-items:end; }}
     .page-eyebrow {{ margin-bottom:12px; color:#98badd; }}
     .page-title {{
       max-width:9ch; margin-bottom:14px; color:#f5fbff; font-size:clamp(2.5rem,4.8vw,4.7rem);
       line-height:1.02; letter-spacing:-.07em; font-weight:900; text-wrap:balance;
+      text-shadow:0 10px 32px rgba(0,0,0,.24);
     }}
     .page-sub, .muted {{ max-width:760px; color:var(--muted); line-height:1.8; }}
     .hero-meta {{ display:grid; gap:10px; justify-items:end; }}
@@ -2128,8 +2193,34 @@ fn render_shell(
     .hero-card .header-actions .btn {{
       width:100%;
       min-height:46px;
-      justify-content:flex-start;
+      justify-content:space-between;
       padding:0 18px;
+      border-radius:18px;
+      background:linear-gradient(180deg, rgba(12,26,44,.9), rgba(9,18,31,.84));
+      border-color:rgba(136,174,214,.14);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+      position:relative;
+      overflow:hidden;
+    }}
+    .hero-card .header-actions .btn::after {{
+      content:"";
+      width:18px;
+      height:18px;
+      border-radius:999px;
+      background:radial-gradient(circle, rgba(120,215,216,.8), rgba(120,215,216,0));
+      opacity:.5;
+      flex:0 0 auto;
+    }}
+    .hero-card .header-actions .btn.primary {{
+      background:linear-gradient(135deg, rgba(17,69,84,.9), rgba(12,38,54,.84));
+    }}
+    .hero-card .header-actions .btn.secondary {{
+      background:linear-gradient(135deg, rgba(37,42,98,.72), rgba(17,25,60,.82));
+    }}
+    .hero-card .header-actions .btn:hover {{
+      transform:translateY(-1px);
+      border-color:rgba(120,215,216,.26);
+      box-shadow:0 18px 30px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.04);
     }}
     .status-summary-strip {{ margin-bottom:14px; }}
     .status-stats-grid {{ margin:0 0 14px; }}
@@ -2240,10 +2331,41 @@ fn render_shell(
     .pill-inline, .pid-chip, .pill, .service-state {{
       background:rgba(13,29,50,.84); border:1px solid rgba(136,174,214,.14); color:#d5e7fa;
     }}
-    .service-badge.is-online {{ border-color:rgba(74,222,128,.22); }}
-    .service-badge.is-offline {{ border-color:rgba(251,113,133,.18); }}
+    .service-badge {{
+      background:linear-gradient(180deg, rgba(9,18,31,.92), rgba(6,12,22,.88));
+    }}
+    .service-badge.is-online {{
+      border-color:rgba(74,222,128,.22);
+      background:linear-gradient(180deg, rgba(10,28,24,.9), rgba(7,16,18,.88));
+      box-shadow:0 14px 30px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.02);
+    }}
+    .service-badge.is-offline {{
+      border-color:rgba(251,113,133,.18);
+      background:linear-gradient(180deg, rgba(34,13,20,.88), rgba(14,10,16,.88));
+      box-shadow:0 14px 30px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.02);
+    }}
     .service-badge.is-online .svc-dot {{ background:var(--good); box-shadow:0 0 0 3px rgba(74,222,128,.16); }}
     .service-badge.is-offline .svc-dot {{ background:var(--danger); }}
+    .service-badge.is-online .service-state {{
+      color:#baf3cb;
+      background:rgba(13,39,29,.9);
+      border-color:rgba(74,222,128,.18);
+    }}
+    .service-badge.is-offline .service-state {{
+      color:#ffc5cf;
+      background:rgba(53,18,28,.9);
+      border-color:rgba(251,113,133,.16);
+    }}
+    .service-badge.is-online .service-meta {{
+      color:#a8d8b8;
+      background:rgba(12,37,28,.62);
+      border-color:rgba(74,222,128,.14);
+    }}
+    .service-badge.is-offline .service-meta {{
+      color:#dcb0bb;
+      background:rgba(43,18,24,.62);
+      border-color:rgba(251,113,133,.12);
+    }}
     .token-val, .cmd-input, .field input, .field select, .ghost-field {{
       border:1px solid rgba(136,174,214,.14); background:rgba(6,13,23,.78); color:#edf4ff;
       font-family:"MiSans","HarmonyOS Sans SC","Noto Sans SC","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
@@ -2265,6 +2387,7 @@ fn render_shell(
       .hero-grid, .two-col, .three-up, .split-grid, .status-panel, .ops-layout, .brief-grid, .resource-grid, .config-overview {{ grid-template-columns:1fr; }}
       .hero-meta {{ justify-items:start; }}
       .page-title {{ max-width:unset; }}
+      .rail-stack {{ grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }}
     }}
     @media (max-width:760px) {{
       .console-main {{ padding:16px 14px 34px; }}
@@ -2275,6 +2398,171 @@ fn render_shell(
       .hero-card .header-actions {{ grid-template-columns:1fr; min-width:0; width:100%; }}
       .btn {{ width:100%; }}
       .header-actions .btn {{ width:auto; }}
+    }}
+    @media (max-width:560px) {{
+      .app-header {{
+        padding:14px 12px 16px;
+        gap:14px;
+      }}
+      .app-brand {{
+        gap:10px;
+      }}
+      .app-brand-badge {{
+        width:42px;
+        height:42px;
+        border-radius:14px;
+      }}
+      .brand-mark {{
+        width:24px;
+        height:24px;
+      }}
+      .app-brand-name {{
+        font-size:15px;
+      }}
+      .app-brand-sub {{
+        font-size:10px;
+        letter-spacing:.12em;
+      }}
+      .app-meta {{
+        gap:8px;
+      }}
+      .version-chip,
+      .meta-chip {{
+        min-height:28px;
+        padding:0 10px;
+        font-size:10px;
+      }}
+      .app-nav {{
+        gap:6px;
+      }}
+      .nav-link {{
+        min-height:40px;
+        padding:0 12px 0 24px;
+        font-size:13px;
+        border-radius:12px;
+      }}
+      .nav-link::before {{
+        left:9px;
+        width:5px;
+        height:5px;
+      }}
+      .rail-stack {{
+        grid-template-columns:1fr;
+        gap:10px;
+      }}
+      .rail-panel {{
+        padding:14px;
+        border-radius:18px;
+      }}
+      .rail-value {{
+        font-size:15px;
+      }}
+      .console-main {{
+        padding:12px 10px 28px;
+      }}
+      .page-header {{
+        padding:20px 16px 18px;
+        border-radius:22px;
+      }}
+      .page-header::after {{
+        inset:auto 16px 0 16px;
+      }}
+      .page-eyebrow {{
+        margin-bottom:10px;
+        letter-spacing:.14em;
+      }}
+      .page-title {{
+        font-size:clamp(2rem, 12vw, 3.2rem);
+        line-height:1.02;
+        margin-bottom:10px;
+      }}
+      .page-sub,
+      .muted {{
+        font-size:13px;
+        line-height:1.7;
+      }}
+      .hero-meta {{
+        width:100%;
+        gap:8px;
+      }}
+      .hero-chip {{
+        width:100%;
+        justify-content:space-between;
+        min-height:34px;
+        padding:0 12px;
+        font-size:11px;
+      }}
+      .card,
+      .panel-left,
+      .panel-right,
+      .ops-panel {{
+        padding:16px;
+        border-radius:18px;
+      }}
+      .hero-card {{
+        padding:18px 16px;
+      }}
+      .hero-card > .card-head {{
+        padding-bottom:14px;
+        margin-bottom:16px;
+      }}
+      .hero-card .header-actions .btn {{
+        min-height:42px;
+        border-radius:16px;
+        padding:0 14px;
+      }}
+      .summary-strip-card,
+      .stat-card,
+      .resource-card,
+      .service-badge,
+      .note-box,
+      .token-section {{
+        border-radius:16px;
+      }}
+      .summary-strip-value,
+      .stat-value,
+      .resource-value {{
+        font-size:18px;
+      }}
+      .ops-header {{
+        gap:12px;
+      }}
+      .command-block {{
+        padding:14px;
+        border-radius:16px;
+      }}
+      .doc-link-list a {{
+        padding:11px 12px;
+        border-radius:14px;
+      }}
+      .service-meta,
+      .service-state,
+      .pill-inline,
+      .pid-chip,
+      .pill {{
+        min-height:24px;
+        padding:0 9px;
+        font-size:10px;
+      }}
+      .field input,
+      .field select,
+      .cmd-input,
+      .ghost-field,
+      .token-val {{
+        min-height:40px;
+        padding:0 12px;
+        border-radius:12px;
+      }}
+      .toggle-row,
+      .field-inline {{
+        padding:12px 14px;
+      }}
+      .mini-tip {{
+        font-size:11px;
+      }}
+      .header-actions .btn {{
+        width:100%;
+      }}
     }}
   </style>
 </head>
