@@ -72,7 +72,7 @@ async fn main() {
     let gateway_internal_port = env::var("GATEWAY_INTERNAL_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(18790);
+        .unwrap_or(18789);
     let https_port = env::var("HTTPS_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
@@ -82,7 +82,7 @@ async fn main() {
         .unwrap_or(true);
     let enable_https = env::var("ENABLE_HTTPS_PROXY")
         .map(|value| value == "true")
-        .unwrap_or(true);
+        .unwrap_or(false);
 
     let state = AppState {
         client: Client::builder()

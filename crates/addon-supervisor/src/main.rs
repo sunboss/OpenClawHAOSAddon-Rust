@@ -75,7 +75,7 @@ struct HaosEntryArgs {
     backup_dir: PathBuf,
     #[arg(long, default_value = "/etc/nginx/html")]
     nginx_html_dir: PathBuf,
-    #[arg(long, default_value_t = 18790)]
+    #[arg(long, default_value_t = 18789)]
     gateway_internal_port: u16,
     #[arg(long, default_value_t = 48100)]
     action_server_port: u16,
@@ -503,7 +503,7 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
                 "false"
             },
         );
-        env::set_var("ENABLE_HTTPS_PROXY", "true");
+        env::set_var("ENABLE_HTTPS_PROXY", "false");
         env::set_var("HTTPS_PROXY_PORT", settings.https_port.to_string());
         env::set_var(
             "GATEWAY_INTERNAL_PORT",
@@ -536,7 +536,7 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
             "apply-gateway-settings",
             &settings.gateway_mode,
             &settings.gateway_remote_url,
-            "loopback",
+            "lan",
             &args.gateway_internal_port.to_string(),
             if settings.enable_openai_api {
                 "true"
@@ -584,16 +584,24 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
 
 fn build_control_ui_allowed_origins(settings: &RuntimeSettings) -> Vec<String> {
     let mut origins = Vec::<String>::new();
-    let https_port = settings.https_port;
+    let gateway_port = settings.https_port;
+    let scheme = if env::var("ENABLE_HTTPS_PROXY")
+        .map(|value| value == "true")
+        .unwrap_or(false)
+    {
+        "https"
+    } else {
+        "http"
+    };
 
     if settings.access_mode == "lan_https" {
         for ip in detect_lan_ips() {
-            origins.push(format!("https://{ip}:{https_port}"));
+            origins.push(format!("{scheme}://{ip}:{gateway_port}"));
         }
-        origins.push(format!("https://localhost:{https_port}"));
-        origins.push(format!("https://127.0.0.1:{https_port}"));
-        origins.push(format!("https://homeassistant.local:{https_port}"));
-        origins.push(format!("https://homeassistant:{https_port}"));
+        origins.push(format!("{scheme}://localhost:{gateway_port}"));
+        origins.push(format!("{scheme}://127.0.0.1:{gateway_port}"));
+        origins.push(format!("{scheme}://homeassistant.local:{gateway_port}"));
+        origins.push(format!("{scheme}://homeassistant:{gateway_port}"));
     }
 
     if !settings.gateway_public_url.trim().is_empty()
@@ -1370,9 +1378,8 @@ fn should_suppress_startup_doctor_line(
             | "Semantic recall needs at least one embedding provider."
             | "systemd user services are unavailable; install/enable systemd or run the gateway under your supervisor."
             | "If you're in a container, run the gateway in the foreground instead of `openclaw gateway`."
-            | "Port 18790 is already in use."
             | "Gateway already running locally. Stop it (openclaw gateway stop) or use a different port."
-    )
+    ) || (trimmed.starts_with("Port ") && trimmed.ends_with(" is already in use."))
 }
 
 fn is_startup_doctor_health_detail_line(line: &str) -> bool {
@@ -1533,8 +1540,8 @@ mod tests {
         let origins = build_control_ui_allowed_origins(&settings);
 
         assert!(origins.contains(&"https://gateway.example.com".to_string()));
-        assert!(origins.contains(&"https://homeassistant.local:9443".to_string()));
-        assert!(origins.contains(&"https://homeassistant:9443".to_string()));
+        assert!(origins.contains(&"http://homeassistant.local:9443".to_string()));
+        assert!(origins.contains(&"http://homeassistant:9443".to_string()));
 
         let unique_count = origins.iter().collect::<HashSet<_>>().len();
         assert_eq!(origins.len(), unique_count);
@@ -1572,7 +1579,7 @@ mod tests {
         ));
         assert!(suppress_health_details);
         assert!(should_suppress_startup_doctor_line(
-            "Gateway target: ws://127.0.0.1:18790",
+            "Gateway target: ws://127.0.0.1:18789",
             &mut suppress_health_details,
             &mut suppressed_section
         ));
@@ -1609,7 +1616,7 @@ mod tests {
             "Semantic recall needs at least one embedding provider.",
             "systemd user services are unavailable; install/enable systemd or run the gateway under your supervisor.",
             "If you're in a container, run the gateway in the foreground instead of `openclaw gateway`.",
-            "Port 18790 is already in use.",
+            "Port 18789 is already in use.",
             "Gateway already running locally. Stop it (openclaw gateway stop) or use a different port.",
         ] {
             assert!(should_suppress_startup_doctor_line(
@@ -1631,7 +1638,7 @@ mod tests {
             &mut suppressed_section
         ));
         assert!(should_suppress_startup_doctor_line(
-            "│  Port 18790 is already in use.",
+            "│  Port 18789 is already in use.",
             &mut suppress_health_details,
             &mut suppressed_section
         ));
@@ -1662,7 +1669,7 @@ mod tests {
             cert_dir: root.join("certs"),
             backup_dir: root.join("backup"),
             nginx_html_dir: root.join("html"),
-            gateway_internal_port: 18790,
+            gateway_internal_port: 18789,
             action_server_port: 48100,
             ui_port: 48101,
             gateway_bin: "openclaw".to_string(),
@@ -1720,7 +1727,7 @@ mod tests {
             cert_dir: root.join("certs"),
             backup_dir: root.join("backup"),
             nginx_html_dir: root.join("html"),
-            gateway_internal_port: 18790,
+            gateway_internal_port: 18789,
             action_server_port: 48100,
             ui_port: 48101,
             gateway_bin: "openclaw".to_string(),

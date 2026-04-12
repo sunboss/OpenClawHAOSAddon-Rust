@@ -2,6 +2,49 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 14:45 Asia/Shanghai - Restore native gateway access on official port 18789
+
+- User request: simplify the add-on further and make gateway access match upstream native behavior as closely as possible.
+- Intent / context:
+  - the user explicitly questioned whether internal port `18790` was official and asked what else could be simplified toward a native upstream layout
+  - official docs show the native gateway/dashboard flow centered on port `18789`, not a custom internal `18790` plus external wrapper
+  - after reviewing the current Rust add-on architecture, the user chose the path where upstream gateway should reclaim `18789` directly
+- Official sources checked:
+  - `https://docs.openclaw.ai/gateway`
+  - `https://docs.openclaw.ai/gateway/configuration-reference`
+  - `https://docs.openclaw.ai/web`
+- Files changed:
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/actiond/src/main.rs`
+  - `crates/haos-ui/src/gateway_ws.rs`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - change the default managed gateway port from `18790` back to `18789`
+  - stop enabling the add-on HTTPS wrapper on `18789` by default
+  - switch gateway bind mode from `loopback` back to upstream-style `lan`
+  - make HA UI native-gateway links default to `http://<host>:18789/`
+  - update internal websocket helpers and readiness probes to use the same restored native port
+  - make doctor noise suppression and tests port-agnostic or align them to `18789`
+- Commands / validation:
+  - `cargo test -p addon-supervisor -p actiond -p haos-ui -p ingressd`
+- Version:
+  - target version `2026.04.12.3`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - the add-on now defaults much closer to upstream native access, with gateway directly reclaiming `18789`
+  - `ingressd` remains for HA ingress and terminal hosting, but no longer needs to be the default external gateway facade on `18789`
+- Next handoff:
+  - after push and HA rebuild, verify that the dashboard opens via `http://<ha-ip>:18789/`
+  - confirm logs no longer refer to the old internal `18790` path during normal startup
+
 ## 2026-04-12 10:45 Asia/Shanghai - Align HAOS terminal UX with official TUI local-shell model
 
 - User request: review the official TUI docs, especially local shell commands, then continue.

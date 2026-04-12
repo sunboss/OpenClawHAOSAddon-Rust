@@ -1,3 +1,9 @@
+## 2026.04.12.3
+
+- 架构：把默认网关访问重新收敛到官方原生 `http://<host>:18789/`
+- 简化：默认不再让 `ingressd` 占用 `18789` 做 HTTPS 包装，外部访问改为由 upstream Gateway 直接提供
+- 对齐：内部 WebSocket / 就绪探针默认端口从 `18790` 收回到 `18789`
+
 ## 2026.04.12.2
 
 - UI：把 HA 面板里的 CLI/终端说明对齐到官方 TUI 文档，明确 `OpenClaw CLI = openclaw tui`

@@ -1,7 +1,7 @@
 /// 通过 WebSocket webchat 协议与 openclaw gateway 通信。
 ///
 /// 协议流程（逆向自 openclaw webchat dist；客户端版本默认跟随 OPENCLAW_VERSION）：
-///   1. 建立 ws://127.0.0.1:18790 连接（id="cli" + mode="cli"，不带 Origin 头）
+///   1. 建立 ws://127.0.0.1:$GATEWAY_INTERNAL_PORT 连接（id="cli" + mode="cli"，不带 Origin 头）
 ///   2. 服务端推送 { type:"event", event:"connect.challenge", payload:{nonce:"..."} }
 ///   3. 客户端用本地 Ed25519 私钥对 payload 签名，发送 connect 请求
 ///   4. gateway 判断为 cli_container_local → silent auto-approve（无需手动配对）
@@ -30,6 +30,14 @@ const IDENTITY_PATH: &str = "/config/.openclaw/haos-ui-identity.json";
 
 fn ws_client_version() -> String {
     env::var("OPENCLAW_VERSION").unwrap_or_else(|_| "2026.4.11".to_string())
+}
+
+fn gateway_ws_url() -> String {
+    let port = env::var("GATEWAY_INTERNAL_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(18789);
+    format!("ws://127.0.0.1:{port}")
 }
 
 #[derive(Debug)]
@@ -157,7 +165,7 @@ async fn call_gateway(token: &str, method: &str, params: Value) -> Result<Value,
 async fn call_gateway_inner(token: &str, method: &str, params: Value) -> Result<Value, String> {
     let identity = load_or_create_identity()?;
 
-    let (mut ws, _) = connect_async("ws://127.0.0.1:18790")
+    let (mut ws, _) = connect_async(gateway_ws_url())
         .await
         .map_err(|e| format!("ws connect failed: {e}"))?;
 

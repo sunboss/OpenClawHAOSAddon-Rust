@@ -2296,7 +2296,7 @@ fn render_shell(
     }}
     function nativeGatewayUrl() {{
       if (configuredGatewayUrl && configuredGatewayUrl.trim() !== "") return configuredGatewayUrl;
-      return `https://${{location.hostname}}:${{httpsPort}}/`;
+      return `http://${{location.hostname}}:${{httpsPort}}/`;
     }}
     function withTokenHash(url, token) {{
       if (!url || !token) return url;
@@ -2698,7 +2698,7 @@ fn gateway_internal_port_from_env() -> u16 {
     env::var("GATEWAY_INTERNAL_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(18790)
+        .unwrap_or(18789)
 }
 
 fn browser_control_port_from_gateway_port(gateway_port: u16) -> u16 {
@@ -3351,7 +3351,7 @@ mod tests {
 
     #[test]
     fn browser_control_port_tracks_gateway_port() {
-        assert_eq!(18792, browser_control_port_from_gateway_port(18790));
+        assert_eq!(18791, browser_control_port_from_gateway_port(18789));
     }
 
     #[test]
