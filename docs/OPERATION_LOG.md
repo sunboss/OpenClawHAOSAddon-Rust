@@ -2,6 +2,43 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 23:59 Asia/Shanghai - Restore lightweight embedded terminal on top of the slimmer UI
+
+- User request:
+  - keep a terminal after all
+  - stay aligned with the latest official OpenClaw docs
+  - keep the home page resource collection and status display
+- Official direction followed:
+  - terminal should center on native `openclaw tui`
+  - keep the terminal path lighter than the older embedded-shell implementation
+  - do not restore the removed pairing websocket/control-ui sidecar logic
+- Outcome:
+  - restored a lightweight embedded terminal entry
+  - terminal now launches native `openclaw tui` again
+  - config / commands / logs pages can open the TUI and send official `!command` style maintenance commands
+  - home page status and resource panels remain intact
+- Files changed:
+  - `Cargo.lock`
+  - `Dockerfile`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/Cargo.toml`
+  - `crates/ingressd/src/main.rs`
+- Implementation:
+  - restore terminal routes and PTY handling in `ingressd`
+  - launch `openclaw tui` in the PTY by default
+  - restore xterm assets in the image
+  - re-add `OpenClaw CLI` entry points in the HA UI without bringing back the older heavy local control chain
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - bump add-on version to `2026.04.12.13`
+- Next handoff:
+  - after push, verify that the restored terminal opens directly into native TUI
+  - verify that config / commands / logs buttons pass commands through as intended
+
 ## 2026-04-12 23:59 Asia/Shanghai - Improve onboarding guidance, access-mode copy, and first-run path
 
 - User request:
