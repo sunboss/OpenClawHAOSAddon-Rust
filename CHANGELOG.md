@@ -1,3 +1,7 @@
+## 2026.04.12.5
+
+- 修复：在镜像构建阶段补装 `@azure/identity` 和 `jwks-rsa`，避免 `msteams` 相关 bundled plugin 依赖在 `doctor --fix` 和启动日志里反复报缺失
+
 ## 2026.04.12.4
 
 - 修复：恢复远程浏览器访问所需的 HTTPS secure context，避免 Control UI 因 `device identity` 要求拒绝 `http://<lan-ip>:18789`

@@ -2,6 +2,44 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 16:05 Asia/Shanghai - Preinstall missing msteams bundled-plugin deps in image
+
+- User request: continue with item `1` from the previous split, meaning handle the bundled plugin dependency problem rather than Bonjour.
+- Intent / context:
+  - after HTTPS access was repaired, the remaining repeated startup/doctor issue was:
+    - `Bundled plugin runtime deps are missing`
+    - `@azure/identity@^4.9.1`
+    - `jwks-rsa@^4.0.1`
+  - Dockerfile review showed that the image already preinstalled a large bundled-plugin dependency set, but those two packages were missing from the preinstall list
+  - official docs indicate `msteams` is plugin-oriented and optional, but the packaged runtime still surfaces these dependency checks in `doctor`
+- Official sources checked:
+  - `https://docs.openclaw.ai/plugins`
+  - `https://docs.openclaw.ai/providers/msteams`
+  - `https://docs.openclaw.ai/cli/doctor`
+- Files changed:
+  - `Dockerfile`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - add `@azure/identity@^4.9.1` to the bundled dependency preinstall step
+  - add `jwks-rsa@^4.0.1` to the bundled dependency preinstall step
+  - keep the fix surgical instead of adding a new runtime service or doctor suppression
+- Commands / validation:
+  - image rebuild required in HAOS to validate at runtime
+- Version:
+  - target version `2026.04.12.5`
+- Commit:
+  - pending
+- Push:
+  - pending
+- Result summary:
+  - rebuilt add-on images should stop reporting the missing `msteams` bundled runtime deps during startup doctor runs
+- Next handoff:
+  - push this version
+  - rebuild/update the add-on in HAOS
+  - confirm the bundled plugin dependency warning no longer appears
+
 ## 2026-04-12 15:20 Asia/Shanghai - Restore HTTPS secure-context access after native-HTTP regression
 
 - User request: after testing the latest build, fix the broken LAN browser access path that now fails with `control ui requires device identity (use HTTPS or localhost secure context)`.

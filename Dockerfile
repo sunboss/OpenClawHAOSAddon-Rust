@@ -55,6 +55,7 @@ RUN cd /usr/local/lib/node_modules/openclaw \
       "@aws-sdk/client-s3@3.1024.0" \
       "@aws-sdk/s3-request-presigner@3.1024.0" \
       "@aws/bedrock-token-generator@^1.1.0" \
+      "@azure/identity@^4.9.1" \
       "@buape/carbon@0.14.0" \
       "@clawdbot/lobster@2026.1.24" \
       "@discordjs/opus@^0.10.0" \
@@ -93,6 +94,7 @@ RUN cd /usr/local/lib/node_modules/openclaw \
       "fake-indexeddb@^6.2.5" \
       "grammy@^1.42.0" \
       "jimp@^1.6.0" \
+      "jwks-rsa@^4.0.1" \
       "mpg123-decoder@^1.0.3" \
       "music-metadata@^11.12.3" \
       "nostr-tools@^2.23.3" \
