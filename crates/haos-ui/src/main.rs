@@ -2068,6 +2068,78 @@ fn logs_content() -> String {
     )
 }
 
+fn force_chinese_ui(mut html: String) -> String {
+    let replacements = [
+        ("OpenClaw 路 ", "OpenClaw - "),
+        ("棣栭〉", "首页"),
+        ("鍩虹閰嶇疆", "基础配置"),
+        ("鍛戒护琛?", "命令行"),
+        ("鏃ュ織", "日志"),
+        ("涓嶅彲鐢?", "不可用"),
+        ("鍛戒护琛屽伐浣滃尯", "命令工作区"),
+        ("閰嶇疆涓績", "配置中心"),
+        ("Web Search銆丮emory Search 涓庢ā鍨嬮€夋嫨", "Web Search、Memory Search 与模型选择"),
+        ("杩愯鐘舵€佹€昏", "运行状态总览"),
+        (
+            "鏌ョ湅 OpenClaw 褰撳墠鏄惁姝ｅ父杩愯銆佸悇鏈嶅姟杩涚▼鐘舵€侊紝浠ュ強绯荤粺璧勬簮鍗犵敤鎯呭喌銆?",
+            "查看 OpenClaw 当前是否正常运行、各项服务进程状态，以及系统资源占用情况。",
+        ),
+        ("杩愯姝ｅ父", "运行正常"),
+        ("鍋ュ悍妫€鏌ラ€氳繃", "健康检查通过"),
+        ("鍝嶅簲寮傚父", "响应异常"),
+        ("鍋ュ悍妫€鏌ユ湭閫氳繃锛岃鏌ョ湅鏃ュ織", "健康检查未通过，请查看日志"),
+        ("鍏抽敭杩涚▼鍏ㄩ儴鍦ㄧ嚎", "关键进程全部在线"),
+        ("閮ㄥ垎鍦ㄧ嚎", "部分在线"),
+        ("寤鸿鏌ョ湅鍛戒护琛屽拰鏃ュ織椤?", "建议查看命令行和日志页"),
+        ("寰呮鏌?", "待检查"),
+        ("鍏抽敭杩涚▼鏁伴噺涓嶈冻", "关键进程数量不足"),
+        ("杩涚▼闈㈡澘", "进程面板"),
+        ("鏈嶅姟涓?PID", "服务与 PID"),
+        ("鍦ㄧ嚎", "在线"),
+        ("寰呭惎鍔?", "未启动"),
+        ("鏈娴嬪埌 PID", "未检测到 PID"),
+        ("鍦ㄧ嚎杩涚▼", "在线进程"),
+        ("Gateway銆両ngress銆乁I銆丄ction", "Gateway、Ingress、UI"),
+        ("鍘熺敓缃戝叧榛樿鐩戝惉绔彛", "原生网关默认监听端口"),
+        ("鎵撳紑缃戝叧", "打开网关"),
+        ("杩涘叆鍛戒护琛?", "进入命令行"),
+        ("璁块棶妯″紡", "访问模式"),
+        ("缃戝叧妯″紡", "网关模式"),
+        ("Add-on 鐗堟湰", "Add-on 版本"),
+        ("OpenClaw 鐗堟湰", "OpenClaw 版本"),
+        ("AI 妯″瀷", "AI 模型"),
+        ("鐢ㄤ簬鐩存帴璁块棶 OpenClaw API锛岃鍕挎硠闇?", "用于直接访问 OpenClaw API，请勿泄露。"),
+        ("缁堢宸ヤ綔鍖?", "终端工作区"),
+        ("宸ヤ綔鍖虹粓绔?", "工作区终端"),
+        ("缁堢鎸夐渶鍔犺浇", "终端按需加载"),
+        ("閸樼喓鏁撻崗銉ュ經", "原生入口"),
+        ("閻樿埖鈧椒绗岄崑銉ユ倣", "状态与探针"),
+        ("鐠佹儳顦稉搴ㄥ帳鐎?", "设备配对"),
+        ("缂佸瓨濮㈡稉搴☆吀鐠?", "维护与诊断"),
+        ("閺冦儱绻斿ù渚婄礄閺傛壆鐛ラ崣锝忕礆", "日志与跟踪"),
+        ("閸旂姾娴囩紒鍫㈩伂", "加载终端"),
+        ("閸忔娊妫寸紒鍫㈩伂", "关闭终端"),
+        ("閸嬨儱鎮嶅Λ鈧弻?", "健康检查"),
+        ("鏉╂劘顢戦悩鑸碘偓?", "运行状态"),
+        ("閺堫剙婀存帰閽?", "本地探针"),
+        ("鐠佹儳顦崚妤勩€?", "查看设备"),
+        ("閹电懓鍣張鈧弬浼村帳鐎?", "批准最新配对"),
+        ("鏉╂劘顢?doctor", "运行 doctor"),
+        ("鐎瑰鍙忕€孤ゎ吀", "安全审计"),
+        ("鐠佹澘绻傞悩鑸碘偓?", "记忆状态"),
+        ("閺堫剚婧€閻楀牊婀?", "版本信息"),
+        ("鐠虹喖娈㈤弮銉ョ箶", "跟随日志"),
+        ("缂冩垵鍙伴弮銉ョ箶", "网关日志"),
+        ("鏃ュ織涓庤瘖鏂?", "日志与诊断"),
+        ("OpenClawHAOSAddon-Rust", "OpenClaw HAOS 面板"),
+    ];
+
+    for (from, to) in replacements {
+        html = html.replace(from, to);
+    }
+    html
+}
+
 fn render_shell(
     config: &PageConfig,
     page: NavPage,
@@ -2081,7 +2153,7 @@ fn render_shell(
     let nav_logs = nav_link(page, NavPage::Logs, "./logs", "日志");
     let gateway_url = js_string(&config.gateway_url);
 
-    Html(format!(
+    Html(force_chinese_ui(format!(
         r#"<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -2751,7 +2823,7 @@ fn render_shell(
         content = content,
         gateway_url = gateway_url,
         https_port = config.https_port,
-    ))
+    )))
 }
 
 // ─── 配对轮询后台任务 ────────────────────────────────────────────────────────
@@ -3241,7 +3313,7 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
     .await
     .unwrap_or_else(|_| "-".to_string());
 
-    Html(format!(
+    Html(force_chinese_ui(format!(
         r#"<div class="eyebrow">运行摘要</div>
 <h2>服务状态</h2>
 <div class="kv-list">
@@ -3256,13 +3328,13 @@ async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
         addon = kv_row("Add-on 版本", &config.addon_version),
         openclaw = kv_row("OpenClaw 版本", &config.openclaw_version),
         gateway_pid = kv_row("Gateway PID", &display_gateway_pid),
-    ))
+    )))
 }
 
 async fn diag_partial(State(state): State<AppState>) -> impl IntoResponse {
     let _ = state;
     let config = PageConfig::from_env();
-    Html(format!(
+    Html(force_chinese_ui(format!(
         r#"<div class="eyebrow">能力摘要</div>
 <h2>快速诊断</h2>
 <div class="kv-list">
@@ -3275,7 +3347,7 @@ async fn diag_partial(State(state): State<AppState>) -> impl IntoResponse {
         web = kv_row("Web Search", display_value(&config.web_status)),
         memory = kv_row("Memory Search", display_value(&config.memory_status)),
         https = kv_row("HTTPS 端口", &config.https_port),
-    ))
+    )))
 }
 
 #[tokio::main]

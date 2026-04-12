@@ -2,6 +2,23 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 21:05 Asia/Shanghai - Force visible HA UI text back to Chinese
+
+- User request: some pages had been rendered as garbled/Korean-looking text and needed to be forced back to Chinese.
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `docs/OPERATION_LOG.md`
+- Implementation:
+  - add an output-layer Chinese normalization pass for the rendered HA UI HTML
+  - normalize the most visible navigation, home, commands, logs, and status-panel strings back to Chinese
+  - also apply the same normalization to health and diagnostics partials
+- Commands / validation:
+  - `cargo test -p haos-ui`
+- Version:
+  - bump add-on version to `2026.04.12.8`
+
 ## 2026-04-12 20:30 Asia/Shanghai - Slim the HA commands page toward native OpenClaw
 
 - User request: continue simplifying what can still be reduced after removing `actiond`.
