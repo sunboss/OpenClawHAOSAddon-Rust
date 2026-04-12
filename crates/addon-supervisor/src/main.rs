@@ -27,10 +27,6 @@ struct Cli {
 enum Commands {
     Plan,
     HaosEntry(HaosEntryArgs),
-    RenderNginx {
-        #[arg(long, default_value = "/etc/nginx/nginx.conf")]
-        output: PathBuf,
-    },
     RunServices {
         #[arg(long, default_value = "openclaw")]
         gateway_bin: String,
@@ -71,8 +67,8 @@ struct HaosEntryArgs {
     cert_dir: PathBuf,
     #[arg(long, default_value = "/share/openclaw-backup/latest")]
     backup_dir: PathBuf,
-    #[arg(long, default_value = "/etc/nginx/html")]
-    nginx_html_dir: PathBuf,
+    #[arg(long, default_value = "/run/openclaw-rs/public")]
+    public_share_dir: PathBuf,
     #[arg(long, default_value_t = 18790)]
     gateway_internal_port: u16,
     #[arg(long, default_value_t = 48101)]
@@ -81,14 +77,10 @@ struct HaosEntryArgs {
     gateway_bin: String,
     #[arg(long, default_value = "oc-config")]
     oc_config_bin: String,
-    #[arg(long, default_value = "mcporter")]
-    mcporter_bin: String,
     #[arg(long, default_value = "haos-ui")]
     ui_bin: String,
     #[arg(long, default_value = "ingressd")]
     ingress_bin: String,
-    #[arg(long, default_value = "/etc/nginx/nginx.conf")]
-    nginx_conf: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -131,12 +123,10 @@ fn main() -> ExitCode {
         Some(Commands::Plan) => {
             println!("Planned Rust replacements:");
             println!("- shell bootstrap in run.sh");
-            println!("- nginx render pipeline");
-            println!("- process supervision for openclaw, ttyd, nginx, and UI services");
+            println!("- process supervision for openclaw, ingress, and UI services");
             ExitCode::SUCCESS
         }
         Some(Commands::HaosEntry(args)) => haos_entry(args),
-        Some(Commands::RenderNginx { output }) => render_nginx(output),
         Some(Commands::RunServices {
             gateway_bin,
             ui_bin,
@@ -205,32 +195,13 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let mut mcp_status = "disabled".to_string();
     if settings.auto_configure_mcp && !settings.homeassistant_token.is_empty() {
-        if configure_home_assistant_mcp(&args, &settings.homeassistant_token) {
-            mcp_status = "HA configured".to_string();
-        } else {
-            mcp_status = "HA config failed".to_string();
-        }
+        let _ = configure_home_assistant_mcp(&args, &settings.homeassistant_token);
     }
-
-    let web_provider = run_capture(&args.oc_config_bin, &["get", "tools.web.search.provider"])
-        .unwrap_or_else(|| "disabled".to_string());
-    let memory_provider = run_capture(
-        &args.oc_config_bin,
-        &["get", "agents.defaults.memorySearch.provider"],
-    )
-    .unwrap_or_else(|| "disabled".to_string());
 
     let add_on_version = detect_addon_version();
     let openclaw_version = detect_openclaw_version(&args.gateway_bin);
-    apply_status_env(
-        &add_on_version,
-        &openclaw_version,
-        &mcp_status,
-        &web_provider,
-        &memory_provider,
-    );
+    apply_status_env(&add_on_version, &openclaw_version);
     backup_state(&args);
 
     run_services(
@@ -275,7 +246,7 @@ fn runtime_settings(options: &AddonOptions) -> RuntimeSettings {
         enable_openai_api: options.enable_openai_api.unwrap_or(true),
         auto_configure_mcp: options.auto_configure_mcp.unwrap_or(true),
         homeassistant_token: options.homeassistant_token.clone().unwrap_or_default(),
-        run_doctor_on_start: options.run_doctor_on_start.unwrap_or(true),
+        run_doctor_on_start: options.run_doctor_on_start.unwrap_or(false),
     }
 }
 
@@ -292,7 +263,7 @@ fn prepare_directories(args: &HaosEntryArgs) -> std::io::Result<()> {
         &args.mcporter_home_dir,
         &args.cert_dir,
         &args.backup_dir,
-        &args.nginx_html_dir,
+        &args.public_share_dir,
         &PathBuf::from("/var/tmp/openclaw-compile-cache"),
     ] {
         fs::create_dir_all(path)?;
@@ -467,16 +438,14 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("HAOS_PANEL_CONFIG_PATH", &args.panel_config_path);
         env::set_var("OPENCLAW_STATE_DIR", &args.openclaw_config_dir);
         env::set_var("OPENCLAW_WORKSPACE_DIR", &args.openclaw_workspace_dir);
-        env::set_var("OPENCLAW_RUNTIME_DIR", "/run/openclaw-rs");
         env::set_var("XDG_CONFIG_HOME", "/config");
         env::set_var("OPENCLAW_NO_RESPAWN", "1");
         env::set_var("NODE_COMPILE_CACHE", "/var/tmp/openclaw-compile-cache");
         env::set_var("MCPORTER_HOME_DIR", &args.mcporter_home_dir);
         env::set_var("MCPORTER_CONFIG", &args.mcporter_config);
-        env::set_var("BACKUP_DIR", &args.backup_dir);
-        env::set_var("CERT_DIR", &args.cert_dir);
-    env::set_var("UI_PORT", args.ui_port.to_string());
-    env::set_var("INGRESS_PORT", "48099");
+        env::set_var("PUBLIC_SHARE_DIR", &args.public_share_dir);
+        env::set_var("UI_PORT", args.ui_port.to_string());
+        env::set_var("INGRESS_PORT", "48099");
         env::set_var("ACCESS_MODE", &settings.access_mode);
         env::set_var("GATEWAY_MODE", &settings.gateway_mode);
         env::set_var("GW_PUBLIC_URL", &settings.gateway_public_url);
@@ -499,23 +468,13 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
             "GATEWAY_INTERNAL_PORT",
             args.gateway_internal_port.to_string(),
         );
-        env::set_var("NGINX_LOG_LEVEL", "minimal");
     }
 }
 
-fn apply_status_env(
-    add_on_version: &str,
-    openclaw_version: &str,
-    mcp_status: &str,
-    web_provider: &str,
-    memory_provider: &str,
-) {
+fn apply_status_env(add_on_version: &str, openclaw_version: &str) {
     unsafe {
         env::set_var("ADDON_VERSION", add_on_version);
         env::set_var("OPENCLAW_VERSION", openclaw_version);
-        env::set_var("MCP_STATUS", mcp_status);
-        env::set_var("WEB_SEARCH_PROVIDER", web_provider);
-        env::set_var("MEMORY_SEARCH_PROVIDER", memory_provider);
     }
 }
 
@@ -659,7 +618,7 @@ fn detect_lan_ip() -> Option<String> {
 }
 
 fn write_gateway_token_file(args: &HaosEntryArgs, token: &str) -> bool {
-    let path = args.nginx_html_dir.join("gateway.token");
+    let path = args.public_share_dir.join("gateway.token");
     if let Err(err) = fs::write(&path, token) {
         eprintln!(
             "addon-supervisor: failed to write gateway token file {}: {}",
@@ -702,7 +661,7 @@ fn ensure_certificate_files(args: &HaosEntryArgs) -> bool {
         }
     }
 
-    let ca_target = args.nginx_html_dir.join("openclaw-ca.crt");
+    let ca_target = args.public_share_dir.join("openclaw-ca.crt");
     if let Err(err) = fs::copy(&gateway_crt, &ca_target) {
         eprintln!(
             "addon-supervisor: failed to copy certificate to {}: {}",
@@ -821,147 +780,19 @@ fn configure_home_assistant_mcp(args: &HaosEntryArgs, homeassistant_token: &str)
     true
 }
 
-fn render_nginx(output: PathBuf) -> ExitCode {
-    let terminal_port = env_value("TERMINAL_PORT", "7681");
-    let ui_port = env_value("UI_PORT", "48101");
-    let enable_https = env::var("ENABLE_HTTPS_PROXY")
-        .map(|value| value == "true")
-        .unwrap_or(false);
-    let https_port = env_value("HTTPS_PROXY_PORT", "");
-    let internal_gw_port = env_value("GATEWAY_INTERNAL_PORT", "");
-    let nginx_log_level = env_value("NGINX_LOG_LEVEL", "minimal");
-
-    let access_log_block = if nginx_log_level == "minimal" {
-        r#"# Suppress repetitive HA health-check / polling requests
-  map $http_user_agent $loggable {
-    ~HomeAssistant 0;
-    default 1;
-  }
-  access_log /dev/stdout combined if=$loggable;"#
-            .to_string()
-    } else {
-        "access_log /dev/stdout;".to_string()
-    };
-
-    let https_block = if enable_https && !https_port.is_empty() && !internal_gw_port.is_empty() {
-        format!(
-            r#"
-  server {{
-    listen {https_port} ssl;
-
-    ssl_certificate     /config/certs/gateway.crt;
-    ssl_certificate_key /config/certs/gateway.key;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-
-    location / {{
-      proxy_pass http://127.0.0.1:{internal_gw_port};
-      proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection "upgrade";
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header X-Forwarded-Proto https;
-      proxy_read_timeout 86400s;
-      proxy_send_timeout 86400s;
-      proxy_buffering off;
-    }}
-
-    location = /cert/ca.crt {{
-      alias /etc/nginx/html/openclaw-ca.crt;
-      default_type application/x-x509-ca-cert;
-      add_header Content-Disposition 'attachment; filename="openclaw-ca.crt"';
-    }}
-  }}
-"#
-        )
-    } else {
-        String::new()
-    };
-
-    let conf = format!(
-        r#"worker_processes 1;
-
-error_log /dev/stderr notice;
-
-events {{ worker_connections 1024; }}
-
-http {{
-  include       /etc/nginx/mime.types;
-  default_type  application/octet-stream;
-
-  {access_log_block}
-  error_log /dev/stderr notice;
-
-  sendfile on;
-  keepalive_timeout 65;
-
-  server {{
-    listen 48099;
-
-    location = /terminal {{
-      return 302 /terminal/;
-    }}
-
-    location ^~ /terminal/ {{
-      proxy_pass http://127.0.0.1:{terminal_port};
-      proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection "upgrade";
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $remote_addr;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_read_timeout 3600s;
-      proxy_send_timeout 3600s;
-    }}
-
-    location = /token {{
-      alias /etc/nginx/html/gateway.token;
-      default_type text/plain;
-      add_header Cache-Control "no-store";
-    }}
-
-    location = /openclaw-ca.crt {{
-      alias /etc/nginx/html/openclaw-ca.crt;
-      default_type application/x-x509-ca-cert;
-      add_header Content-Disposition 'attachment; filename="openclaw-ca.crt"';
-    }}
-
-    location / {{
-      proxy_pass http://127.0.0.1:{ui_port};
-      proxy_http_version 1.1;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_read_timeout 60s;
-    }}
-  }}
-{https_block}
-}}
-"#
-    );
-
-    if let Some(parent) = output.parent() {
-        if let Err(err) = fs::create_dir_all(parent) {
-            eprintln!("failed to create nginx output dir: {err}");
-            return ExitCode::from(1);
-        }
-    }
-    if let Err(err) = fs::write(&output, conf) {
-        eprintln!("failed to write nginx config: {err}");
-        return ExitCode::from(1);
-    }
-    println!("wrote nginx config to {}", output.display());
-    ExitCode::SUCCESS
-}
-
-fn env_value(key: &str, fallback: &str) -> String {
-    env::var(key).unwrap_or_else(|_| fallback.to_string())
-}
-
 fn ensure_runtime_dir() -> std::io::Result<()> {
     fs::create_dir_all("/run/openclaw-rs")
+}
+
+fn startup_doctor_marker_path() -> PathBuf {
+    Path::new(
+        &env::var("OPENCLAW_CONFIG_DIR").unwrap_or_else(|_| "/config/.openclaw".to_string()),
+    )
+    .join(".startup-doctor-complete")
+}
+
+fn should_run_startup_doctor(force_on_start: bool) -> bool {
+    force_on_start || !startup_doctor_marker_path().exists()
 }
 
 fn pid_file_path(name: &str) -> PathBuf {
@@ -1052,9 +883,10 @@ fn run_services(
             shutdown_rx,
         )));
 
-        if run_doctor_on_start {
+        if should_run_startup_doctor(run_doctor_on_start) {
             handles.push(tokio::spawn(run_startup_doctor(
                 gateway_bin.clone(),
+                startup_doctor_marker_path(),
                 shutdown_tx.subscribe(),
             )));
         }
@@ -1121,7 +953,6 @@ struct ProcessSpec {
     name: String,
     program: String,
     args: Vec<String>,
-    render_nginx_conf: Option<PathBuf>,
 }
 
 impl ProcessSpec {
@@ -1130,7 +961,6 @@ impl ProcessSpec {
             name: name.to_string(),
             program,
             args,
-            render_nginx_conf: None,
         }
     }
 }
@@ -1147,15 +977,6 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
     loop {
         if *shutdown_rx.borrow() {
             break;
-        }
-
-        if let Some(path) = spec.render_nginx_conf.clone() {
-            let code = render_nginx(path);
-            if code != ExitCode::SUCCESS {
-                eprintln!("addon-supervisor: failed to render nginx config");
-                sleep(Duration::from_secs(BACKOFF_BASE)).await;
-                continue;
-            }
         }
 
         let mut command = Command::new(&spec.program);
@@ -1216,7 +1037,11 @@ async fn run_managed_process(spec: ProcessSpec, mut shutdown_rx: watch::Receiver
     }
 }
 
-async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receiver<bool>) {
+async fn run_startup_doctor(
+    gateway_bin: String,
+    marker_path: PathBuf,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
     tokio::select! {
         _ = shutdown_rx.changed() => return,
         _ = sleep(Duration::from_secs(15)) => {}
@@ -1249,8 +1074,22 @@ async fn run_startup_doctor(gateway_bin: String, mut shutdown_rx: watch::Receive
             let _ = child.wait().await;
         }
         result = child.wait() => {
-            if let Err(err) = result {
-                eprintln!("addon-supervisor: doctor wait failed: {err}");
+            match result {
+                Ok(status) if status.success() => {
+                    if let Err(err) = fs::write(&marker_path, "ok\n") {
+                        eprintln!(
+                            "addon-supervisor: failed to persist startup doctor marker at {}: {}",
+                            marker_path.display(),
+                            err
+                        );
+                    }
+                }
+                Ok(status) => {
+                    eprintln!("addon-supervisor: startup doctor exited with status {status}");
+                }
+                Err(err) => {
+                    eprintln!("addon-supervisor: doctor wait failed: {err}");
+                }
             }
         }
     }
@@ -1444,14 +1283,12 @@ fn apply_child_env(command: &mut Command) {
         "HAOS_PANEL_CONFIG_PATH",
         "OPENCLAW_STATE_DIR",
         "OPENCLAW_WORKSPACE_DIR",
-        "OPENCLAW_RUNTIME_DIR",
         "XDG_CONFIG_HOME",
         "OPENCLAW_NO_RESPAWN",
         "NODE_COMPILE_CACHE",
         "MCPORTER_HOME_DIR",
         "MCPORTER_CONFIG",
-        "BACKUP_DIR",
-        "CERT_DIR",
+        "PUBLIC_SHARE_DIR",
         "UI_PORT",
         "INGRESS_PORT",
         "ACCESS_MODE",
@@ -1465,9 +1302,6 @@ fn apply_child_env(command: &mut Command) {
         "GATEWAY_INTERNAL_PORT",
         "ADDON_VERSION",
         "OPENCLAW_VERSION",
-        "MCP_STATUS",
-        "WEB_SEARCH_PROVIDER",
-        "MEMORY_SEARCH_PROVIDER",
     ] {
         if let Ok(value) = env::var(key) {
             command.env(key, value);
@@ -1634,15 +1468,13 @@ mod tests {
             mcporter_config: root.join(".mcporter").join("mcporter.json"),
             cert_dir: root.join("certs"),
             backup_dir: root.join("backup"),
-            nginx_html_dir: root.join("html"),
+            public_share_dir: root.join("html"),
             gateway_internal_port: 18789,
             ui_port: 48101,
             gateway_bin: "openclaw".to_string(),
             oc_config_bin: "oc-config".to_string(),
-            mcporter_bin: "mcporter".to_string(),
             ui_bin: "haos-ui".to_string(),
             ingress_bin: "ingressd".to_string(),
-            nginx_conf: root.join("nginx.conf"),
         };
 
         ensure_mcporter_config(&args).expect("seed mcporter config");
@@ -1690,15 +1522,13 @@ mod tests {
             mcporter_config: root.join(".mcporter").join("mcporter.json"),
             cert_dir: root.join("certs"),
             backup_dir: root.join("backup"),
-            nginx_html_dir: root.join("html"),
+            public_share_dir: root.join("html"),
             gateway_internal_port: 18789,
             ui_port: 48101,
             gateway_bin: "openclaw".to_string(),
             oc_config_bin: "oc-config".to_string(),
-            mcporter_bin: "mcporter".to_string(),
             ui_bin: "haos-ui".to_string(),
             ingress_bin: "ingressd".to_string(),
-            nginx_conf: root.join("nginx.conf"),
         };
 
         ensure_mcporter_config(&args).expect("seed mcporter config");

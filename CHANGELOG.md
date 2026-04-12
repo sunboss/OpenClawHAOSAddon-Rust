@@ -1,3 +1,13 @@
+## 2026.04.12.10
+
+- 对齐官方：嵌入式终端默认直接启动 `openclaw tui`，不再把裸 shell 作为默认主入口
+- 对齐官方：HA 面板里的终端命令统一切到 TUI 的 `!命令` 模型，例如 `!openclaw status`
+- 精简：移除 `haos-ui` 本地配对 WebSocket 旧链路与 `gateway_ws.rs`，减少依赖和编译面
+- 精简：移除 `haos-ui` 不再使用的 `ring`、`tokio-tungstenite`、`futures-util`、`reqwest` 等依赖
+- 精简：移除 `ingressd` 里的 `control-readyz` 与旧 `/action/*` 控制接口，继续向原生 Gateway 探针语义靠拢
+- 启动优化：`doctor --fix` 改为首次安装自动运行一次，之后默认不再每次启动都跑
+- 架构整理：`PUBLIC_SHARE_DIR` 取代旧的公共目录命名，README 与维护文档同步对齐当前真实架构
+
 ## 2026.04.12.9
 
 - 精简：首页不再挂载本地配对 banner 容器，浏览器不会再自动订阅 `/events/pairing`

@@ -2,6 +2,59 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 23:20 Asia/Shanghai - Deep native-TUI cleanup and dependency slimming
+
+- User request:
+  - continue deep local optimization without pushing first
+  - keep the home page resource collection and status display
+  - optimize strictly against the latest official OpenClaw docs instead of inventing local behavior
+- Official sources checked:
+  - `https://docs.openclaw.ai/tui`
+  - `https://docs.openclaw.ai/cli/tui`
+  - `https://docs.openclaw.ai/web/control-ui`
+  - `https://docs.openclaw.ai/gateway/security`
+- Outcome:
+  - preserved the home page resource/status panels
+  - aligned the embedded terminal with the official TUI model
+  - continued reducing add-on-specific control logic and compile-heavy dependencies
+- Files changed:
+  - `Cargo.lock`
+  - `Cargo.toml`
+  - `Dockerfile`
+  - `README.md`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `crates/addon-supervisor/Cargo.toml`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/Cargo.toml`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/Cargo.toml`
+  - `crates/ingressd/src/main.rs`
+  - `docs/MAINTAINER_CONTEXT.md`
+- Implementation:
+  - remove the old local pairing websocket chain from `haos-ui` and delete `crates/haos-ui/src/gateway_ws.rs`
+  - remove `haos-ui` dependencies that were only kept for that chain:
+    - `ring`
+    - `tokio-tungstenite`
+    - `futures-util`
+    - `reqwest`
+  - keep the home page resource/status cache path, but switch local health probing to direct Tokio socket checks instead of `reqwest`
+  - remove `control-readyz` and old `/action/*` helper endpoints from `ingressd`
+  - change the embedded terminal PTY to launch native `openclaw tui` by default
+  - standardize terminal-triggered commands to the official TUI `!command` model
+  - change `doctor --fix` to run automatically on first install only, instead of every startup
+  - rename the old public file path concept to `PUBLIC_SHARE_DIR`
+  - update README and maintainer notes so docs match the current runtime architecture
+- Commands / validation:
+  - `cargo test -p haos-ui`
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - bump add-on version to `2026.04.12.10`
+- Next handoff:
+  - after push, verify that `OpenClaw CLI` opens straight into native `openclaw tui`
+  - verify that commands sent from the HA panel execute as `!command` inside TUI rather than as raw shell input
+  - keep the home page resource/status panels intact during any future refactor
+
 ## 2026-04-12 21:30 Asia/Shanghai - Stop browser-side pairing SSE from the HA home page
 
 - User request: continue reducing remaining early-connect / repeated connection noise.

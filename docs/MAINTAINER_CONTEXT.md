@@ -1,21 +1,22 @@
 # Maintainer Context
 
-This file is the handoff memory for future edits to `OpenClawHAOSAddon-Rust`.
-Read this before making UI, runtime, or release changes.
+This file is the durable handoff memory for future edits to `OpenClawHAOSAddon-Rust`.
+Read it before changing UI, runtime, release flow, or the HAOS integration layer.
 
 ## Project intent
 
 - This repository rewrites the Home Assistant add-on layer in Rust.
 - Upstream `openclaw` and `mcporter` are intentionally not rewritten.
-- The add-on must feel native inside HAOS, not like an OpenWrt web panel.
+- The add-on should feel native inside HAOS while staying close to official OpenClaw behavior.
 
 ## Versioning
 
 - Add-on version format must be `YYYY.MM.DD.N`.
 - Every pushed fix increments `N`.
-- Always tell the user the version number and commit hash when pushing.
-- When reporting a push, include the validation log summary too.
-  - At minimum: what checks ran and whether they passed.
+- When reporting a push, always include:
+  - version number
+  - commit hash
+  - what validation ran and whether it passed
 
 ## Current runtime architecture
 
@@ -25,11 +26,13 @@ Read this before making UI, runtime, or release changes.
   - launches and supervises local services
 - `crates/ingressd`
   - HA ingress
-  - browser terminal transport
+  - external HTTPS gateway proxy
+  - native `openclaw tui` terminal transport
   - local health/readiness endpoints
-  - managed gateway restart endpoint
 - `crates/haos-ui`
-  - multi-page HAOS UI
+  - multi-page HAOS UI shell
+- `crates/oc-config`
+  - JSON helpers for `openclaw.json`
 
 ## Important behavioral decisions
 
@@ -38,17 +41,12 @@ Read this before making UI, runtime, or release changes.
   - remote Control UI over plain `http://<lan-ip>:18789` is rejected because device identity requires HTTPS or localhost secure context
   - in this add-on, external dashboard access should remain `https://<host>:18789`
   - keeping an internal loopback gateway port is acceptable when it is required to preserve remote HTTPS access
-- Startup self-heal should run `openclaw doctor --fix`.
-  - This is intentional so config/runtime migrations such as `x_search` / Firecrawl changes do not depend on manual repair.
-- Do not use `openclaw gateway restart` for the add-on restart button.
-  - In this containerized setup that command prints guidance and does not restart
-    the supervisor-managed foreground gateway process.
-- The restart button must use the ingress-managed local action endpoint:
-  - `POST http://127.0.0.1:48099/action/restart`
+- Startup self-heal should run `openclaw doctor --fix`, but only automatically on first install.
+  - After the first successful run, do not force `doctor --fix` on every startup.
+  - This keeps migrations safe without turning normal boot into a heavy repair path.
 - `OpenClaw runtime` must be based on the real gateway PID written under:
   - `/run/openclaw-rs/openclaw-gateway.pid`
   - fallback `/run/openclaw-rs/openclaw-node.pid`
-- If uptime does not reset after restart, the restart path is wrong.
 
 ## Probe semantics
 
@@ -64,7 +62,7 @@ Read this before making UI, runtime, or release changes.
 - `GET /health`
   - JSON wrapper around the same lightweight readiness result
   - do not turn this back into a heavy `openclaw health --json` startup probe
-- Keep probe semantics close to official OpenClaw Docker docs:
+- Keep probe semantics close to official OpenClaw docs:
   - lightweight `healthz` / `readyz` for startup and routing
   - deeper CLI health only when the user explicitly asks for diagnostics
 
@@ -74,61 +72,57 @@ Read this before making UI, runtime, or release changes.
 - Current working boundary in this add-on:
   - OpenClaw config file:
     - `/config/.openclaw/openclaw.json`
+  - HA panel overlay config:
+    - `/config/.openclaw/addon-panel.json`
+    - only store values the user explicitly configures through the HA panel
   - MCPorter config file:
     - `/config/.mcporter/mcporter.json`
-    - Prefer writing the official persisted config shape directly:
+    - prefer writing the official persisted config shape directly:
       - `mcpServers.<name>.baseUrl`
       - `mcpServers.<name>.headers`
-    - Do not rely on startup-time `mcporter config add` flag syntax unless there is a documented upstream requirement to do so.
+    - do not rely on startup-time `mcporter config add` flag syntax unless upstream explicitly requires it
   - OpenClaw persistent state root:
     - `/config/.openclaw`
   - Workspace:
     - `/config/.openclaw/workspace`
   - Runtime-only pid files:
     - `/run/openclaw-rs`
+  - Shared public runtime files:
+    - `/run/openclaw-rs/public`
   - Runtime compile cache:
     - `/var/tmp/openclaw-compile-cache`
   - Certificates:
     - `/config/certs`
   - Backups:
     - `/share/openclaw-backup/latest`
-- Transitional note:
-  - today `openclaw.json` still lives inside the same top-level directory that also carries sessions, identity, and memory data
-  - treat the file itself as config, and the surrounding mutable directories as state
-  - do not describe the whole `/config/.openclaw` tree as "just config"
+- Treat `openclaw.json` as config, but do not describe the whole `/config/.openclaw` tree as “just config”.
 
 ## Native Gateway status
 
-- The severe native Gateway `ws closed before connect` problem was largely fixed by:
+- Native Gateway and embedded TUI are separate paths.
+  - If embedded TUI works, that does not automatically mean native Gateway works.
+- The severe native Gateway `ws closed before connect` problem was largely reduced by:
   - preserving forwarded headers
   - allowing the correct control UI origins
   - opening the native dashboard with `#token=...`
-- Embedded terminal and native Gateway are separate paths.
-  - If embedded terminal works, that does not automatically mean native Gateway works.
 
 ## Known noisy logs
 
 - `actiond`
   - no longer part of the runtime architecture
   - if it appears in logs or docs again, treat that as regression drift
-
 - `No pending device pairing requests to approve`
   - not an error
-  - just the auto-approve poller finding nothing to approve
-- `Health check failed: Error: gateway timeout after 10000ms` (in doctor output)
-  - not an error
-  - doctor runs 15s after boot; CLI WebSocket needs acpx runtime (ready in 90-120s)
-  - health check always times out on startup doctor run; does not abort doctor
-- `Gateway port: Port 18790 is already in use` (in doctor output)
-  - not an error; expected — doctor detects the supervisor-managed gateway is running
-- `systemd user services are unavailable` (in doctor output)
-  - not an error; container has no systemd, gateway runs under our supervisor instead
-- `Memory search is enabled, but no embedding provider is ready` (in doctor output)
-  - not an error unless user wants memory search; requires configuring an embedding provider
-- `amazon-bedrock failed to load`
-- `Cannot find module '@slack/web-api'`
-  - optional plugin dependency noise from upstream OpenClaw
-  - usually not a primary add-on failure
+  - just the old auto-approve poller finding nothing to approve
+- `Health check failed: Error: gateway timeout after 10000ms` during startup doctor
+  - not a primary add-on failure
+  - doctor can race early startup while acpx/browser sidecars are still warming up
+- `Gateway port: Port 18790 is already in use` in doctor output
+  - expected in the current HTTPS-preserving architecture
+- `Memory search is enabled, but no embedding provider is ready`
+  - not an error unless the user explicitly wants Memory Search
+- optional plugin dependency warnings
+  - often upstream plugin noise, not a primary add-on failure
 
 ## UI direction
 
@@ -136,8 +130,12 @@ Read this before making UI, runtime, or release changes.
 - Keep the soft gradient / glow background if it still looks clean.
 - Avoid obvious OpenWrt-style visual language in the header.
 - Use Chinese for user-facing UI copy.
-- Command labels can be Chinese, but actual executed commands stay in English.
-- User-facing text should explain what to do, not internal architecture rationale.
+- Command labels can be Chinese, but executed commands stay in English.
+- User-facing copy should explain what to do, not internal architecture rationale.
+- The home page must keep:
+  - status overview
+  - resource overview
+  - concise quick entry points
 
 ## Current page structure
 
@@ -146,15 +144,14 @@ Read this before making UI, runtime, or release changes.
   - resource overview
   - concise quick entry points only
 - `Config`
-  - what the add-on manages
-  - persistent directories
-  - capability status
+  - add-on managed settings only
+  - Web Search / Memory Search / model forms
 - `Commands`
-  - official-style operational groups
-  - embedded terminal
+  - official-style native entrypoints
+  - embedded TUI
 - `Logs`
   - log/doctor actions
-  - log terminal
+  - log TUI
 
 ## Pending recurring cleanup themes
 
@@ -162,45 +159,33 @@ Read this before making UI, runtime, or release changes.
 - Prefer one clear source of truth per page.
 - PID display should read like status badges, not generic pills.
 - Do not keep fake controls that do nothing.
-  - Example: the old fake log filter row (`source / lines / time range / keyword`) should stay removed.
 - If a button cannot do real work reliably, replace it with guidance instead of a fake action.
 
 ## Command-page expectations
 
 - Group command actions in a way that feels close to official helper flows:
-  - `Control / Pairing`
+  - `Native entrypoints`
     - `OpenClaw CLI`
-    - `openclaw devices list`
-    - `openclaw devices approve --latest`
+    - native Gateway
     - `openclaw onboard`
   - `Health / Status`
     - `curl .../healthz`
     - `curl .../readyz`
     - `openclaw status --deep`
     - `openclaw health --json`
-  - `Config / State`
-    - show config files
-    - show workspace / backup dirs
-    - MCP list
   - `Maintenance`
     - doctor
     - doctor --fix
     - security audit
-    - restart action endpoint
-- This grouping should feel closer to `ClawDock` / `Podman`:
-  - dashboard / shell
-  - devices / approve
-  - health / show-config / workspace
-  - logs / restart
-
+    - memory status
+  - `Logs`
+    - `openclaw logs --follow`
+    - gateway log tail
 - `Check npm version`
   - should run a real version query
   - expected command: `npm view openclaw version`
-- `Approve authorization`
-  - only makes sense when there is a pending pairing request
-  - otherwise prefer a user hint pointing to the command page:
-    - `openclaw devices list`
-    - `openclaw devices approve --latest`
+- Device pairing / approval should stay with native Control UI or upstream TUI flows.
+- Do not rebuild a separate HA-only pairing control surface.
 
 ## Terminal rendering
 

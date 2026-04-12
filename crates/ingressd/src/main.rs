@@ -3,7 +3,7 @@ use axum::{
     Router,
     body::{Body, Bytes, to_bytes},
     extract::{
-        ConnectInfo, Path, Query, Request, State,
+        ConnectInfo, Query, Request, State,
         ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode, header},
@@ -20,10 +20,11 @@ use std::{
     env, fs,
     io::{Read, Write},
     net::SocketAddr,
+    path::PathBuf,
     sync::{Arc, Mutex},
     thread,
 };
-use tokio::{net::TcpStream, process::Command, sync::mpsc, time::{Duration, sleep, timeout}};
+use tokio::{net::TcpStream, sync::mpsc, time::{Duration, timeout}};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{
@@ -162,8 +163,6 @@ fn build_ingress_router(state: AppState) -> Router {
         .route("/health", get(proxy_health))
         .route("/healthz", get(proxy_health))
         .route("/readyz", get(proxy_health))
-        .route("/control-readyz", get(proxy_health))
-        .route("/action/{action}", any(proxy_action))
         .route("/token", get(token_file))
         .route("/openclaw-ca.crt", get(cert_file))
         .route("/cert/ca.crt", get(cert_file))
@@ -177,7 +176,6 @@ fn build_gateway_router(state: AppState) -> Router {
         .route("/cert/ca.crt", get(cert_file))
         .route("/healthz", get(proxy_health))
         .route("/readyz", get(proxy_health))
-        .route("/control-readyz", get(proxy_health))
         .fallback(any(proxy_gateway))
         .with_state(state)
 }
@@ -223,7 +221,7 @@ async fn terminal_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenClaw Terminal</title>
+  <title>OpenClaw CLI (TUI)</title>
   <link rel="stylesheet" href="./assets/xterm.css">
   <style>
     :root {
@@ -366,8 +364,8 @@ async fn terminal_page(
       <div class="brand-row">
         <div class="brand-badge">__BRAND_MARK__</div>
         <div class="brand-copy">
-          <strong class="brand-title">OpenClaw Terminal</strong>
-          <span class="brand-sub">This page hosts the native OpenClaw TUI. Use normal input for chat, and prefix local shell commands with !.</span>
+          <strong class="brand-title">OpenClaw CLI (TUI)</strong>
+          <span class="brand-sub">这里承载原生 OpenClaw TUI。普通输入用于 TUI 交互；本机命令请使用 <code>!命令</code> 前缀。</span>
         </div>
       </div>
     </div>
@@ -375,11 +373,11 @@ async fn terminal_page(
       <div id="terminalShell" class="terminal-shell"></div>
     </div>
     <div class="foot">
-      <span class="muted">Selection, copy, paste, IME input, ANSI/TUI rendering, resize sync, and local shell commands like <code>!pwd</code> are supported.</span>
+      <span class="muted">支持选择、复制、粘贴、输入法、ANSI/TUI 渲染和窗口缩放同步。本机命令示例：<code>!pwd</code>、<code>!openclaw status</code>。</span>
       <span class="actions">
-        <button id="copyBtn" class="btn" type="button">Copy Selection</button>
-        <button id="pasteBtn" class="btn" type="button">Paste</button>
-        <span id="status" class="status">connecting</span>
+        <button id="copyBtn" class="btn" type="button">复制选区</button>
+        <button id="pasteBtn" class="btn" type="button">粘贴</button>
+        <span id="status" class="status">连接中</span>
       </span>
     </div>
   </div>
@@ -433,7 +431,7 @@ async fn terminal_page(
     function resetStatusSoon() {
       if (statusResetTimer) window.clearTimeout(statusResetTimer);
       statusResetTimer = window.setTimeout(() => {
-        setStatus(socket.readyState === WebSocket.OPEN ? "connected" : "disconnected");
+        setStatus(socket.readyState === WebSocket.OPEN ? "已连接" : "已断开");
       }, 1200);
     }
 
@@ -445,7 +443,7 @@ async fn terminal_page(
       }
       pending.push(payload);
       if (socket.readyState === WebSocket.CONNECTING) return;
-      term.writeln("[terminal not ready, payload queued]");
+      term.writeln("[终端尚未就绪，命令已排队]");
     }
 
     function sendTerminalInput(data) {
@@ -487,8 +485,8 @@ async fn terminal_page(
     }
 
     socket.addEventListener("open", () => {
-      setStatus("connected");
-      term.writeln("[terminal connected]");
+      setStatus("已连接");
+      term.writeln("[终端已连接]");
       flushPending();
       sendResize();
       if (!bootCommandSent && typeof bootCommand === "string" && bootCommand.trim()) {
@@ -505,15 +503,15 @@ async fn terminal_page(
     });
 
     socket.addEventListener("close", () => {
-      setStatus("disconnected");
+      setStatus("已断开");
       term.writeln("");
-      term.writeln("[terminal disconnected]");
+      term.writeln("[终端已断开]");
     });
 
     socket.addEventListener("error", () => {
-      setStatus("error");
+      setStatus("错误");
       term.writeln("");
-      term.writeln("[terminal websocket error]");
+      term.writeln("[终端 WebSocket 错误]");
     });
 
     window.injectCommand = function (command) {
@@ -545,17 +543,17 @@ async fn terminal_page(
       if (!selected) return;
       try {
         await navigator.clipboard.writeText(selected);
-        setStatus("copied");
+        setStatus("已复制");
         resetStatusSoon();
       } catch (_) {
-        setStatus("copy-failed");
+        setStatus("复制失败");
       }
     }
 
     async function pasteClipboardText(text) {
       if (!text) return;
       sendTerminalInput(text);
-      setStatus("pasted");
+      setStatus("已粘贴");
       resetStatusSoon();
     }
 
@@ -564,7 +562,7 @@ async fn terminal_page(
         const text = await navigator.clipboard.readText();
         await pasteClipboardText(text);
       } catch (_) {
-        setStatus("paste-failed");
+        setStatus("粘贴失败");
       }
     }
 
@@ -679,10 +677,10 @@ async fn handle_terminal_socket(socket: WebSocket) {
         return;
     };
 
-    let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
-    let cmd = CommandBuilder::new(shell);
+    let mut cmd = CommandBuilder::new("openclaw");
+    cmd.arg("tui");
     let Ok(mut child) = pair.slave.spawn_command(cmd) else {
-        eprintln!("ingressd: failed to spawn shell in PTY");
+        eprintln!("ingressd: failed to spawn openclaw tui in PTY");
         return;
     };
     drop(pair.slave);
@@ -770,31 +768,7 @@ async fn proxy_health(State(_state): State<AppState>, request: Request) -> impl 
         "/health" => local_health().await.into_response(),
         "/healthz" => local_healthz().await.into_response(),
         "/readyz" => local_readyz().await.into_response(),
-        "/control-readyz" => local_control_readyz().await.into_response(),
         _ => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-async fn proxy_action(
-    State(_state): State<AppState>,
-    Path(action): Path<String>,
-    _request: Request,
-) -> impl IntoResponse {
-    match action.as_str() {
-        "restart" => local_restart_action().await.into_response(),
-        "status" => local_status_action().await.into_response(),
-        _ => (
-            StatusCode::NOT_FOUND,
-            Json(ActionResponse {
-                ok: false,
-                action,
-                exit_code: None,
-                stdout: String::new(),
-                stderr: String::new(),
-                error: Some("unknown_action".to_string()),
-            }),
-        )
-            .into_response(),
     }
 }
 
@@ -976,16 +950,15 @@ async fn proxy_gateway_ws(
 }
 
 async fn token_file() -> impl IntoResponse {
-    file_response("/etc/nginx/html/gateway.token", "text/plain").await
+    let path = public_share_dir().join("gateway.token");
+    file_response(path, "text/plain").await
 }
 
 async fn cert_file() -> impl IntoResponse {
-    let mut response = file_response(
-        "/etc/nginx/html/openclaw-ca.crt",
-        "application/x-x509-ca-cert",
-    )
-    .await
-    .into_response();
+    let path = public_share_dir().join("openclaw-ca.crt");
+    let mut response = file_response(path, "application/x-x509-ca-cert")
+        .await
+        .into_response();
     response.headers_mut().insert(
         HeaderName::from_static("content-disposition"),
         HeaderValue::from_static("attachment; filename=\"openclaw-ca.crt\""),
@@ -993,7 +966,13 @@ async fn cert_file() -> impl IntoResponse {
     response
 }
 
-async fn file_response(path: &str, content_type: &str) -> impl IntoResponse {
+fn public_share_dir() -> PathBuf {
+    env::var("PUBLIC_SHARE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/run/openclaw-rs/public"))
+}
+
+async fn file_response(path: PathBuf, content_type: &str) -> impl IntoResponse {
     match fs::read(path) {
         Ok(bytes) => ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
@@ -1351,10 +1330,6 @@ async fn local_readyz() -> (StatusCode, [(HeaderName, &'static str); 1], String)
     probe_text_response(local_gateway_probe().await)
 }
 
-async fn local_control_readyz() -> (StatusCode, [(HeaderName, &'static str); 1], String) {
-    probe_text_response(local_control_probe().await)
-}
-
 fn probe_text_response(probe: GatewayProbe) -> (StatusCode, [(HeaderName, &'static str); 1], String) {
     let body = if probe.ok {
         format!("ok: {}\n", probe.stdout)
@@ -1371,173 +1346,6 @@ fn probe_text_response(probe: GatewayProbe) -> (StatusCode, [(HeaderName, &'stat
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         body,
     )
-}
-
-async fn local_status_action() -> (StatusCode, Json<ActionResponse>) {
-    run_command("status", &["openclaw", "gateway", "status", "--deep"], 20).await
-}
-
-async fn local_restart_action() -> (StatusCode, Json<ActionResponse>) {
-    let pid_path = "/run/openclaw-rs/openclaw-gateway.pid";
-    let old_pid = match fs::read_to_string(pid_path) {
-        Ok(value) => value.trim().to_string(),
-        Err(err) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ActionResponse {
-                    ok: false,
-                    action: "restart".to_string(),
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error: Some(format!("missing_pid_file: {err}")),
-                }),
-            );
-        }
-    };
-
-    if old_pid.is_empty() {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ActionResponse {
-                ok: false,
-                action: "restart".to_string(),
-                exit_code: None,
-                stdout: String::new(),
-                stderr: String::new(),
-                error: Some("empty_gateway_pid".to_string()),
-            }),
-        );
-    }
-
-    let kill_output = match Command::new("kill").args(["-TERM", &old_pid]).output().await {
-        Ok(output) => output,
-        Err(err) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ActionResponse {
-                    ok: false,
-                    action: "restart".to_string(),
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error: Some(err.to_string()),
-                }),
-            );
-        }
-    };
-
-    if !kill_output.status.success() {
-        return (
-            StatusCode::BAD_GATEWAY,
-            Json(ActionResponse {
-                ok: false,
-                action: "restart".to_string(),
-                exit_code: kill_output.status.code(),
-                stdout: String::from_utf8_lossy(&kill_output.stdout).trim().to_string(),
-                stderr: String::from_utf8_lossy(&kill_output.stderr).trim().to_string(),
-                error: Some("kill_failed".to_string()),
-            }),
-        );
-    }
-
-    for _ in 0..100 {
-        sleep(Duration::from_millis(200)).await;
-        if let Ok(value) = fs::read_to_string(pid_path) {
-            let new_pid = value.trim().to_string();
-            if !new_pid.is_empty() && new_pid != old_pid {
-                return (
-                    StatusCode::OK,
-                    Json(ActionResponse {
-                        ok: true,
-                        action: "restart".to_string(),
-                        exit_code: Some(0),
-                        stdout: format!("gateway restarted: {old_pid} -> {new_pid}"),
-                        stderr: String::new(),
-                        error: None,
-                    }),
-                );
-            }
-        }
-    }
-
-    (
-        StatusCode::GATEWAY_TIMEOUT,
-        Json(ActionResponse {
-            ok: false,
-            action: "restart".to_string(),
-            exit_code: None,
-            stdout: String::new(),
-            stderr: String::new(),
-            error: Some("restart_timeout".to_string()),
-        }),
-    )
-}
-
-async fn run_command(
-    action: &str,
-    argv: &[&str],
-    timeout_secs: u64,
-) -> (StatusCode, Json<ActionResponse>) {
-    let Some((program, args)) = argv.split_first() else {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ActionResponse {
-                ok: false,
-                action: action.to_string(),
-                exit_code: None,
-                stdout: String::new(),
-                stderr: String::new(),
-                error: Some("empty_command".to_string()),
-            }),
-        );
-    };
-
-    let mut command = Command::new(program);
-    command.args(args);
-    match timeout(Duration::from_secs(timeout_secs), command.output()).await {
-        Ok(Ok(output)) => {
-            let ok = output.status.success();
-            let status = if ok {
-                StatusCode::OK
-            } else {
-                StatusCode::BAD_GATEWAY
-            };
-            (
-                status,
-                Json(ActionResponse {
-                    ok,
-                    action: action.to_string(),
-                    exit_code: output.status.code(),
-                    stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-                    error: None,
-                }),
-            )
-        }
-        Ok(Err(err)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ActionResponse {
-                ok: false,
-                action: action.to_string(),
-                exit_code: None,
-                stdout: String::new(),
-                stderr: String::new(),
-                error: Some(err.to_string()),
-            }),
-        ),
-        Err(_) => (
-            StatusCode::GATEWAY_TIMEOUT,
-            Json(ActionResponse {
-                ok: false,
-                action: action.to_string(),
-                exit_code: None,
-                stdout: String::new(),
-                stderr: String::new(),
-                error: Some("timeout".to_string()),
-            }),
-        ),
-    }
 }
 
 async fn local_gateway_probe() -> GatewayProbe {
@@ -1589,54 +1397,11 @@ async fn local_gateway_probe() -> GatewayProbe {
     }
 }
 
-async fn local_control_probe() -> GatewayProbe {
-    let gateway_probe = local_gateway_probe().await;
-    if !gateway_probe.ok {
-        return gateway_probe;
-    }
-
-    let gateway_mode = env::var("GATEWAY_MODE").unwrap_or_else(|_| "local".to_string());
-    if gateway_mode == "remote" {
-        return gateway_probe;
-    }
-
-    let target = format!(
-        "127.0.0.1:{}",
-        browser_control_port_from_gateway_port(configured_gateway_port())
-    );
-    let port_ready = timeout(Duration::from_millis(800), TcpStream::connect(&target))
-        .await
-        .map(|result| result.is_ok())
-        .unwrap_or(false);
-
-    if port_ready {
-        return GatewayProbe {
-            ok: true,
-            status: StatusCode::OK,
-            stdout: format!("{}; browser control on {}", gateway_probe.stdout, target),
-            stderr: String::new(),
-            error: None,
-        };
-    }
-
-    GatewayProbe {
-        ok: false,
-        status: StatusCode::SERVICE_UNAVAILABLE,
-        stdout: gateway_probe.stdout,
-        stderr: format!("browser control port {target} is not accepting connections yet"),
-        error: Some("browser_control_not_ready".to_string()),
-    }
-}
-
 fn configured_gateway_port() -> u16 {
     env::var("GATEWAY_INTERNAL_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(18790)
-}
-
-fn browser_control_port_from_gateway_port(gateway_port: u16) -> u16 {
-    gateway_port.saturating_add(2)
 }
 
 fn current_gateway_process() -> Option<(&'static str, String)> {

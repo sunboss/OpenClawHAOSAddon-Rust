@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 clap.workspace = true
 serde.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 serde_json.workspace = true
 rand = "0.9"
 url = "2.5"

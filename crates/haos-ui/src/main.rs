@@ -1,52 +1,27 @@
-mod gateway_ws;
-
-use axum::{
+﻿use axum::{
     Router,
     extract::State,
-    response::{Html, IntoResponse, Sse, sse::Event},
+    response::{Html, IntoResponse},
     routing::{get, post},
     Json,
 };
-use futures_util::{StreamExt as _, stream};
 use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command, sync::Arc, time::Duration};
 use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    sync::{RwLock, broadcast},
+    sync::RwLock,
     time::timeout,
 };
 
-use gateway_ws::PendingPair;
-
-/// Snapshot cached by the background updater task every 30 seconds.
 #[derive(Clone)]
 struct CachedSnapshot {
     snapshot: SystemSnapshot,
     health_ok: Option<bool>,
-    pending_devices: usize,
-}
-
-/// 待配对设备列表（通过 WebSocket 轮询，每 30s 更新一次）。
-#[derive(Clone)]
-struct PairingState {
-    pairs: Arc<RwLock<Vec<PendingPair>>>,
-    /// 每当列表变化时广播，SSE 连接订阅此 channel。
-    notify: broadcast::Sender<()>,
-}
-
-impl PairingState {
-    fn new() -> Self {
-        let (notify, _) = broadcast::channel(4);
-        Self {
-            pairs: Arc::new(RwLock::new(vec![])),
-            notify,
-        }
-    }
 }
 
 #[derive(Clone)]
 struct AppState {
     cache: Arc<RwLock<Option<CachedSnapshot>>>,
-    pairing: PairingState,
 }
 
 #[derive(Clone, Debug)]
@@ -57,17 +32,6 @@ struct PageConfig {
     gateway_url: String,
     openclaw_version: String,
     https_port: String,
-    openclaw_config_path: String,
-    openclaw_state_dir: String,
-    openclaw_workspace_dir: String,
-    openclaw_runtime_dir: String,
-    mcporter_home_dir: String,
-    mcporter_config_path: String,
-    backup_dir: String,
-    cert_dir: String,
-    mcp_status: String,
-    web_status: String,
-    memory_status: String,
     web_provider: String,
     web_enabled: bool,
     web_base_url: String,
@@ -81,7 +45,6 @@ struct PageConfig {
     memory_local_model_path: String,
     memory_api_configured: bool,
     current_model: String,
-    mcp_endpoint_count: usize,
     gateway_token: String,
 }
 
@@ -119,19 +82,6 @@ impl PageConfig {
             memory_local_model_path,
             memory_api_configured,
         ) = load_memory_search_settings(config.as_ref());
-        let web_status = provider_status_from_config(
-            config.as_ref(),
-            &["tools.web.search.provider", "tools.webSearch.provider"],
-            &env_value("WEB_SEARCH_PROVIDER", "disabled"),
-        );
-        let memory_status = provider_status_from_config(
-            config.as_ref(),
-            &[
-                "agents.defaults.memorySearch.provider",
-                "agents.defaults.memory.search.provider",
-            ],
-            &env_value("MEMORY_SEARCH_PROVIDER", "disabled"),
-        );
         let current_model = config
             .as_ref()
             .and_then(|v| first_string_path(v, &[
@@ -140,7 +90,6 @@ impl PageConfig {
                 "agents.defaults.model",         // 旧版本字符串兜底
             ]))
             .unwrap_or_else(|| "未配置".to_string());
-        let mcp_endpoint_count = count_mcp_endpoints();
         let gateway_token = config
             .as_ref()
             .and_then(|v| string_path(v, "gateway.auth.token"))
@@ -152,26 +101,6 @@ impl PageConfig {
             gateway_url: env_value("GW_PUBLIC_URL", ""),
             openclaw_version: env_value("OPENCLAW_VERSION", "unknown"),
             https_port: env_value("HTTPS_PORT", "18789"),
-            openclaw_config_path: env_path_value(
-                "OPENCLAW_CONFIG_PATH",
-                "/config/.openclaw/openclaw.json",
-            ),
-            openclaw_state_dir: env_path_value("OPENCLAW_STATE_DIR", "/config/.openclaw"),
-            openclaw_workspace_dir: env_path_value(
-                "OPENCLAW_WORKSPACE_DIR",
-                "/config/.openclaw/workspace",
-            ),
-            openclaw_runtime_dir: env_path_value("OPENCLAW_RUNTIME_DIR", "/run/openclaw-rs"),
-            mcporter_home_dir: env_path_value("MCPORTER_HOME_DIR", "/config/.mcporter"),
-            mcporter_config_path: env_path_value(
-                "MCPORTER_CONFIG",
-                "/config/.mcporter/mcporter.json",
-            ),
-            backup_dir: env_path_value("BACKUP_DIR", "/share/openclaw-backup/latest"),
-            cert_dir: env_path_value("CERT_DIR", "/config/certs"),
-            mcp_status: env_value("MCP_STATUS", "disabled"),
-            web_status,
-            memory_status,
             web_provider,
             web_enabled,
             web_base_url,
@@ -185,7 +114,6 @@ impl PageConfig {
             memory_local_model_path,
             memory_api_configured,
             current_model,
-            mcp_endpoint_count,
             gateway_token,
         }
     }
@@ -458,65 +386,187 @@ fn env_value(key: &str, fallback: &str) -> String {
     env::var(key).unwrap_or_else(|_| fallback.to_string())
 }
 
-fn env_path_value(key: &str, fallback: &str) -> String {
-    env::var(key)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| fallback.to_string())
+async fn fetch_openclaw_health() -> Option<bool> {
+    let mut stream = timeout(Duration::from_millis(1500), TcpStream::connect("127.0.0.1:48099"))
+        .await
+        .ok()?
+        .ok()?;
+    timeout(
+        Duration::from_millis(1500),
+        stream.write_all(b"GET /readyz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    let mut response = String::new();
+    timeout(Duration::from_millis(1500), stream.read_to_string(&mut response))
+        .await
+        .ok()?
+        .ok()?;
+
+    Some(response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200"))
 }
 
-fn load_mcporter_config() -> Option<serde_json::Value> {
-    fs::read_to_string(env_path_value(
-        "MCPORTER_CONFIG",
-        "/config/.mcporter/mcporter.json",
-    ))
-        .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+fn read_first_line(path: &str) -> Option<String> {
+    fs::read_to_string(path).ok().and_then(|content| {
+        content
+            .lines()
+            .next()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+    })
 }
 
-fn count_mcp_endpoints() -> usize {
-    let Some(value) = load_mcporter_config() else {
-        return 0;
+fn parse_meminfo_both() -> (Option<u64>, Option<u64>) {
+    let Ok(contents) = fs::read_to_string("/proc/meminfo") else {
+        return (None, None);
     };
-    // Try common array fields first
-    for key in &["endpoints", "servers", "tools", "mcp_servers", "mcpServers"] {
-        if let Some(arr) = value.get(key).and_then(|v| v.as_array()) {
-            return arr.len();
+    let mut total = None;
+    let mut available = None;
+    for line in contents.lines() {
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+            total = rest.split_whitespace().next().and_then(|v| v.parse::<u64>().ok());
+        } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            available = rest.split_whitespace().next().and_then(|v| v.parse::<u64>().ok());
+        }
+        if total.is_some() && available.is_some() {
+            break;
         }
     }
-    // Top-level array
-    if let Some(arr) = value.as_array() {
-        return arr.len();
-    }
-    // Top-level object keys as proxy
-    if let Some(obj) = value.as_object() {
-        return obj.len();
-    }
-    0
+    (total, available)
 }
 
-fn mcp_status_display(config: &PageConfig) -> String {
-    if config.mcp_endpoint_count > 0 {
-        format!("已注册 {} 个端点", config.mcp_endpoint_count)
-    } else if config.mcp_status != "disabled" && !config.mcp_status.is_empty() {
-        display_value(&config.mcp_status).to_string()
+fn format_bytes_gib(bytes: u64) -> String {
+    format!("{:.1} GiB", bytes as f64 / 1024.0 / 1024.0 / 1024.0)
+}
+
+fn format_duration(seconds: u64) -> String {
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    if days > 0 {
+        format!("{days} 天 {hours} 小时 {minutes} 分")
+    } else if hours > 0 {
+        format!("{hours} 小时 {minutes} 分")
     } else {
-        "disabled".to_string()
+        format!("{minutes} 分")
     }
 }
 
-async fn fetch_openclaw_health() -> Option<bool> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(1500))
-        .build()
+fn process_uptime(pid: &str) -> Option<String> {
+    if pid.trim().is_empty() || pid == "-" {
+        return None;
+    }
+    let output = Command::new("ps")
+        .args(["-p", pid, "-o", "etimes="])
+        .output()
         .ok()?;
-    let resp = client
-        .get("http://127.0.0.1:48099/readyz")
-        .send()
-        .await
+    if !output.status.success() {
+        return None;
+    }
+    let seconds = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u64>()
         .ok()?;
-    Some(resp.status().is_success())
+    Some(format_duration(seconds))
+}
+
+fn disk_combined() -> (String, u8) {
+    let Ok(output) = Command::new("df").args(["-B1", "/config"]).output() else {
+        return ("不可用".to_string(), 0);
+    };
+    if !output.status.success() {
+        return ("不可用".to_string(), 0);
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let Some(line) = stdout.lines().nth(1) else {
+        return ("不可用".to_string(), 0);
+    };
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    let total = parts.get(1).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    let used = parts.get(2).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    let pct_str = parts.get(4).copied().unwrap_or("0%");
+    if total == 0 {
+        return ("不可用".to_string(), 0);
+    }
+    let display = format!("{}/{} ({pct_str})", format_bytes_gib(used), format_bytes_gib(total));
+    let percent = ((used.saturating_mul(100)) / total).min(100) as u8;
+    (display, percent)
+}
+
+fn load_percent_snapshot() -> Option<u8> {
+    let load_line = read_first_line("/proc/loadavg")?;
+    let load = load_line.split_whitespace().next()?.parse::<f64>().ok()?;
+    let cpus = std::thread::available_parallelism().ok()?.get() as f64;
+    if cpus <= 0.0 {
+        return None;
+    }
+    Some(((load / cpus) * 100.0).round().clamp(0.0, 100.0) as u8)
+}
+
+async fn collect_system_snapshot() -> SystemSnapshot {
+    tokio::task::spawn_blocking(|| {
+        let cpu_load = read_first_line("/proc/loadavg")
+            .and_then(|line| line.split_whitespace().next().map(|v| format!("{v} / 1m")))
+            .unwrap_or_else(|| "不可用".to_string());
+        let cpu_percent = load_percent_snapshot().unwrap_or(0);
+
+        let (mem_total, mem_available) = parse_meminfo_both();
+        let memory_used = match (mem_total, mem_available) {
+            (Some(total), Some(available)) if total > available => {
+                format!(
+                    "{}/{}",
+                    format_bytes_gib((total - available) * 1024),
+                    format_bytes_gib(total * 1024)
+                )
+            }
+            _ => "不可用".to_string(),
+        };
+        let memory_percent = match (mem_total, mem_available) {
+            (Some(total), Some(available)) if total > available && total > 0 => {
+                (((total - available) * 100) / total).min(100) as u8
+            }
+            _ => 0,
+        };
+
+        let uptime = read_first_line("/proc/uptime")
+            .and_then(|line| {
+                line.split_whitespace()
+                    .next()
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .map(|v| format_duration(v as u64))
+            })
+            .unwrap_or_else(|| "不可用".to_string());
+
+        let openclaw_uptime = process_uptime(&pid_value("openclaw-gateway"))
+            .or_else(|| process_uptime(&pid_value("openclaw-node")))
+            .unwrap_or_else(|| "不可用".to_string());
+
+        let (disk_used, disk_percent) = disk_combined();
+
+        SystemSnapshot {
+            cpu_load,
+            memory_used,
+            disk_used,
+            uptime,
+            openclaw_uptime,
+            cpu_percent,
+            memory_percent,
+            disk_percent,
+        }
+    })
+    .await
+    .unwrap_or_else(|_| SystemSnapshot {
+        cpu_load: "不可用".to_string(),
+        memory_used: "不可用".to_string(),
+        disk_used: "不可用".to_string(),
+        uptime: "不可用".to_string(),
+        openclaw_uptime: "不可用".to_string(),
+        cpu_percent: 0,
+        memory_percent: 0,
+        disk_percent: 0,
+    })
 }
 
 fn pid_value(name: &str) -> String {
@@ -526,11 +576,6 @@ fn pid_value(name: &str) -> String {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "-".to_string())
-}
-
-fn display_value(value: &str) -> &str {
-    let value = value.trim();
-    if value.is_empty() { "disabled" } else { value }
 }
 
 const WEB_SEARCH_DOCS_URL: &str = "https://docs.openclaw.ai/tools/web";
@@ -671,165 +716,6 @@ fn html_attr_escape(value: &str) -> String {
         .replace('>', "&gt;")
 }
 
-fn read_first_line(path: &str) -> Option<String> {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|value| value.lines().next().map(|line| line.trim().to_string()))
-}
-
-/// Reads /proc/meminfo once and returns (MemTotal KiB, MemAvailable KiB).
-fn parse_meminfo_both() -> (Option<u64>, Option<u64>) {
-    let Ok(contents) = fs::read_to_string("/proc/meminfo") else {
-        return (None, None);
-    };
-    let mut total = None;
-    let mut available = None;
-    for line in contents.lines() {
-        if let Some(rest) = line.strip_prefix("MemTotal:") {
-            total = rest.split_whitespace().next().and_then(|v| v.parse::<u64>().ok());
-        } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
-            available = rest.split_whitespace().next().and_then(|v| v.parse::<u64>().ok());
-        }
-        if total.is_some() && available.is_some() {
-            break;
-        }
-    }
-    (total, available)
-}
-
-fn format_bytes_gib(bytes: u64) -> String {
-    format!("{:.1} GiB", bytes as f64 / 1024.0 / 1024.0 / 1024.0)
-}
-
-fn format_duration(seconds: u64) -> String {
-    let days = seconds / 86_400;
-    let hours = (seconds % 86_400) / 3_600;
-    let minutes = (seconds % 3_600) / 60;
-    if days > 0 {
-        format!("{days} 天 {hours} 小时 {minutes} 分")
-    } else if hours > 0 {
-        format!("{hours} 小时 {minutes} 分")
-    } else {
-        format!("{minutes} 分")
-    }
-}
-
-fn process_uptime(pid: &str) -> Option<String> {
-    if pid.trim().is_empty() || pid == "-" {
-        return None;
-    }
-    let output = Command::new("ps")
-        .args(["-p", pid, "-o", "etimes="])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let seconds = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u64>()
-        .ok()?;
-    Some(format_duration(seconds))
-}
-
-/// Runs `df -B1 /config` once and returns (display string, percent).
-fn disk_combined() -> (String, u8) {
-    let Ok(output) = Command::new("df").args(["-B1", "/config"]).output() else {
-        return ("不可用".to_string(), 0);
-    };
-    if !output.status.success() {
-        return ("不可用".to_string(), 0);
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let Some(line) = stdout.lines().nth(1) else {
-        return ("不可用".to_string(), 0);
-    };
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    let total = parts.get(1).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-    let used = parts.get(2).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-    let pct_str = parts.get(4).copied().unwrap_or("0%");
-    if total == 0 {
-        return ("不可用".to_string(), 0);
-    }
-    let display = format!("{}/{} ({pct_str})", format_bytes_gib(used), format_bytes_gib(total));
-    let percent = ((used.saturating_mul(100)) / total).min(100) as u8;
-    (display, percent)
-}
-
-fn load_percent_snapshot() -> Option<u8> {
-    let load_line = read_first_line("/proc/loadavg")?;
-    let load = load_line.split_whitespace().next()?.parse::<f64>().ok()?;
-    let cpus = std::thread::available_parallelism().ok()?.get() as f64;
-    if cpus <= 0.0 {
-        return None;
-    }
-    Some(((load / cpus) * 100.0).round().clamp(0.0, 100.0) as u8)
-}
-
-async fn collect_system_snapshot() -> SystemSnapshot {
-    tokio::task::spawn_blocking(|| {
-        let cpu_load = read_first_line("/proc/loadavg")
-            .and_then(|line| line.split_whitespace().next().map(|v| format!("{v} / 1m")))
-            .unwrap_or_else(|| "不可用".to_string());
-        let cpu_percent = load_percent_snapshot().unwrap_or(0);
-
-        let (mem_total, mem_available) = parse_meminfo_both();
-        let memory_used = match (mem_total, mem_available) {
-            (Some(total), Some(available)) if total > available => {
-                format!(
-                    "{}/{}",
-                    format_bytes_gib((total - available) * 1024),
-                    format_bytes_gib(total * 1024)
-                )
-            }
-            _ => "不可用".to_string(),
-        };
-        let memory_percent = match (mem_total, mem_available) {
-            (Some(total), Some(available)) if total > available && total > 0 => {
-                (((total - available) * 100) / total).min(100) as u8
-            }
-            _ => 0,
-        };
-
-        let uptime = read_first_line("/proc/uptime")
-            .and_then(|line| {
-                line.split_whitespace()
-                    .next()
-                    .and_then(|v| v.parse::<f64>().ok())
-                    .map(|v| format_duration(v as u64))
-            })
-            .unwrap_or_else(|| "不可用".to_string());
-
-        let openclaw_uptime = process_uptime(&pid_value("openclaw-gateway"))
-            .or_else(|| process_uptime(&pid_value("openclaw-node")))
-            .unwrap_or_else(|| "不可用".to_string());
-
-        let (disk_used, disk_percent) = disk_combined();
-
-        SystemSnapshot {
-            cpu_load,
-            memory_used,
-            disk_used,
-            uptime,
-            openclaw_uptime,
-            cpu_percent,
-            memory_percent,
-            disk_percent,
-        }
-    })
-    .await
-    .unwrap_or_else(|_| SystemSnapshot {
-        cpu_load: "不可用".to_string(),
-        memory_used: "不可用".to_string(),
-        disk_used: "不可用".to_string(),
-        uptime: "不可用".to_string(),
-        openclaw_uptime: "不可用".to_string(),
-        cpu_percent: 0,
-        memory_percent: 0,
-        disk_percent: 0,
-    })
-}
-
 fn nav_link(active: NavPage, current: NavPage, href: &str, label: &str) -> String {
     let class_name = if active == current {
         "nav-link active"
@@ -870,18 +756,18 @@ fn ghost_button(label: &str, onclick: &str) -> String {
     format!(r#"<button class="btn" type="button" onclick="{onclick}">{label}</button>"#)
 }
 
+fn tui_shell(command: &str) -> String {
+    if command.trim().is_empty() {
+        String::new()
+    } else {
+        format!("!{}", command.trim())
+    }
+}
+
 fn diag_button(label: &str, command: &str) -> String {
     format!(
         r#"<button class="btn btn-diag" type="button" data-command="{}" onclick="ocRunButton(this)">{label}</button>"#,
         html_attr_escape(command),
-    )
-}
-
-fn sensitive_button(label: &str, command: &str, warning: &str) -> String {
-    let cmd_js = html_attr_escape(&js_string(command));
-    let warn_js = html_attr_escape(&js_string(warning));
-    format!(
-        r#"<button class="btn btn-action" type="button" onclick="ocRunSensitive({cmd_js},{warn_js})">{label}</button>"#
     )
 }
 
@@ -961,21 +847,21 @@ fn terminal_card(title: &str, subtitle: &str, button_label: &str) -> String {
         r#"<section class="card terminal-card">
   <div class="card-head">
     <div>
-      <div class="eyebrow">终端工作区</div>
+      <div class="eyebrow">OpenClaw CLI</div>
       <h2>{title}</h2>
       <p class="muted">{subtitle}</p>
     </div>
   </div>
   <div class="terminal-shell">
     <div class="terminal-head">
-      <strong>工作区终端</strong>
-      <span>这里承载原生 OpenClaw TUI；在 TUI 里输入 <code>!命令</code> 可以执行本机 shell 命令。</span>
+      <strong>原生 TUI 终端</strong>
+      <span>这里承载原生 <code>openclaw tui</code>；在 TUI 里输入 <code>!命令</code> 可以执行本机 shell 命令。</span>
     </div>
     <div class="terminal-stage" id="terminalStage">
       <div class="terminal-placeholder">
         <div class="terminal-placeholder-inner">
-          <h3>终端按需加载</h3>
-          <p>默认不抢占首屏资源。点击上方按钮或任意命令按钮后，会自动连接终端。若打开的是 <code>openclaw tui</code>，普通输入就是 TUI 会话；本机 shell 用 <code>!pwd</code>、<code>!openclaw status</code> 这类前缀命令。</p>
+          <h3>TUI 按需加载</h3>
+          <p>默认不抢占首屏资源。点击上方按钮或任意命令按钮后，会自动连接到 <code>openclaw tui</code>。普通输入用于 TUI 交互；本机 shell 用 <code>!pwd</code>、<code>!openclaw status</code> 这类前缀命令。</p>
           <button class="btn primary" type="button" onclick="ocLoadTerminal()">{button_label}</button>
         </div>
       </div>
@@ -1020,7 +906,6 @@ fn home_content(
     config: &PageConfig,
     snapshot: &SystemSnapshot,
     health_ok: Option<bool>,
-    pending_devices: usize,
 ) -> String {
     let gateway_pid = pid_value("openclaw-gateway");
     let ingress_pid = pid_value("ingressd");
@@ -1092,8 +977,7 @@ fn home_content(
 
         {token_section}
         
-        {device_notice}
-        <div class="note-box">有新设备需要配对时，上方会自动出现通知。也可前往命令行页手动执行 <code>openclaw devices approve --latest</code>。<br>若设备连接时提示 token 错误或被拒绝，请在该设备浏览器中清除此站点的 Cookies 与本地存储，然后重新打开页面。</div>
+        <div class="note-box">设备配对已收回原生入口处理。建议优先在原生 Control UI 中完成批准，或前往命令行页手动执行 <code>openclaw devices approve --latest</code>。<br>若设备连接时提示 token 错误或被拒绝，请在该设备浏览器中清除此站点的 Cookies 与本地存储，然后重新打开页面。</div>
       </section>
 
       <aside class="panel-right">
@@ -1128,8 +1012,8 @@ fn home_content(
         health = summary_strip("总状态", health_text, health_sub, health_tone),
         runtime = summary_strip(
             "在线进程",
-            &format!("{online_count}/4"),
-            "Gateway、Ingress、UI、Action",
+            &format!("{online_count}/3"),
+            "Gateway、Ingress、UI",
             "tone-blue"
         ),
         https = summary_strip(
@@ -1149,7 +1033,7 @@ fn home_content(
             "ocGatewayLink",
             "return ocOpenGatewayLink(event, this)"
         ),
-        open_cli = secondary_terminal_window_button("OpenClaw CLI", "openclaw tui"),
+        open_cli = secondary_terminal_window_button("OpenClaw CLI", ""),
         goto_commands = hero_action_link("进入命令行", "./commands"),
         stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
         stat_mode = stat_tile(
@@ -1180,13 +1064,6 @@ fn home_content(
   <script>(function(){{var t="{tok_escaped}";window.ocToggleToken=function(){{var v=document.getElementById("ocTokenVal"),b=document.getElementById("ocTokenToggleBtn");if(b.dataset.vis==="1"){{v.textContent="••••••••"+t.slice(-8);b.textContent="显示";b.dataset.vis="";}}else{{v.textContent=t;b.textContent="隐藏";b.dataset.vis="1";}}}}; window.ocCopyToken=function(btn){{var orig=btn.textContent;function done(){{btn.textContent="已复制 ✓";setTimeout(function(){{btn.textContent=orig;}},1500);}}function fb(){{try{{var ta=document.createElement("textarea");ta.value=t;ta.style.cssText="position:fixed;opacity:0;top:0;left:0;width:1px;height:1px";document.body.appendChild(ta);ta.focus();ta.select();var ok=document.execCommand("copy");document.body.removeChild(ta);if(ok){{done();}}else{{alert("Token: "+t);}}}}catch(e){{alert("Token: "+t);}}}}if(navigator.clipboard){{navigator.clipboard.writeText(t).then(done,fb);}}else{{fb();}}}};}})()</script>
 </div>"#, masked=masked, tok_escaped=tok_escaped)
             }
-        },
-        device_notice = if pending_devices > 0 {
-            format!(
-                r#"<div class="notice-badge warn">有 {pending_devices} 个设备等待授权配对，请前往命令行页执行 <code>openclaw devices approve --latest</code>。</div>"#
-            )
-        } else {
-            String::new()
         },
         pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid),
         resource_cpu = resource_card(
@@ -1226,248 +1103,8 @@ fn home_content(
     )
 }
 
-#[allow(dead_code)]
-#[allow(dead_code)]
-fn config_content(config: &PageConfig) -> String {
-    format!(
-        r#"<div class="page-grid">
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <div class="eyebrow">基础配置</div>
-        <h2>配置边界与当前状态</h2>
-        <p class="muted">查看插件当前的访问入口、数据目录、服务能力状态，以及 MCP 和设备配对等集成配置。</p>
-      </div>
-      <div class="header-actions">
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
-        <a class="btn primary" href="./commands">进入命令行</a>
-      </div>
-    </div>
-    <div class="split-grid">
-      <section class="soft-card">
-        <h3>插件配置页负责</h3>
-        <ul class="clean-list">
-          <li>访问模式、端口、终端开关、备份目录等插件级参数。</li>
-          <li>与 Home Assistant 集成相关的初始化，例如 MCP 和自动配对。</li>
-          <li>Brave Search 网页搜索、Gemini 记忆搜索等能力的接入与激活。</li>
-        </ul>
-      </section>
-      <section class="soft-card">
-        <h3>OpenClaw 自身负责</h3>
-        <ul class="clean-list">
-          <li><code>openclaw onboard</code> 登录、默认模型、provider 细节。</li>
-          <li>更细粒度的 agent、memory、tool 和 provider 调整。</li>
-          <li>需要精确诊断时，建议直接去命令行页执行官方命令。</li>
-        </ul>
-      </section>
-    </div>
-  </section>
-
-  <div class="three-up">
-    <section class="card">
-      <h3>访问与网关</h3>
-      <div class="kv-list">
-        {access}
-        {mode}
-        {https}
-        {openclaw}
-      </div>
-    </section>
-    <section class="card">
-      <h3>持久化目录</h3>
-      <div class="kv-list">
-        {oc_dir}
-        {mcp_dir}
-        {backup_dir}
-        {cert_dir}
-      </div>
-    </section>
-    <section class="card">
-      <h3>能力状态</h3>
-      <div class="kv-list">
-        {mcp}
-        {web}
-        {memory}
-        {version}
-      </div>
-    </section>
-  </div>
-
-  <section class="card">
-    <h3>建议操作</h3>
-    <div class="action-row">
-      <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
-      <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw tui')">OpenClaw CLI</button>
-      <button class="btn" type="button" onclick="ocOpenTerminalWindow()">新窗口打开终端</button>
-      <button class="btn" type="button" onclick="ocRunCommand('openclaw onboard')">初始化向导</button>
-      <button class="btn" type="button" onclick="ocRunCommand('openclaw doctor')">运行 doctor</button>
-      <button class="btn" type="button" onclick="ocRunCommand('cat /config/.mcporter/mcporter.json')">查看 MCP 配置</button>
-    </div>
-  </section>
-</div>"#,
-        access = kv_row("访问模式", &config.access_mode),
-        mode = kv_row("网关模式", &config.gateway_mode),
-        https = kv_row("HTTPS 端口", &config.https_port),
-        openclaw = kv_row("OpenClaw 版本", &config.openclaw_version),
-        oc_dir = kv_row("OpenClaw", "/config/.openclaw"),
-        mcp_dir = kv_row("MCPorter", "/config/.mcporter"),
-        backup_dir = kv_row("备份目录", "/share/openclaw-backup/latest"),
-        cert_dir = kv_row("证书目录", "/config/certs"),
-        mcp = kv_row("MCP", &mcp_status_display(config)),
-        web = kv_row("Web Search", display_value(&config.web_status)),
-        memory = kv_row("Memory Search", display_value(&config.memory_status)),
-        version = kv_row("Add-on 版本", &config.addon_version),
-    )
-}
-
-#[allow(dead_code)]
-#[allow(dead_code)]
-fn commands_content() -> String {
-    let setup_actions = [
-        ("OpenClaw CLI", "openclaw tui"),
-        ("设备列表", "openclaw devices list"),
-        ("批准最新配对", "openclaw devices approve --latest"),
-        ("初始化向导", "openclaw onboard"),
-        ("检查并修复", "openclaw doctor --fix"),
-    ]
-    .iter()
-    .map(|(label, cmd)| {
-        if *cmd == "openclaw tui" {
-            terminal_window_button(label, cmd)
-        } else {
-            action_button(label, cmd)
-        }
-    })
-    .collect::<Vec<_>>()
-    .join("");
-
-    let diagnostic_actions = [
-        ("健康检查", "openclaw health --json"),
-        ("运行状态", "openclaw status --deep"),
-        ("安全审计", "openclaw security audit --deep"),
-        ("记忆状态", "openclaw memory status --deep"),
-        ("本机版本", "openclaw --version"),
-        (
-            "重启网关",
-            "curl -fsS -X POST http://127.0.0.1:48099/action/restart",
-        ),
-    ]
-    .iter()
-    .map(|(label, cmd)| {
-        if cmd.contains("restart") {
-            action_button(label, cmd)
-        } else {
-            diag_button(label, cmd)
-        }
-    })
-    .collect::<Vec<_>>()
-    .join("");
-
-    let log_stream_actions = [
-        ("跟随日志", "openclaw logs --follow"),
-        ("网关日志", "tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
-    ]
-    .iter()
-    .map(|(label, cmd)| terminal_window_button(label, cmd))
-    .collect::<Vec<_>>()
-    .join("");
-
-    let storage_actions = [
-        ("MCP 列表", "mcporter list"),
-        ("MCP 配置", "cat /config/.mcporter/mcporter.json"),
-        ("备份目录", "ls -la /share/openclaw-backup/latest"),
-        (
-            "立即备份",
-            "set -e; echo '▶ 创建目录…'; mkdir -p /share/openclaw-backup/latest/.openclaw /share/openclaw-backup/latest/.mcporter; echo '▶ 备份 .openclaw…'; rsync -a --delete /config/.openclaw/ /share/openclaw-backup/latest/.openclaw/; echo '▶ 备份 .mcporter…'; rsync -a --delete /config/.mcporter/ /share/openclaw-backup/latest/.mcporter/; echo '✓ 备份完成'",
-        ),
-    ]
-    .iter()
-    .map(|(label, cmd)| action_button(label, cmd))
-    .collect::<Vec<_>>()
-    .join("");
-
-    let token_action = sensitive_button(
-        "读取令牌",
-        "jq -r '.gateway.auth.token' /config/.openclaw/openclaw.json",
-        "此命令会把 auth token 明文输出到终端，请确认当前环境安全后再执行。",
-    );
-
-    format!(
-        r#"<div class="page-grid">
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <div class="eyebrow">命令行</div>
-        <h2>命令工作区</h2>
-        <p class="muted">这里集中放高频维护动作。按钮显示中文，实际执行的仍然是英文 OpenClaw 命令，便于和官方文档、日志保持一致。</p>
-      </div>
-      <div class="header-actions">
-        {load_terminal}
-        {close_terminal}
-        {open_window}
-        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
-      </div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">配对与初始化</div>
-      <div class="action-row">{setup_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">诊断与维护</div>
-      <div class="action-row">{diagnostic_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">日志跟踪（新窗口）</div>
-      <div class="action-row">{log_stream_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">MCP 与备份</div>
-      <div class="action-row">{token_action}{storage_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">自定义命令</div>
-      <div class="custom-cmd-row">
-        <input type="text" class="cmd-input" id="customCmdInput"
-               placeholder="输入一次性 shell 命令；如果你想要官方交互式 CLI，请优先点上面的 OpenClaw CLI"
-               autocomplete="off" spellcheck="false">
-        <button class="btn btn-action" type="button" onclick="ocRunCustomCommand()">运行</button>
-      </div>
-    </div>
-  </section>
-  {terminal}
-  <script>
-    (function() {{
-      var inp = document.getElementById("customCmdInput");
-      if (inp) inp.addEventListener("keydown", function(e) {{ if (e.key === "Enter") ocRunCustomCommand(); }});
-    }})();
-  </script>
-</div>"#,
-        load_terminal = primary_button("加载终端", "ocLoadTerminal()"),
-        close_terminal = ghost_button("关闭终端", "ocCloseTerminal()"),
-        open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
-        setup_actions = setup_actions,
-        diagnostic_actions = diagnostic_actions,
-        log_stream_actions = log_stream_actions,
-        token_action = token_action,
-        storage_actions = storage_actions,
-        terminal = terminal_card(
-            "嵌入式终端",
-            "这个区域更适合一次性命令和日志查看；如果你需要官方交互式体验，请使用上面的 OpenClaw CLI 打开原生 TUI。",
-            "加载终端",
-        ),
-    )
-}
-
 fn config_content_v2(config: &PageConfig) -> String {
-    let openclaw_config_cmd = format!("cat {}", config.openclaw_config_path);
-    let panel_config_cmd = format!("cat {}", panel_config_path().display());
-    let mcporter_config_cmd = format!("cat {}", config.mcporter_config_path);
-
+    let panel_config_path = panel_config_path().display().to_string();
     let (web_label, web_docs, web_console, _) =
         provider_meta(&config.web_provider, WEB_PROVIDER_META);
     let (memory_label, memory_docs, memory_console, _) =
@@ -1501,7 +1138,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="header-actions">
         <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('openclaw tui')">OpenClaw CLI</button>
+        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow()">OpenClaw CLI</button>
         <a class="btn primary" href="./commands">进入命令页</a>
       </div>
     </div>
@@ -1583,7 +1220,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveWebSearchConfig()">保存 Web Search</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw doctor')">在终端验证</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">在终端验证</button>
         <span class="form-status" id="webSaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1644,7 +1281,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveMemorySearchConfig()">保存 Memory Search</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw memory status --deep')">在终端验证</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw memory status --deep')">在终端验证</button>
         <span class="form-status" id="memorySaveStatus">保存后需重启插件</span>
       </div>
     </div>
@@ -1659,7 +1296,7 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="header-actions">
         <a class="btn" href="{model_docs}" target="_blank" rel="noopener noreferrer">官方文档</a>
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('openclaw onboard')">打开初始化向导</button>
+        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">打开初始化向导</button>
       </div>
     </div>
     <div class="config-form">
@@ -1677,30 +1314,14 @@ fn config_content_v2(config: &PageConfig) -> String {
       </div>
       <div class="action-row">
         <button class="btn primary" type="button" onclick="ocSaveModelConfig()">保存模型配置</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('openclaw status --deep')">在终端查看当前模型</button>
+        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在终端查看当前模型</button>
         <span class="form-status" id="modelSaveStatus">保存后需重启插件</span>
       </div>
     </div>
   </section>
 
-  <section class="card">
-    <h3>相关文件</h3>
-    <div class="kv-list">
-      {oc_config_path}
-      {panel_path}
-      {mcporter_config_path}
-      {cert_dir}
-      {runtime_dir}
-      {backup_dir}
-    </div>
-    <div class="action-row">
-      <button class="btn" type="button" onclick="ocRunCommand('{openclaw_config_cmd}')">查看 openclaw.json</button>
-      <button class="btn" type="button" onclick="ocRunCommand('{panel_config_cmd}')">查看 Add-on 配置文件</button>
-      <button class="btn" type="button" onclick="ocRunCommand('{mcporter_config_cmd}')">查看 mcporter.json</button>
-    </div>
-  </section>
 </div>"#,
-        panel_config_path = panel_config_path().display(),
+        panel_config_path = panel_config_path,
         access = kv_row("访问模式", &config.access_mode),
         mode = kv_row("网关模式", &config.gateway_mode),
         https = kv_row("HTTPS 端口", &config.https_port),
@@ -1746,101 +1367,50 @@ fn config_content_v2(config: &PageConfig) -> String {
         model_docs = MODEL_CONFIG_DOCS_URL,
         current_model = html_attr_escape(&config.current_model),
         model_datalist = model_datalist,
-        oc_config_path = kv_row("OpenClaw 配置", &config.openclaw_config_path),
-        panel_path = kv_row("Add-on 配置", &panel_config_path().display().to_string()),
-        mcporter_config_path = kv_row("MCPorter 配置", &config.mcporter_config_path),
-        cert_dir = kv_row("证书目录", &config.cert_dir),
-        runtime_dir = kv_row("运行时目录", &config.openclaw_runtime_dir),
-        backup_dir = kv_row("备份目录", &config.backup_dir),
-        openclaw_config_cmd = html_attr_escape(&openclaw_config_cmd),
-        panel_config_cmd = html_attr_escape(&panel_config_cmd),
-        mcporter_config_cmd = html_attr_escape(&mcporter_config_cmd),
     )
 }
 
-fn commands_content_v2(config: &PageConfig) -> String {
-    let control_actions = [
-        ("OpenClaw CLI", "openclaw tui"),
-        ("设备列表", "openclaw devices list"),
-        ("批准最新配对", "openclaw devices approve --latest"),
-        ("初始化向导", "openclaw onboard"),
-    ]
-    .iter()
-    .map(|(label, cmd)| {
-        if *cmd == "openclaw tui" {
-            terminal_window_button(label, cmd)
-        } else {
-            action_button(label, cmd)
-        }
-    })
-    .collect::<Vec<_>>()
-    .join("");
-
-    let health_actions = [
-        (
-            "探针状态",
-            "curl -fsS http://127.0.0.1:48099/healthz && echo && curl -fsS http://127.0.0.1:48099/readyz",
+fn commands_content_native(_config: &PageConfig) -> String {
+    let entry_actions = [
+        terminal_window_button("OpenClaw CLI", ""),
+        primary_link_button(
+            "原生 Gateway",
+            "ocGatewayLinkCmd",
+            "return ocOpenGatewayLink(event, this)",
         ),
-        ("JSON 健康", "openclaw health --json"),
-        ("运行状态", "openclaw status --deep"),
+        terminal_window_button("首次引导", &tui_shell("openclaw onboard")),
     ]
-    .iter()
-    .map(|(label, cmd)| diag_button(label, cmd))
-    .collect::<Vec<_>>()
     .join("");
 
-    let maintenance_actions = [
-        ("运行 doctor", "openclaw doctor"),
-        ("doctor --fix", "openclaw doctor --fix"),
-        ("安全审计", "openclaw security audit --deep"),
-        ("记忆状态", "openclaw memory status --deep"),
-        ("本机版本", "openclaw --version"),
-    ]
-    .iter()
-    .map(|(label, cmd)| diag_button(label, cmd))
-    .collect::<Vec<_>>()
-    .join("");
-
-    let log_stream_actions = [
-        ("跟随日志", "openclaw logs --follow"),
-        ("网关日志", "tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
-    ]
-    .iter()
-    .map(|(label, cmd)| terminal_window_button(label, cmd))
-    .collect::<Vec<_>>()
-    .join("");
-
-    let config_actions = [
-        ("MCP 列表", "mcporter list".to_string()),
-        ("OpenClaw 配置", format!("cat {}", config.openclaw_config_path)),
-        ("MCP 配置", format!("cat {}", config.mcporter_config_path)),
-        ("Workspace", format!("ls -la {}", config.openclaw_workspace_dir)),
-        ("状态根目录", format!("ls -la {}", config.openclaw_state_dir)),
-        ("备份目录", format!("ls -la {}", config.backup_dir)),
-        (
-            "立即备份",
-            format!(
-                "set -e; echo '▶ 创建目录…'; mkdir -p {backup}/.openclaw {backup}/.mcporter; echo '▶ 备份 .openclaw…'; rsync -a --delete {oc_state}/ {backup}/.openclaw/; echo '▶ 备份 .mcporter…'; rsync -a --delete {mcp_home}/ {backup}/.mcporter/; echo '✓ 备份完成'",
-                backup = config.backup_dir,
-                oc_state = config.openclaw_state_dir,
-                mcp_home = config.mcporter_home_dir,
+    let status_actions = [
+        diag_button("健康检查", &tui_shell("openclaw health --json")),
+        diag_button("运行状态", &tui_shell("openclaw status --deep")),
+        diag_button(
+            "本地探针",
+            &tui_shell(
+                "curl -fsS http://127.0.0.1:48099/healthz && echo && curl -fsS http://127.0.0.1:48099/readyz",
             ),
         ),
     ]
-    .iter()
-    .map(|(label, cmd)| action_button(label, cmd))
-    .collect::<Vec<_>>()
     .join("");
 
-    let token_action = sensitive_button(
-        "读取令牌",
-        &format!("jq -r '.gateway.auth.token' {}", config.openclaw_config_path),
-        "此命令会把 auth token 明文输出到终端，请确认当前环境安全后再执行。",
-    );
-    let restart_action = action_button(
-        "重启网关",
-        "curl -fsS -X POST http://127.0.0.1:48099/action/restart",
-    );
+    let maintenance_actions = [
+        diag_button("运行 doctor", &tui_shell("openclaw doctor")),
+        diag_button("手动 doctor --fix", &tui_shell("openclaw doctor --fix")),
+        diag_button("安全审计", &tui_shell("openclaw security audit --deep")),
+        diag_button("记忆状态", &tui_shell("openclaw memory status --deep")),
+        diag_button("版本信息", &tui_shell("openclaw --version")),
+    ]
+    .join("");
+
+    let log_actions = [
+        terminal_window_button("跟随日志", &tui_shell("openclaw logs --follow")),
+        terminal_window_button(
+            "网关日志",
+            &tui_shell("tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
+        ),
+    ]
+    .join("");
 
     format!(
         r#"<div class="page-grid">
@@ -1848,8 +1418,8 @@ fn commands_content_v2(config: &PageConfig) -> String {
     <div class="card-head">
       <div>
         <div class="eyebrow">命令行</div>
-        <h2>命令工作区</h2>
-        <p class="muted">这里按官方操作模型重组。<code>OpenClaw CLI</code> 实际打开的是原生 <code>openclaw tui</code>；进入后普通输入发给 Gateway，本机 shell 命令请使用 <code>!命令</code> 前缀。</p>
+        <h2>原生入口</h2>
+        <p class="muted">这里保留更接近官方文档的入口。<code>OpenClaw CLI</code> 打开的就是原生 <code>openclaw tui</code>；在 TUI 里输入 <code>!命令</code> 可以执行本机 shell 命令。</p>
       </div>
       <div class="header-actions">
         {load_terminal}
@@ -1860,183 +1430,54 @@ fn commands_content_v2(config: &PageConfig) -> String {
     </div>
 
     <div class="command-section">
-      <div class="section-label">控制台与配对</div>
-      <div class="action-row">{control_actions}</div>
-      <div class="mini-tip">TUI 示例：直接输入问题开始会话；输入 <code>!openclaw status</code>、<code>!ha addons logs openclaw_assistant_rust</code> 执行本机命令。</div>
+      <div class="section-label">原生入口</div>
+      <div class="action-row">{entry_actions}</div>
+      <div class="mini-tip">TUI 示例：输入 <code>!openclaw status</code>、<code>!openclaw doctor</code> 或 <code>!ha addons logs openclaw_assistant_rust</code> 执行本机命令。</div>
     </div>
 
     <div class="command-section">
       <div class="section-label">状态与健康</div>
-      <div class="action-row">{health_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">维护与审计</div>
-      <div class="action-row">{maintenance_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">日志流（新窗口）</div>
-      <div class="action-row">{log_stream_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">配置与状态目录</div>
-      <div class="action-row">{token_action}{config_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">网关控制</div>
-      <div class="action-row">{restart_action}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">自定义命令</div>
-      <div class="custom-cmd-row">
-        <input type="text" class="cmd-input" id="customCmdInput"
-               placeholder="输入一次性 shell 命令；如果你想要官方交互式 CLI，请优先点上面的 OpenClaw CLI"
-               autocomplete="off" spellcheck="false">
-        <button class="btn btn-action" type="button" onclick="ocRunCustomCommand()">运行</button>
-      </div>
-    </div>
-  </section>
-  {terminal}
-  <script>
-    (function() {{
-      var inp = document.getElementById("customCmdInput");
-      if (inp) inp.addEventListener("keydown", function(e) {{ if (e.key === "Enter") ocRunCustomCommand(); }});
-    }})();
-  </script>
-</div>"#,
-        load_terminal = primary_button("加载终端", "ocLoadTerminal()"),
-        close_terminal = ghost_button("关闭终端", "ocCloseTerminal()"),
-        open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
-        control_actions = control_actions,
-        health_actions = health_actions,
-        maintenance_actions = maintenance_actions,
-        log_stream_actions = log_stream_actions,
-        token_action = token_action,
-        config_actions = config_actions,
-        restart_action = restart_action,
-        terminal = terminal_card(
-            "嵌入式终端",
-            "这个区域更适合一次性命令和日志查看；如果你需要官方交互式体验，请使用上面的 OpenClaw CLI 打开原生 TUI。",
-            "加载终端",
-        ),
-    )
-}
-
-fn commands_content_native(_config: &PageConfig) -> String {
-    let entry_actions = [
-        terminal_window_button("OpenClaw CLI", "openclaw tui"),
-        primary_link_button(
-            "鍘熺敓 Gateway",
-            "ocGatewayLinkCmd",
-            "return ocOpenGatewayLink(event, this)",
-        ),
-        terminal_window_button("鍒濆鍖栧悜瀵?", "openclaw onboard"),
-    ]
-    .join("");
-
-    let status_actions = [
-        diag_button("鍋ュ悍妫€鏌?", "openclaw health --json"),
-        diag_button("杩愯鐘舵€?", "openclaw status --deep"),
-        diag_button(
-            "鏈湴探针",
-            "curl -fsS http://127.0.0.1:48099/healthz && echo && curl -fsS http://127.0.0.1:48099/readyz",
-        ),
-    ]
-    .join("");
-
-    let pair_actions = [
-        action_button("璁惧鍒楄〃", "openclaw devices list"),
-        action_button("鎵瑰噯鏈€鏂伴厤瀵?", "openclaw devices approve --latest"),
-    ]
-    .join("");
-
-    let maintenance_actions = [
-        diag_button("杩愯 doctor", "openclaw doctor"),
-        diag_button("doctor --fix", "openclaw doctor --fix"),
-        diag_button("瀹夊叏瀹¤", "openclaw security audit --deep"),
-        diag_button("璁板繂鐘舵€?", "openclaw memory status --deep"),
-        diag_button("鏈満鐗堟湰", "openclaw --version"),
-    ]
-    .join("");
-
-    let log_actions = [
-        terminal_window_button("璺熼殢鏃ュ織", "openclaw logs --follow"),
-        terminal_window_button("缃戝叧鏃ュ織", "tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
-    ]
-    .join("");
-
-    format!(
-        r#"<div class="page-grid">
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <div class="eyebrow">鍛戒护琛?/div>
-        <h2>鍘熺敓鍏ュ彛</h2>
-        <p class="muted">杩欎釜椤甸潰鍙繚鐣欐洿鎺ヨ繎瀹樻柟鐨勫叆鍙ｃ€?code>OpenClaw CLI</code> 鎵撳紑鐨勬槸鍘熺敓 <code>openclaw tui</code>锛涘湪 TUI 閲岃緭鍏?code>!鍛戒护</code> 鍙互鎵ц鏈満 shell 鍛戒护銆?/p>
-      </div>
-      <div class="header-actions">
-        {load_terminal}
-        {close_terminal}
-        {open_window}
-        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">涓嬭浇 CA 璇佷功</a>
-      </div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">鍘熺敓鍏ュ彛</div>
-      <div class="action-row">{entry_actions}</div>
-      <div class="mini-tip">TUI 绀轰緥锛氳緭鍏?code>!openclaw status</code> 鎴?code>!ha addons logs openclaw_assistant_rust</code> 鎵ц鏈満鍛戒护銆?/div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">鐘舵€佷笌鍋ュ悍</div>
       <div class="action-row">{status_actions}</div>
     </div>
 
     <div class="command-section">
-      <div class="section-label">璁惧涓庨厤瀵?/div>
-      <div class="action-row">{pair_actions}</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">缁存姢涓庡璁?/div>
+      <div class="section-label">维护与诊断</div>
       <div class="action-row">{maintenance_actions}</div>
+      <div class="mini-tip">设备配对与批准已收回原生 Control UI 或 TUI 处理，HA 面板不再单独维护这条链路。</div>
     </div>
 
     <div class="command-section">
-      <div class="section-label">鏃ュ織娴侊紙鏂扮獥鍙ｏ級</div>
+      <div class="section-label">日志跟踪（新窗口）</div>
       <div class="action-row">{log_actions}</div>
     </div>
   </section>
   {terminal}
 </div>"#,
-        load_terminal = primary_button("鍔犺浇缁堢", "ocLoadTerminal()"),
-        close_terminal = ghost_button("鍏抽棴缁堢", "ocCloseTerminal()"),
-        open_window = secondary_button("鏂扮獥鍙ｆ墦寮€缁堢", "ocOpenTerminalWindow()"),
+        load_terminal = primary_button("加载终端", "ocLoadTerminal()"),
+        close_terminal = ghost_button("关闭终端", "ocCloseTerminal()"),
+        open_window = secondary_button("新窗口打开终端", "ocOpenTerminalWindow()"),
         entry_actions = entry_actions,
         status_actions = status_actions,
-        pair_actions = pair_actions,
         maintenance_actions = maintenance_actions,
         log_actions = log_actions,
         terminal = terminal_card(
-            "宓屽叆寮忕粓绔?",
-            "杩欎釜鍖哄煙閫傚悎涓€娆℃€у懡浠ゅ拰鏃ュ織鏌ョ湅锛屽鏋滀綘闇€瑕佹洿鍘熺敓鐨勪氦浜掑紡浣撻獙锛岃浣跨敤涓婇潰鐨?OpenClaw CLI 鎵撳紑 TUI銆?",
-            "鍔犺浇缁堢",
+            "嵌入式 TUI",
+            "这里适合一次性命令和日志查看；如果你需要完整的原生交互体验，请使用上面的 OpenClaw CLI。",
+            "加载 TUI",
         ),
     )
 }
 
 fn logs_content() -> String {
     let log_actions = [
-        ("跟随日志", "openclaw logs --follow"),
-        ("网关日志", "tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
-        ("运行 doctor", "openclaw doctor"),
-        ("doctor --fix", "openclaw doctor --fix"),
-        ("状态深查", "openclaw status --deep"),
+        ("跟随日志", tui_shell("openclaw logs --follow")),
+        (
+            "网关日志",
+            tui_shell("tail -f /tmp/openclaw/openclaw-$(date +%F).log"),
+        ),
+        ("运行 doctor", tui_shell("openclaw doctor")),
+        ("手动 doctor --fix", tui_shell("openclaw doctor --fix")),
+        ("状态深查", tui_shell("openclaw status --deep")),
     ]
     .iter()
     .map(|(label, cmd)| action_button(label, cmd))
@@ -2061,9 +1502,9 @@ fn logs_content() -> String {
 </div>"#,
         log_actions = log_actions,
         terminal = terminal_card(
-            "日志终端",
-            "点击上方按钮执行命令，输出结果会在这里显示。",
-            "加载日志终端",
+            "日志 TUI",
+            "点击上方按钮后，命令会以 <code>!命令</code> 的形式送入 TUI，输出结果会显示在这里。",
+            "加载日志 TUI",
         ),
     )
 }
@@ -2440,28 +1881,6 @@ fn render_shell(
     const initialTerminalStageHtml = document.getElementById("terminalStage") ? document.getElementById("terminalStage").innerHTML : "";
     let gatewayTokenValue = "";
     function appUrl(relativePath) {{ return new URL(relativePath, location.href).toString(); }}
-    async function loadPanel(url, targetId) {{
-      const target = document.getElementById(targetId);
-      if (!target) return;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      try {{
-        const response = await fetch(url, {{ credentials: "same-origin", signal: ctrl.signal }});
-        clearTimeout(timer);
-        if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
-        target.innerHTML = await response.text();
-      }} catch (error) {{
-        clearTimeout(timer);
-        if (error.name !== "AbortError") {{
-          target.innerHTML = `<p class="muted">面板加载失败：${{error.message}}</p>`;
-        }}
-      }}
-    }}
-    function refreshPanels() {{
-      if (document.visibilityState !== "visible") return;
-      if (document.getElementById("healthPanel")) loadPanel(appUrl("./partials/health"), "healthPanel");
-      if (document.getElementById("diagPanel")) loadPanel(appUrl("./partials/diag"), "diagPanel");
-    }}
     function nativeGatewayUrl() {{
       if (configuredGatewayUrl && configuredGatewayUrl.trim() !== "") return configuredGatewayUrl;
       return `https://${{location.hostname}}:${{httpsPort}}/`;
@@ -2484,12 +1903,12 @@ fn render_shell(
       gatewayTokenValue = text;
       return gatewayTokenValue;
     }}
-    async function waitForGatewayControlReady(timeoutMs = 150000) {{
+    async function waitForGatewayReady(timeoutMs = 150000) {{
       const deadline = Date.now() + timeoutMs;
       let stable = 0;
       while (Date.now() < deadline) {{
         try {{
-          const response = await fetch(appUrl('./control-readyz'), {{ credentials: 'same-origin', cache: 'no-cache' }});
+          const response = await fetch(appUrl('./readyz'), {{ credentials: 'same-origin', cache: 'no-cache' }});
           if (response.ok) {{
             stable += 1;
             if (stable >= 2) {{
@@ -2607,7 +2026,7 @@ fn render_shell(
       const popup = window.open("", "_blank");
       writeGatewayLoadingPage(popup);
       const targetUrl = nativeGatewayUrl();
-      await waitForGatewayControlReady();
+      await waitForGatewayReady();
       let finalUrl = targetUrl;
       try {{
         const token = await fetchGatewayToken();
@@ -2739,76 +2158,9 @@ fn render_shell(
         ocSetFormStatus("modelSaveStatus", "保存失败：" + (error.message || error), false);
       }}
     }};
-    document.addEventListener("visibilitychange", refreshPanels);
     syncGatewayLink();
     ocSyncProviderMeta("web");
     ocSyncProviderMeta("memory");
-    window.setInterval(refreshPanels, 45000);
-    window.setTimeout(refreshPanels, 120);
-  </script>
-  <script>
-    (function() {{
-      var banner = document.getElementById("pairing-banner");
-      if (!banner) return;
-
-      function renderBanner(pairs) {{
-        if (!pairs || pairs.length === 0) {{
-          banner.style.display = "none";
-          banner.innerHTML = "";
-          return;
-        }}
-        var html = '<div class="notice-badge warn" style="margin-bottom:8px">';
-        html += '<strong>有 ' + pairs.length + ' 台设备请求配对</strong>';
-        html += '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">';
-        pairs.forEach(function(p) {{
-          html += '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #fcd34d;border-radius:8px;padding:4px 10px;font-size:13px;">';
-          html += '<span>' + escapeHtml(p.deviceName) + '</span>';
-          html += '<button class="btn btn-action" style="padding:2px 10px;font-size:12px;" onclick="ocApprovePair(\'' + escapeHtml(p.requestId) + '\',this)">批准</button>';
-          html += '</span>';
-        }});
-        html += '</div></div>';
-        banner.innerHTML = html;
-        banner.style.display = "block";
-      }}
-
-      function escapeHtml(str) {{
-        return String(str).replace(/[&<>"']/g, function(c) {{
-          return ({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}})[c];
-        }});
-      }}
-
-      window.ocApprovePair = function(requestId, btn) {{
-        btn.disabled = true;
-        btn.textContent = "处理中…";
-        fetch(appUrl('./action/pair-approve'), {{
-          method: "POST",
-          headers: {{"Content-Type": "application/json"}},
-          body: JSON.stringify({{request_id: requestId}})
-        }})
-        .then(function(r) {{ return r.json(); }})
-        .then(function(data) {{
-          if (data.ok) {{
-            btn.closest("span").innerHTML = '<span style="color:#15803d;font-weight:700;">✓ ' + escapeHtml(data.message) + '</span>';
-          }} else {{
-            btn.disabled = false;
-            btn.textContent = "重试";
-            btn.title = data.message;
-          }}
-        }})
-        .catch(function() {{
-          btn.disabled = false;
-          btn.textContent = "重试";
-        }});
-      }};
-
-      var es = new EventSource(appUrl('./events/pairing'));
-      es.addEventListener("pairing", function(e) {{
-        try {{ renderBanner(JSON.parse(e.data)); }} catch(ex) {{}}
-      }});
-      es.onerror = function() {{
-        // SSE 断开后浏览器会自动重连，无需手动处理
-      }};
-    }})();
   </script>
 </body>
 </html>"#,
@@ -2824,188 +2176,6 @@ fn render_shell(
         gateway_url = gateway_url,
         https_port = config.https_port,
     )))
-}
-
-// ─── 配对轮询后台任务 ────────────────────────────────────────────────────────
-
-async fn pairing_poll_task(pairing: PairingState) {
-    wait_for_pairing_backend_ready().await;
-
-    // 成功后用 10s 间隔；失败时指数退避（最长 120s），成功后重置。
-    const POLL_SECS: u64 = 10;
-    const MAX_BACKOFF_SECS: u64 = 120;
-    let mut backoff = POLL_SECS;
-
-    loop {
-        let token = PageConfig::from_env().gateway_token;
-        if !token.is_empty() {
-            match gateway_ws::list_pending_pairs(&token).await {
-                Some(new_pairs) => {
-                    backoff = POLL_SECS; // 成功后重置间隔
-                    let changed = {
-                        let old = pairing.pairs.read().await;
-                        old.len() != new_pairs.len()
-                            || old.iter().zip(new_pairs.iter()).any(|(a, b)| a.request_id != b.request_id)
-                    };
-                    if changed {
-                        *pairing.pairs.write().await = new_pairs;
-                        let _ = pairing.notify.send(());
-                    }
-                }
-                None => {
-                    // 失败（gateway 未就绪）：指数退避，减少 gateway 日志噪音
-                    backoff = (backoff * 2).min(MAX_BACKOFF_SECS);
-                }
-            }
-        }
-        tokio::time::sleep(Duration::from_secs(backoff)).await;
-    }
-}
-
-fn gateway_internal_port_from_env() -> u16 {
-    env::var("GATEWAY_INTERNAL_PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(18790)
-}
-
-fn browser_control_port_from_gateway_port(gateway_port: u16) -> u16 {
-    gateway_port.saturating_add(2)
-}
-
-async fn wait_for_pairing_backend_ready() {
-    // 先等 gateway 主进程起来，再用本地 TCP 探针等待 browser/acpx 控制面 ready，
-    // 避免 device.pair.list 在 127.0.0.1:18790 上过早发起 WebSocket 连接。
-    const INITIAL_DELAY_SECS: u64 = 20;
-    const POLL_SECS: u64 = 5;
-    const PROBE_TIMEOUT_MS: u64 = 800;
-    const STABLE_SUCCESSES: u8 = 2;
-    const SETTLE_SECS: u64 = 4;
-
-    tokio::time::sleep(Duration::from_secs(INITIAL_DELAY_SECS)).await;
-
-    let target = format!(
-        "127.0.0.1:{}",
-        browser_control_port_from_gateway_port(gateway_internal_port_from_env())
-    );
-    let mut consecutive_successes = 0u8;
-
-    loop {
-        let ready = timeout(Duration::from_millis(PROBE_TIMEOUT_MS), TcpStream::connect(&target))
-            .await
-            .map(|result| result.is_ok())
-            .unwrap_or(false);
-
-        if ready {
-            consecutive_successes = consecutive_successes.saturating_add(1);
-            if consecutive_successes >= STABLE_SUCCESSES {
-                tokio::time::sleep(Duration::from_secs(SETTLE_SECS)).await;
-                return;
-            }
-        } else {
-            consecutive_successes = 0;
-        }
-
-        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
-    }
-}
-
-// ─── SSE：配对事件推送 ────────────────────────────────────────────────────────
-
-async fn wait_for_pairing_backend_ready_on_demand(timeout_limit: Duration) -> bool {
-    const POLL_SECS: u64 = 5;
-    const PROBE_TIMEOUT_MS: u64 = 800;
-    const STABLE_SUCCESSES: u8 = 2;
-    const SETTLE_SECS: u64 = 4;
-    let deadline = tokio::time::Instant::now() + timeout_limit;
-    let target = format!(
-        "127.0.0.1:{}",
-        browser_control_port_from_gateway_port(gateway_internal_port_from_env())
-    );
-    let mut consecutive_successes = 0u8;
-
-    while tokio::time::Instant::now() < deadline {
-        let ready = timeout(Duration::from_millis(PROBE_TIMEOUT_MS), TcpStream::connect(&target))
-            .await
-            .map(|result| result.is_ok())
-            .unwrap_or(false);
-
-        if ready {
-            consecutive_successes = consecutive_successes.saturating_add(1);
-            if consecutive_successes >= STABLE_SUCCESSES {
-                tokio::time::sleep(Duration::from_secs(SETTLE_SECS)).await;
-                return true;
-            }
-        } else {
-            consecutive_successes = 0;
-        }
-
-        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
-    }
-
-    false
-}
-
-async fn pairing_sse(
-    State(state): State<AppState>,
-) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    let pairing = state.pairing.clone();
-    let initial_pairs = pairing.pairs.read().await.clone();
-    let token = PageConfig::from_env().gateway_token;
-
-    let initial = build_pairing_event(&initial_pairs);
-    let s = stream::once(async move { Ok(initial) }).chain(stream::unfold(
-        (pairing, initial_pairs, token, false, 10u64),
-        |(pairing, last_pairs, token, ready, backoff)| async move {
-            let mut next_pairs = last_pairs.clone();
-            let mut next_ready = ready;
-            let mut next_backoff = backoff;
-
-            tokio::time::sleep(Duration::from_secs(next_backoff)).await;
-
-            if !token.is_empty() {
-                if next_ready || wait_for_pairing_backend_ready_on_demand(Duration::from_secs(150)).await {
-                    next_ready = true;
-                    match gateway_ws::list_pending_pairs(&token).await {
-                        Some(fresh_pairs) => {
-                            next_backoff = if fresh_pairs.is_empty() { 30 } else { 10 };
-                            next_pairs = fresh_pairs.clone();
-                            *pairing.pairs.write().await = fresh_pairs;
-                        }
-                        None => {
-                            next_backoff = (next_backoff * 2).min(120);
-                        }
-                    }
-                } else {
-                    next_backoff = 30;
-                }
-            }
-
-            let event = build_pairing_event(&next_pairs);
-            Some((Ok(event), (pairing, next_pairs, token, next_ready, next_backoff)))
-        },
-    ));
-
-    Sse::new(s).keep_alive(
-        axum::response::sse::KeepAlive::new().interval(Duration::from_secs(25)),
-    )
-}
-
-fn build_pairing_event(pairs: &[PendingPair]) -> Event {
-    let data: Vec<serde_json::Value> = pairs
-        .iter()
-        .map(|p| serde_json::json!({ "requestId": p.request_id, "deviceName": p.device_name }))
-        .collect();
-    Event::default()
-        .event("pairing")
-        .data(serde_json::to_string(&data).unwrap_or_else(|_| "[]".to_string()))
-}
-
-// ─── POST /action/pair-approve ────────────────────────────────────────────────
-
-#[derive(serde::Deserialize)]
-struct ApproveRequest {
-    request_id: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -3183,24 +2353,6 @@ fn apply_model_overlay(config: &mut serde_json::Value, body: &SaveModelRequest) 
     }
 }
 
-async fn pair_approve(
-    State(state): State<AppState>,
-    Json(body): Json<ApproveRequest>,
-) -> impl IntoResponse {
-    let token = PageConfig::from_env().gateway_token;
-    if token.is_empty() {
-        return Json(serde_json::json!({ "ok": false, "message": "Gateway token 未配置" }));
-    }
-    let (ok, message) = gateway_ws::approve_pair(&token, &body.request_id).await;
-    // 批准后立即刷新配对列表
-    if ok {
-        if let Some(new_pairs) = gateway_ws::list_pending_pairs(&token).await {
-            *state.pairing.pairs.write().await = new_pairs;
-        }
-    }
-    Json(serde_json::json!({ "ok": ok, "message": message }))
-}
-
 // ─── 页面 handlers ────────────────────────────────────────────────────────────
 
 async fn save_web_search_config(Json(body): Json<SaveWebSearchRequest>) -> impl IntoResponse {
@@ -3253,13 +2405,12 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
         drop(guard);
         tokio::join!(collect_system_snapshot(), fetch_openclaw_health())
     };
-    let pending_devices = state.pairing.pairs.read().await.len();
     render_shell(
         &config,
         NavPage::Home,
         "OpenClawHAOSAddon-Rust",
         "查看 OpenClaw 当前是否正常运行、各服务进程状态，以及系统资源占用情况。",
-        &home_content(&config, &snapshot, health_ok, pending_devices),
+        &home_content(&config, &snapshot, health_ok),
     )
 }
 
@@ -3282,7 +2433,7 @@ async fn commands_page(State(state): State<AppState>) -> impl IntoResponse {
         &config,
         NavPage::Commands,
         "命令行工作区",
-        "在这里重启服务、批准设备配对、执行诊断，或直接打开终端操作。",
+        "在这里进入原生 TUI、查看健康状态、执行手动维护命令，或直接打开终端操作。",
         &commands_content_native(&config),
     )
 }
@@ -3299,86 +2450,27 @@ async fn logs_page(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn health_partial(State(state): State<AppState>) -> impl IntoResponse {
-    let _ = state;
-    let config = PageConfig::from_env();
-    let display_gateway_pid = tokio::task::spawn_blocking(|| {
-        let gateway_pid = pid_value("openclaw-gateway");
-        if gateway_pid != "-" {
-            gateway_pid
-        } else {
-            pid_value("openclaw-node")
-        }
-    })
-    .await
-    .unwrap_or_else(|_| "-".to_string());
-
-    Html(force_chinese_ui(format!(
-        r#"<div class="eyebrow">运行摘要</div>
-<h2>服务状态</h2>
-<div class="kv-list">
-  {access}
-  {mode}
-  {addon}
-  {openclaw}
-  {gateway_pid}
-</div>"#,
-        access = kv_row("访问模式", &config.access_mode),
-        mode = kv_row("网关模式", &config.gateway_mode),
-        addon = kv_row("Add-on 版本", &config.addon_version),
-        openclaw = kv_row("OpenClaw 版本", &config.openclaw_version),
-        gateway_pid = kv_row("Gateway PID", &display_gateway_pid),
-    )))
-}
-
-async fn diag_partial(State(state): State<AppState>) -> impl IntoResponse {
-    let _ = state;
-    let config = PageConfig::from_env();
-    Html(force_chinese_ui(format!(
-        r#"<div class="eyebrow">能力摘要</div>
-<h2>快速诊断</h2>
-<div class="kv-list">
-  {mcp}
-  {web}
-  {memory}
-  {https}
-</div>"#,
-        mcp = kv_row("MCP", &mcp_status_display(&config)),
-        web = kv_row("Web Search", display_value(&config.web_status)),
-        memory = kv_row("Memory Search", display_value(&config.memory_status)),
-        https = kv_row("HTTPS 端口", &config.https_port),
-    )))
-}
-
 #[tokio::main]
 async fn main() {
     let cache: Arc<RwLock<Option<CachedSnapshot>>> = Arc::new(RwLock::new(None));
-    let pairing = PairingState::new();
     let cache_bg = cache.clone();
-    let pairing_bg = pairing.clone();
     tokio::spawn(async move {
         loop {
             let (snapshot, health_ok) = tokio::join!(
                 collect_system_snapshot(),
                 fetch_openclaw_health(),
             );
-            // pending_devices 由 pairing_poll_task 维护，这里读缓存即可
-            let pending_devices = pairing_bg.pairs.read().await.len();
-            *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok, pending_devices });
+            *cache_bg.write().await = Some(CachedSnapshot { snapshot, health_ok });
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
     });
-    let app_state = AppState { cache, pairing };
+    let app_state = AppState { cache };
 
     let app = Router::new()
         .route("/", get(index))
         .route("/config", get(config_page))
         .route("/commands", get(commands_page))
         .route("/logs", get(logs_page))
-        .route("/partials/health", get(health_partial))
-        .route("/partials/diag", get(diag_partial))
-        .route("/events/pairing", get(pairing_sse))
-        .route("/action/pair-approve", post(pair_approve))
         .route("/action/config-web-search", post(save_web_search_config))
         .route("/action/config-memory-search", post(save_memory_search_config))
         .route("/action/config-model", post(save_model_config))
@@ -3408,22 +2500,11 @@ mod tests {
             gateway_url: String::new(),
             openclaw_version: "2026.4.2".to_string(),
             https_port: "18789".to_string(),
-            openclaw_config_path: "/config/.openclaw/openclaw.json".to_string(),
-            openclaw_state_dir: "/config/.openclaw".to_string(),
-            openclaw_workspace_dir: "/config/.openclaw/workspace".to_string(),
-            openclaw_runtime_dir: "/run/openclaw-rs".to_string(),
-            mcporter_home_dir: "/config/.mcporter".to_string(),
-            mcporter_config_path: "/config/.mcporter/mcporter.json".to_string(),
-            backup_dir: "/share/openclaw-backup/latest".to_string(),
-            cert_dir: "/config/certs".to_string(),
-            mcp_status: "enabled".to_string(),
-            web_status: "firecrawl".to_string(),
             web_provider: "firecrawl".to_string(),
             web_enabled: true,
             web_base_url: "https://api.firecrawl.dev".to_string(),
             web_model: "firecrawl-search-v1".to_string(),
             web_api_configured: true,
-            memory_status: "x_search".to_string(),
             memory_provider: "openai".to_string(),
             memory_enabled: true,
             memory_model: "text-embedding-3-large".to_string(),
@@ -3432,43 +2513,8 @@ mod tests {
             memory_local_model_path: String::new(),
             memory_api_configured: true,
             current_model: "gpt-4o".to_string(),
-            mcp_endpoint_count: 0,
             gateway_token: String::new(),
         }
-    }
-
-    #[test]
-    fn commands_page_uses_supervisor_restart_endpoint() {
-        let html = commands_content_v2(&sample_page_config());
-
-        assert!(html.contains("curl -fsS -X POST http://127.0.0.1:48099/action/restart"));
-        assert!(!html.contains("openclaw gateway restart"));
-    }
-
-    #[test]
-    fn commands_page_uses_real_npm_and_pairing_commands() {
-        let html = commands_content_v2(&sample_page_config());
-
-        assert!(html.contains("openclaw tui"));
-        assert!(html.contains("ocOpenTerminalWindow(&quot;openclaw tui&quot;)"));
-        assert!(html.contains("openclaw --version"));
-        assert!(!html.contains("npm view openclaw version"));
-        assert!(html.contains("openclaw devices approve --latest"));
-        assert!(!html.contains("https://registry.npmjs.org/openclaw/latest"));
-        assert!(!html.contains("onclick=\"ocRunCommand('openclaw tui')\""));
-        assert!(html.contains("ocRunSensitive"));
-        assert!(html.contains("ocRunCustomCommand"));
-    }
-
-    #[test]
-    fn commands_page_surfaces_probe_and_config_paths() {
-        let html = commands_content_v2(&sample_page_config());
-
-        assert!(html.contains("http://127.0.0.1:48099/healthz"));
-        assert!(html.contains("http://127.0.0.1:48099/readyz"));
-        assert!(html.contains("/config/.openclaw/openclaw.json"));
-        assert!(html.contains("/config/.mcporter/mcporter.json"));
-        assert!(html.contains("/config/.openclaw/workspace"));
     }
 
     #[test]
@@ -3494,6 +2540,13 @@ mod tests {
         assert!(html.contains("https://docs.openclaw.ai/tools/web"));
         assert!(html.contains("https://docs.openclaw.ai/reference/memory-config"));
         assert!(html.contains("id=\"modelSuggestions\""));
+        assert!(!html.contains("相关文件"));
+        assert!(!html.contains("查看 openclaw.json"));
+        assert!(!html.contains("查看 Add-on 配置文件"));
+        assert!(!html.contains("查看 mcporter.json"));
+        assert!(!html.contains("证书目录"));
+        assert!(!html.contains("运行时目录"));
+        assert!(!html.contains("备份目录"));
     }
 
     #[test]
@@ -3527,13 +2580,9 @@ mod tests {
 
         assert!(html.contains("class=\"brand-mark\""));
         assert!(html.contains("preserveAspectRatio=\"xMidYMid meet\""));
-        assert!(html.contains("./control-readyz"));
+        assert!(html.contains("./readyz"));
     }
 
-    #[test]
-    fn browser_control_port_tracks_gateway_port() {
-        assert_eq!(18792, browser_control_port_from_gateway_port(18790));
-    }
 
     #[test]
     fn provider_status_prefers_live_config_paths() {
@@ -3583,3 +2632,5 @@ mod tests {
         assert!(offline.contains("未检测到 PID"));
     }
 }
+
+
