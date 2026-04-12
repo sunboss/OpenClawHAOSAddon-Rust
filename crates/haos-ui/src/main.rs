@@ -898,9 +898,9 @@ fn home_content(
   <section class="card hero-card">
     <div class="card-head">
       <div>
-        <div class="eyebrow">首页</div>
-        <h2>运行状态总览</h2>
-        <p class="muted">查看 OpenClaw 当前是否正常运行、各服务进程状态，以及系统资源占用情况。</p>
+        <div class="eyebrow">主控总览</div>
+        <h2>指挥台状态与资源视图</h2>
+        <p class="muted">统一观察 Agent 网关、服务进程、访问链路与系统负载，作为日常值守和调度入口。</p>
       </div>
       <div class="header-actions">
         {open_gateway}
@@ -936,28 +936,29 @@ fn home_content(
 
         {token_section}
 
-        <section class="card">
-          <div class="card-head compact">
-            <div>
-              <div class="eyebrow">首次安装</div>
-              <h3>推荐路径</h3>
-            </div>
-          </div>
-          <ol class="clean-list">
-            <li>先确认上方总状态为“运行正常”，再点击“打开网关”。</li>
-            <li>首次进入原生 Control UI 时，按官方引导完成初始化、登录或模型配置。</li>
-            <li>如果网页提示权限、身份或 token 问题，优先检查 HTTPS 入口，然后再重新打开页面。</li>
-          </ol>
-          <div class="mini-tip">如果你需要进一步初始化模型、Web Search 或 Memory Search，请继续到“基础配置”页完成保存，然后重启插件让配置生效。</div>
-        </section>
+        <div class="brief-grid">
+          <section class="note-box note-panel">
+            <strong>首次部署路径</strong>
+            <ol class="clean-list">
+              <li>先确认上方总状态为“运行正常”，再点击“打开网关”。</li>
+              <li>首次进入原生 Control UI 时，按官方引导完成初始化、登录或模型配置。</li>
+              <li>如果网页提示权限、身份或 token 问题，优先检查 HTTPS 入口，然后再重新打开页面。</li>
+            </ol>
+            <div class="mini-tip">需要进一步初始化模型、Web Search 或 Memory Search 时，再去“基础配置”页保存并重启插件。</div>
+          </section>
 
-        <div class="note-box">
-          <strong>{access_title}</strong><br>
-          {access_help}<br>
-          <span class="muted">{gateway_mode_help}</span>
+          <section class="note-box note-panel">
+            <strong>{access_title}</strong>
+            <p>{access_help}</p>
+            <div class="mini-tip">{gateway_mode_help}</div>
+          </section>
+
+          <section class="note-box note-panel">
+            <strong>设备配对与身份</strong>
+            <p>设备配对已收回原生入口处理。建议优先在原生 Control UI 中完成批准，或前往命令行页手动执行 <code>openclaw devices approve --latest</code>。</p>
+            <div class="mini-tip">若设备连接时提示 token 错误或被拒绝，请在该设备浏览器中清除此站点的 Cookies 与本地存储，然后重新打开页面。</div>
+          </section>
         </div>
-
-        <div class="note-box">设备配对已收回原生入口处理。建议优先在原生 Control UI 中完成批准，或前往命令行页手动执行 <code>openclaw devices approve --latest</code>。<br>若设备连接时提示 token 错误或被拒绝，请在该设备浏览器中清除此站点的 Cookies 与本地存储，然后重新打开页面。</div>
       </section>
 
       <aside class="panel-right">
@@ -976,8 +977,8 @@ fn home_content(
   <section class="card">
     <div class="card-head compact">
       <div>
-        <div class="eyebrow">资源监控</div>
-        <h2>系统资源概览</h2>
+        <div class="eyebrow">资源遥测</div>
+        <h2>主机资源概览</h2>
       </div>
     </div>
     <div class="resource-grid">
@@ -1113,12 +1114,12 @@ fn config_content_v2(config: &PageConfig) -> String {
 
     format!(
         r#"<div class="page-grid">
-  <section class="card">
+  <section class="card config-intro">
     <div class="card-head">
       <div>
         <div class="eyebrow">配置中心</div>
-        <h2>Web Search、Memory Search 与模型选择</h2>
-        <p class="muted">这一页按官方文档提供可编辑配置，但不会在后台悄悄改 <code>openclaw.json</code>。只有你点击保存时，才会把配置写入独立的 Add-on 配置文件；重启插件后再合并应用，稳定性更高。</p>
+        <h2>Agent 能力矩阵与策略配置</h2>
+        <p class="muted">这里不是普通设置页，而是这台 Agent 主控台的能力控制中心。页面按官方文档暴露可编辑配置，但不会在后台悄悄改 <code>openclaw.json</code>；只有你点击保存时，才会把配置写入独立的 Add-on 配置文件，等重启后再统一合并应用。</p>
       </div>
         <div class="header-actions">
           <button class="btn" type="button" onclick="ocOpenGateway()">打开网关</button>
@@ -1131,8 +1132,9 @@ fn config_content_v2(config: &PageConfig) -> String {
     <div class="mini-tip">推荐顺序：先确认“打开网关”能进入原生页面，再在这里保存配置，最后重启插件并回到 Gateway 验证效果。</div>
   </section>
 
-  <div class="three-up">
-    <section class="card">
+  <section class="config-overview">
+    <div class="ops-stack">
+    <section class="ops-panel">
       <h3>当前状态</h3>
       <div class="kv-list">
         {access}
@@ -1141,7 +1143,7 @@ fn config_content_v2(config: &PageConfig) -> String {
         {model}
       </div>
     </section>
-    <section class="card">
+    <section class="ops-panel">
       <h3>访问模式说明</h3>
       <div class="kv-list">
         {access_label}
@@ -1149,7 +1151,9 @@ fn config_content_v2(config: &PageConfig) -> String {
         {gateway_help}
       </div>
     </section>
-    <section class="card">
+    </div>
+    <aside class="ops-stack">
+    <section class="ops-panel">
       <h3>首次配置路径</h3>
       <ul class="clean-list">
         <li>先打开原生 Gateway，确认页面能正常进入。</li>
@@ -1157,7 +1161,7 @@ fn config_content_v2(config: &PageConfig) -> String {
         <li>保存后重启插件，再回到 Gateway 做实际验证。</li>
       </ul>
     </section>
-    <section class="card">
+    <section class="ops-panel">
       <h3>Web Search 概览</h3>
       <div class="kv-list">
         {web_status}
@@ -1166,7 +1170,7 @@ fn config_content_v2(config: &PageConfig) -> String {
         {web_api}
       </div>
     </section>
-    <section class="card">
+    <section class="ops-panel">
       <h3>Memory Search 概览</h3>
       <div class="kv-list">
         {memory_status}
@@ -1175,7 +1179,8 @@ fn config_content_v2(config: &PageConfig) -> String {
         {memory_api}
       </div>
     </section>
-  </div>
+    </aside>
+  </section>
 
   <section class="card">
     <div class="card-head">
@@ -1383,79 +1388,122 @@ fn config_content_v2(config: &PageConfig) -> String {
 fn commands_content_native(_config: &PageConfig) -> String {
     format!(
         r##"<div class="page-grid">
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <div class="eyebrow">命令行</div>
-        <h2>原生命令参考</h2>
-        <p class="muted">这里保留官方命令参考，并提供一个最轻量的原生 TUI 终端入口。打开后会直接进入 <code>openclaw tui</code>，需要执行本机命令时请使用 <code>!命令</code>。</p>
-      </div>
-      <div class="header-actions">
-        <a class="btn" href="https://docs.openclaw.ai/tui" target="_blank" rel="noopener noreferrer">TUI 文档</a>
-        <a class="btn" href="https://docs.openclaw.ai/cli/index" target="_blank" rel="noopener noreferrer">CLI 文档</a>
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('')">OpenClaw CLI</button>
-        <button class="btn" type="button" onclick="ocOpenShellWindow('')">新窗口打开 Shell</button>
-        <a class="btn primary" href="#" id="ocGatewayLinkCmd" target="_blank" rel="noopener noreferrer" onclick="return ocOpenGatewayLink(event, this)">打开网关</a>
-        <a class="btn" href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer">下载 CA 证书</a>
-      </div>
+  <section class="ops-layout">
+    <div class="ops-stack">
+      <section class="ops-panel">
+        <div class="ops-header">
+          <div class="ops-copy">
+            <div class="eyebrow">调度中枢</div>
+            <h2>原生命令与工作入口</h2>
+            <p class="muted">这里不是普通帮助页，而是 Agent 的运行与调度台。默认入口仍然遵循官方文档：进入 <code>openclaw tui</code>，需要本机命令时使用 <code>!命令</code>；同时保留独立 Shell 作为维护后门。</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('')">OpenClaw CLI</button>
+            <button class="btn" type="button" onclick="ocOpenShellWindow('')">维护 Shell</button>
+            <a class="btn primary" href="#" id="ocGatewayLinkCmd" target="_blank" rel="noopener noreferrer" onclick="return ocOpenGatewayLink(event, this)">打开网关</a>
+          </div>
+        </div>
+        <div class="console-ribbon">
+          <div class="summary-strip-card tone-teal">
+            <div class="summary-strip-title">主入口</div>
+            <div class="summary-strip-value">openclaw tui</div>
+            <div class="summary-strip-sub">原生 TUI，适合长期工作与调度</div>
+          </div>
+          <div class="summary-strip-card tone-blue">
+            <div class="summary-strip-title">本机命令</div>
+            <div class="summary-strip-value">!命令</div>
+            <div class="summary-strip-sub">在 TUI 内触发本机 shell 执行</div>
+          </div>
+          <div class="summary-strip-card tone-violet">
+            <div class="summary-strip-title">备用入口</div>
+            <div class="summary-strip-value">维护 Shell</div>
+            <div class="summary-strip-sub">直接进入本机 shell 处理高级维护</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ops-panel">
+        <div class="command-block">
+          <span class="section-label">官方入口</span>
+          <ul class="clean-list">
+            <li><code>openclaw tui</code>：进入官方 TUI。</li>
+            <li><code>openclaw onboard</code>：执行首次初始化向导。</li>
+            <li><code>openclaw --version</code>：查看当前运行时版本。</li>
+          </ul>
+          <div class="action-row">
+            <button class="btn primary" type="button" onclick="ocOpenTerminalWindow('')">打开 OpenClaw CLI</button>
+            <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">运行初始化向导</button>
+            <button class="btn" type="button" onclick="ocOpenShellWindow('openclaw onboard')">在 Shell 中运行初始化</button>
+          </div>
+        </div>
+
+        <div class="command-block">
+          <span class="section-label">状态与健康</span>
+          <ul class="clean-list">
+            <li><code>openclaw health --json</code></li>
+            <li><code>openclaw status --deep</code></li>
+            <li><code>curl -fsS http://127.0.0.1:48099/healthz</code></li>
+            <li><code>curl -fsS http://127.0.0.1:48099/readyz</code></li>
+          </ul>
+          <div class="action-row">
+            <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw health --json')">在 TUI 检查健康</button>
+            <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在 TUI 查看状态</button>
+          </div>
+        </div>
+
+        <div class="command-block">
+          <span class="section-label">维护与诊断</span>
+          <ul class="clean-list">
+            <li><code>openclaw doctor</code></li>
+            <li><code>openclaw doctor --fix</code></li>
+            <li><code>openclaw security audit --deep</code></li>
+            <li><code>openclaw memory status --deep</code></li>
+          </ul>
+          <div class="action-row">
+            <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">运行 doctor</button>
+            <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor --fix')">运行 doctor --fix</button>
+          </div>
+          <div class="mini-tip">常用流程建议走 TUI；只有需要传统维护体验时，再切换到上方的独立 Shell。</div>
+        </div>
+      </section>
     </div>
 
-    <div class="command-section">
-      <div class="section-label">官方入口</div>
-      <ul class="clean-list">
-        <li><code>openclaw tui</code>：进入官方 TUI。</li>
-        <li><code>openclaw onboard</code>：执行首次初始化向导。</li>
-        <li><code>openclaw --version</code>：查看当前运行时版本。</li>
-      </ul>
-      <div class="action-row">
-        <button class="btn primary" type="button" onclick="ocOpenTerminalWindow('')">打开 OpenClaw CLI</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">运行初始化向导</button>
-        <button class="btn" type="button" onclick="ocOpenShellWindow('openclaw onboard')">在 Shell 中运行初始化</button>
-      </div>
-    </div>
+    <aside class="ops-stack">
+      <section class="ops-panel">
+        <div class="eyebrow">快速信号</div>
+        <h3>运行路径</h3>
+        <div class="signal-list">
+          <div class="signal-item"><span class="signal-label">Web 入口</span><span class="signal-value">HTTPS Gateway</span></div>
+          <div class="signal-item"><span class="signal-label">主控制台</span><span class="signal-value">OpenClaw CLI (TUI)</span></div>
+          <div class="signal-item"><span class="signal-label">诊断通道</span><span class="signal-value">Doctor / Health / Status</span></div>
+          <div class="signal-item"><span class="signal-label">日志链路</span><span class="signal-value">openclaw logs / 网关日志</span></div>
+        </div>
+      </section>
 
-    <div class="command-section">
-      <div class="section-label">状态与健康</div>
-      <ul class="clean-list">
-        <li><code>openclaw health --json</code></li>
-        <li><code>openclaw status --deep</code></li>
-        <li><code>curl -fsS http://127.0.0.1:48099/healthz</code></li>
-        <li><code>curl -fsS http://127.0.0.1:48099/readyz</code></li>
-      </ul>
-      <div class="action-row">
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw health --json')">在终端执行健康检查</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw status --deep')">在终端查看运行状态</button>
-      </div>
-      <div class="mini-tip">如果你更习惯传统维护方式，可以先点顶部的“新窗口打开 Shell”，再手动执行这些命令。</div>
-    </div>
+      <section class="ops-panel">
+        <div class="eyebrow">参考资料</div>
+        <h3>官方文档</h3>
+        <div class="doc-link-list">
+          <a href="https://docs.openclaw.ai/tui" target="_blank" rel="noopener noreferrer"><span>TUI 文档</span><span>官方入口说明</span></a>
+          <a href="https://docs.openclaw.ai/cli/index" target="_blank" rel="noopener noreferrer"><span>CLI 文档</span><span>命令全集</span></a>
+          <a href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer"><span>下载 CA 证书</span><span>浏览器信任链</span></a>
+        </div>
+      </section>
 
-    <div class="command-section">
-      <div class="section-label">维护与诊断</div>
-      <ul class="clean-list">
-        <li><code>openclaw doctor</code></li>
-        <li><code>openclaw doctor --fix</code></li>
-        <li><code>openclaw security audit --deep</code></li>
-        <li><code>openclaw memory status --deep</code></li>
-      </ul>
-      <div class="action-row">
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">运行 doctor</button>
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor --fix')">运行 doctor --fix</button>
-      </div>
-      <div class="mini-tip">默认终端是原生 <code>openclaw tui</code>；如果你更习惯旧方式，也可以用上面的 “Shell” 按钮直接打开本机 shell。</div>
-    </div>
-
-    <div class="command-section">
-      <div class="section-label">日志命令</div>
-      <ul class="clean-list">
-        <li><code>openclaw logs --follow</code></li>
-        <li><code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code></li>
-        <li><code>ha addons logs openclaw_assistant_rust</code></li>
-      </ul>
-      <div class="action-row">
-        <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">在终端跟随日志</button>
-        <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">在 Shell 跟随网关日志</button>
-      </div>
-    </div>
+      <section class="ops-panel">
+        <div class="eyebrow">日志入口</div>
+        <h3>跟踪与回放</h3>
+        <ul class="clean-list">
+          <li><code>openclaw logs --follow</code></li>
+          <li><code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code></li>
+          <li><code>ha addons logs openclaw_assistant_rust</code></li>
+        </ul>
+        <div class="action-row">
+          <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">在 TUI 跟随日志</button>
+          <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">在 Shell 跟随网关日志</button>
+        </div>
+      </section>
+    </aside>
   </section>
 </div>"##,
     )
@@ -1464,26 +1512,61 @@ fn commands_content_native(_config: &PageConfig) -> String {
 fn logs_content() -> String {
     format!(
         r##"<div class="page-grid">
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <div class="eyebrow">日志</div>
-        <h2>日志与诊断</h2>
-        <p class="muted">这里专门保留日志查看相关入口。状态检查、初始化和 doctor 等运维动作请前往“命令行”页执行。</p>
-      </div>
-      <div class="header-actions">
-        <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">打开日志终端</button>
-        <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">打开日志 Shell</button>
-        <a class="btn" href="./commands">进入命令页</a>
-      </div>
+  <section class="ops-layout">
+    <div class="ops-stack">
+      <section class="ops-panel">
+        <div class="ops-header">
+          <div class="ops-copy">
+            <div class="eyebrow">观测台</div>
+            <h2>日志与诊断回放</h2>
+            <p class="muted">这里集中保留日志观察入口，用来追踪 Agent 的运行脉冲、异常线索与恢复过程。初始化、doctor 和状态检查动作请前往“命令行”页执行。</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">打开日志终端</button>
+            <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">打开日志 Shell</button>
+            <a class="btn" href="./commands">进入命令页</a>
+          </div>
+        </div>
+        <div class="console-ribbon">
+          <div class="summary-strip-card tone-blue">
+            <div class="summary-strip-title">原生日志</div>
+            <div class="summary-strip-value">openclaw logs</div>
+            <div class="summary-strip-sub">最直接的运行时日志链路</div>
+          </div>
+          <div class="summary-strip-card tone-violet">
+            <div class="summary-strip-title">网关文件日志</div>
+            <div class="summary-strip-value">/tmp/openclaw</div>
+            <div class="summary-strip-sub">适合精确追踪单日事件</div>
+          </div>
+          <div class="summary-strip-card tone-teal">
+            <div class="summary-strip-title">HA Add-on 日志</div>
+            <div class="summary-strip-value">ha addons logs</div>
+            <div class="summary-strip-sub">适合查看插件壳层输出</div>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <ul class="clean-list">
-      <li><code>openclaw logs --follow</code></li>
-      <li><code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code></li>
-      <li><code>ha addons logs openclaw_assistant_rust</code></li>
-    </ul>
-    <div class="mini-tip">如果你只需要查看日志，优先使用这里的两个入口；如果你要做初始化、doctor 或状态检查，请前往命令页。</div>
+    <aside class="ops-stack">
+      <section class="ops-panel">
+        <div class="eyebrow">跟踪命令</div>
+        <h3>常用入口</h3>
+        <ul class="clean-list">
+          <li><code>openclaw logs --follow</code></li>
+          <li><code>tail -f /tmp/openclaw/openclaw-$(date +%F).log</code></li>
+          <li><code>ha addons logs openclaw_assistant_rust</code></li>
+        </ul>
+      </section>
+      <section class="ops-panel">
+        <div class="eyebrow">使用建议</div>
+        <h3>排查顺序</h3>
+        <ul class="clean-list">
+          <li>先看 <code>openclaw logs --follow</code> 判断核心运行时是否正常。</li>
+          <li>需要精确定位单日事件时，再切到 Gateway 文件日志。</li>
+          <li>如果怀疑壳层、HTTPS 或面板问题，再查看 HA Add-on 日志。</li>
+        </ul>
+      </section>
+    </aside>
   </section>
 </div>"##,
     )
@@ -1573,6 +1656,9 @@ fn render_shell(
     let nav_commands = nav_link(page, NavPage::Commands, "./commands", "命令行");
     let nav_logs = nav_link(page, NavPage::Logs, "./logs", "日志");
     let gateway_url = js_string(&config.gateway_url);
+    let access_label = html_attr_escape(access_mode_label(&config.access_mode));
+    let gateway_mode = html_attr_escape(&config.gateway_mode);
+    let model_name = html_attr_escape(&config.current_model);
 
     Html(force_chinese_ui(format!(
         r#"<!doctype html>
@@ -1822,26 +1908,423 @@ fn render_shell(
       .summary-strip,.feature-grid,.resource-grid{{ grid-template-columns:1fr; }}
     }}
   </style>
+  <style>
+    :root {{
+      --bg:#040811;
+      --bg-top:#07111d;
+      --panel:rgba(10,19,34,.84);
+      --panel-strong:rgba(8,16,28,.92);
+      --line:rgba(136,174,214,.13);
+      --line-strong:rgba(120,215,216,.24);
+      --text:#edf4ff;
+      --muted:#8ca3bf;
+      --accent:#78d7d8;
+      --gold:#d8b97f;
+      --good:#4ade80;
+      --warn:#f6c453;
+      --danger:#fb7185;
+      --shadow:0 24px 80px rgba(0,0,0,.42);
+      --shadow-soft:0 14px 32px rgba(0,0,0,.24);
+    }}
+    body {{
+      color:var(--text);
+      font-family:"MiSans","HarmonyOS Sans SC","Noto Sans SC","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      background:
+        radial-gradient(circle at 15% 18%, rgba(62,131,208,.16), transparent 28%),
+        radial-gradient(circle at 84% 14%, rgba(120,215,216,.1), transparent 24%),
+        radial-gradient(circle at 74% 76%, rgba(216,185,127,.08), transparent 22%),
+        linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 58%, #02060c 100%);
+      overflow-x:hidden;
+    }}
+    body::before {{
+      content:"";
+      position:fixed;
+      inset:0;
+      background-image:
+        linear-gradient(rgba(120,215,216,.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(120,215,216,.05) 1px, transparent 1px);
+      background-size:72px 72px;
+      mask-image:radial-gradient(circle at center, rgba(0,0,0,.8), transparent 92%);
+      opacity:.22;
+      pointer-events:none;
+    }}
+    body::after {{
+      content:"";
+      position:fixed;
+      inset:-10%;
+      background:
+        radial-gradient(circle at 26% 20%, rgba(120,215,216,.12), transparent 24%),
+        radial-gradient(circle at 70% 16%, rgba(94,143,221,.14), transparent 28%);
+      filter:blur(52px);
+      opacity:.5;
+      pointer-events:none;
+      animation:oc-glow-drift 18s ease-in-out infinite alternate;
+    }}
+    @keyframes oc-glow-drift {{
+      from {{ transform:translate3d(0,0,0) scale(1); }}
+      to {{ transform:translate3d(14px,-12px,0) scale(1.03); }}
+    }}
+    .console-shell {{
+      position:relative;
+      display:grid;
+      grid-template-columns:300px minmax(0,1fr);
+      min-height:100vh;
+    }}
+    .app-header {{
+      position:sticky;
+      top:0;
+      min-height:100vh;
+      align-self:start;
+      display:flex;
+      flex-direction:column;
+      gap:24px;
+      padding:28px 24px 24px;
+      background:linear-gradient(180deg, rgba(7,13,23,.92) 0%, rgba(5,10,18,.82) 100%);
+      border-right:1px solid rgba(136,174,214,.12);
+      box-shadow:inset -1px 0 0 rgba(255,255,255,.03);
+      backdrop-filter:blur(20px);
+    }}
+    .app-brand {{ gap:14px; }}
+    .app-brand-badge {{
+      width:48px; height:48px; border-radius:16px;
+      background:linear-gradient(145deg, rgba(120,215,216,.18), rgba(58,94,137,.16));
+      border:1px solid rgba(120,215,216,.16);
+      box-shadow:0 16px 32px rgba(0,0,0,.24);
+    }}
+    .brand-mark {{ width:28px; height:28px; }}
+    .app-brand-name {{ color:#f3f9ff; font-size:17px; font-weight:800; }}
+    .app-brand-sub {{ color:#7d94b2; letter-spacing:.16em; text-transform:uppercase; }}
+    .app-meta {{ display:flex; flex-wrap:wrap; gap:10px; }}
+    .version-chip, .meta-chip {{
+      display:inline-flex; align-items:center; min-height:30px; padding:0 12px;
+      border-radius:999px; border:1px solid rgba(136,174,214,.12);
+      background:rgba(14,25,42,.72); color:#91aac8;
+      font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+    }}
+    .meta-chip.accent {{ color:#d0faf8; border-color:rgba(120,215,216,.22); }}
+    .app-nav {{ display:grid; gap:8px; overflow:visible; }}
+    .nav-link {{
+      min-height:46px; border-radius:14px; padding:0 16px;
+      border:1px solid transparent; color:#90a7c6; background:transparent;
+      transition:transform .16s ease, border-color .16s ease, background .16s ease, color .16s ease;
+    }}
+    .nav-link:hover {{
+      color:#ebf5ff; background:rgba(18,33,56,.72); border-color:rgba(136,174,214,.12); transform:translateX(2px);
+    }}
+    .nav-link.active {{
+      color:#f3fcff; background:linear-gradient(135deg, rgba(25,46,73,.92), rgba(15,29,52,.92));
+      border-color:rgba(120,215,216,.22); box-shadow:0 12px 24px rgba(0,0,0,.2);
+    }}
+    .rail-stack {{ display:grid; gap:14px; margin-top:auto; }}
+    .rail-panel {{
+      padding:16px; border-radius:20px; border:1px solid var(--line);
+      background:linear-gradient(180deg, rgba(13,24,41,.9), rgba(8,15,26,.84)); box-shadow:var(--shadow-soft);
+    }}
+    .rail-label, .page-eyebrow, .eyebrow, .section-label, .summary-strip-title, .stat-label, .resource-label {{
+      color:#89aacc; font-size:11px; font-weight:800; letter-spacing:.18em; text-transform:uppercase;
+    }}
+    .rail-value {{ margin:8px 0 4px; color:#f4f9ff; font-size:17px; font-weight:800; letter-spacing:-.03em; }}
+    .rail-panel p {{ color:var(--muted); font-size:12px; line-height:1.7; }}
+    .console-main {{ min-width:0; padding:28px 28px 52px; }}
+    .page-header {{
+      position:relative; overflow:hidden; max-width:none; margin:0 0 22px; padding:34px 36px 28px;
+      border:1px solid rgba(136,174,214,.14); border-radius:30px;
+      background:linear-gradient(180deg, rgba(10,20,36,.92), rgba(7,14,24,.84));
+      box-shadow:var(--shadow); animation:oc-rise .45s ease both;
+    }}
+    .page-header::before {{
+      content:""; position:absolute; inset:0;
+      background:radial-gradient(circle at top right, rgba(120,215,216,.12), transparent 34%);
+      pointer-events:none;
+    }}
+    .hero-grid {{ position:relative; display:grid; grid-template-columns:minmax(0,1.45fr) minmax(260px,.7fr); gap:22px; align-items:end; }}
+    .page-eyebrow {{ margin-bottom:12px; color:#98badd; }}
+    .page-title {{
+      max-width:9ch; margin-bottom:14px; color:#f5fbff; font-size:clamp(2.5rem,4.8vw,4.7rem);
+      line-height:1.02; letter-spacing:-.07em; font-weight:900; text-wrap:balance;
+    }}
+    .page-sub, .muted {{ max-width:760px; color:var(--muted); line-height:1.8; }}
+    .hero-meta {{ display:grid; gap:10px; justify-items:end; }}
+    .hero-chip {{
+      display:inline-flex; align-items:center; min-height:38px; padding:0 14px; border-radius:999px;
+      border:1px solid rgba(136,174,214,.14); background:rgba(11,21,38,.84); color:#d9eafc; font-size:12px; font-weight:700;
+    }}
+    .hero-chip.tone-accent {{ color:#d1faf9; border-color:rgba(120,215,216,.22); }}
+    .hero-chip.tone-gold {{ color:#efd8a6; border-color:rgba(216,185,127,.2); }}
+    .wrap {{ max-width:none; padding:0; }}
+    .page-grid {{ gap:18px; }}
+    .ops-layout {{ display:grid; grid-template-columns:minmax(0,1.4fr) minmax(280px,.76fr); gap:18px; align-items:start; }}
+    .ops-stack {{ display:grid; gap:18px; }}
+    .ops-panel {{
+      border:1px solid var(--line);
+      border-radius:24px;
+      padding:22px 24px;
+      background:linear-gradient(180deg, rgba(10,19,33,.9), rgba(7,14,25,.84));
+      box-shadow:var(--shadow-soft);
+      backdrop-filter:blur(18px);
+    }}
+    .ops-panel h2, .ops-panel h3 {{ color:#f4f9ff; }}
+    .ops-panel h2 {{ font-size:24px; letter-spacing:-.04em; }}
+    .ops-panel h3 {{ font-size:17px; letter-spacing:-.03em; }}
+    .ops-header {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; }}
+    .ops-copy {{ max-width:760px; }}
+    .ops-copy p {{ color:var(--muted); }}
+    .signal-list {{ display:grid; gap:10px; }}
+    .signal-item {{
+      display:flex; justify-content:space-between; gap:14px; align-items:flex-start;
+      padding:12px 0; border-bottom:1px solid rgba(136,174,214,.1);
+    }}
+    .signal-item:last-child {{ border-bottom:0; padding-bottom:0; }}
+    .signal-label {{ color:#92abc8; font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }}
+    .signal-value {{ color:#f4fbff; font-size:14px; font-weight:700; text-align:right; max-width:52%; }}
+    .command-block {{
+      border:1px solid rgba(136,174,214,.12);
+      border-radius:20px;
+      padding:16px 18px;
+      background:rgba(8,16,28,.52);
+    }}
+    .command-block + .command-block {{ margin-top:14px; }}
+    .command-block .section-label {{ margin-bottom:10px; display:block; }}
+    .command-block .mini-tip {{ margin-top:12px; }}
+    .console-ribbon {{
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px;
+      margin-top:16px;
+    }}
+    .console-ribbon .summary-strip-card {{ min-height:108px; }}
+    .doc-link-list {{ display:grid; gap:10px; }}
+    .doc-link-list a {{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:12px 14px; border-radius:16px; text-decoration:none;
+      border:1px solid rgba(136,174,214,.12); background:rgba(9,18,31,.58); color:#e9f4ff;
+    }}
+    .doc-link-list a span:last-child {{ color:#8ca3bf; font-size:12px; }}
+    .brief-grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:14px; }}
+    .brief-grid > * {{ margin:0; }}
+    .hero-card {{
+      position:relative;
+      padding:28px 30px;
+      overflow:hidden;
+    }}
+    .hero-card::before {{
+      content:"";
+      position:absolute;
+      inset:auto -8% 0 auto;
+      width:300px; height:300px;
+      background:radial-gradient(circle, rgba(120,215,216,.08), transparent 68%);
+      pointer-events:none;
+    }}
+    .hero-card > .card-head {{
+      position:relative;
+      padding-bottom:18px;
+      margin-bottom:20px;
+      border-bottom:1px solid rgba(136,174,214,.1);
+    }}
+    .hero-card .header-actions {{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px;
+      min-width:min(420px,100%);
+    }}
+    .hero-card .header-actions .btn {{
+      width:100%;
+      min-height:46px;
+      justify-content:flex-start;
+      padding:0 18px;
+    }}
+    .status-summary-strip {{ margin-bottom:14px; }}
+    .status-stats-grid {{ margin:0 0 14px; }}
+    .status-panel {{
+      grid-template-columns:minmax(0,1.3fr) minmax(320px,.74fr);
+      gap:20px;
+    }}
+    .status-panel .panel-left,
+    .status-panel .panel-right {{
+      position:relative;
+      overflow:hidden;
+      padding:20px;
+    }}
+    .status-panel .panel-left::before,
+    .status-panel .panel-right::before {{
+      content:"";
+      position:absolute;
+      inset:auto -12% auto auto;
+      width:180px;
+      height:180px;
+      background:radial-gradient(circle, rgba(120,215,216,.06), transparent 68%);
+      pointer-events:none;
+    }}
+    .note-panel strong {{
+      display:block;
+      margin-bottom:8px;
+      color:#f2f8ff;
+      font-size:15px;
+      letter-spacing:-.02em;
+    }}
+    .resource-grid {{ grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }}
+    .resource-card {{ min-height:156px; justify-content:space-between; }}
+    .resource-grid .resource-card:first-child,
+    .resource-grid .resource-card:nth-child(2) {{
+      min-height:174px;
+    }}
+    .service-grid {{ gap:12px; }}
+    .service-badge {{ padding:14px 15px; min-height:82px; display:flex; flex-direction:column; justify-content:center; }}
+    .service-badge-top {{ margin-bottom:8px; }}
+    .service-meta {{
+      margin-top:auto;
+      display:inline-flex;
+      align-items:center;
+      width:max-content;
+      min-height:26px;
+      padding:0 10px;
+      border-radius:999px;
+      border:1px solid rgba(136,174,214,.12);
+      background:rgba(10,21,37,.62);
+    }}
+    .config-intro {{
+      position:relative;
+      overflow:hidden;
+      padding:26px 28px;
+    }}
+    .config-intro::before {{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:radial-gradient(circle at 82% 18%, rgba(120,215,216,.1), transparent 28%);
+      pointer-events:none;
+    }}
+    .config-overview {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) minmax(320px,.8fr);
+      gap:18px;
+      align-items:start;
+    }}
+    .config-overview .ops-panel {{
+      margin:0;
+    }}
+    .card, .panel-left, .panel-right, .summary-strip-card, .stat-card, .info-tile, .soft-card, .resource-card, .service-badge, .note-box, .token-section, .toggle-row, .field-inline {{
+      border:1px solid var(--line);
+      background:linear-gradient(180deg, rgba(10,19,33,.88), rgba(7,14,25,.82));
+      box-shadow:var(--shadow-soft); backdrop-filter:blur(18px);
+    }}
+    .card, .panel-left, .panel-right {{ border-radius:22px; }}
+    .card h2 {{ color:#f4f9ff; font-size:24px; letter-spacing:-.04em; }}
+    .card h3 {{ color:#f3f8ff; }}
+    .summary-strip-value, .stat-value, .resource-value {{ color:#f4fbff; letter-spacing:-.05em; }}
+    .summary-strip-sub, .stat-sub, .resource-sub, .info-tile p, .soft-card p, .token-hint, .field-help, .toggle-help, .service-meta, .kv-label, .note-box, .live-copy p {{ color:var(--muted); }}
+    .btn {{
+      min-height:42px; border-radius:999px; border:1px solid rgba(136,174,214,.14);
+      background:rgba(10,22,38,.82); color:#ebf4ff; box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+    }}
+    .btn:hover {{ border-color:rgba(120,215,216,.26); background:rgba(14,28,48,.92); box-shadow:0 14px 24px rgba(0,0,0,.22); }}
+    .btn.primary {{ background:linear-gradient(135deg, rgba(77,189,193,.22), rgba(37,103,147,.24)); border-color:rgba(120,215,216,.24); }}
+    .btn.secondary {{ background:linear-gradient(135deg, rgba(54,101,152,.3), rgba(26,61,103,.34)); border-color:rgba(136,174,214,.22); }}
+    .btn.btn-action {{ color:#d7ffff; border-color:rgba(120,215,216,.22); background:linear-gradient(135deg, rgba(11,58,68,.52), rgba(13,38,53,.72)); }}
+    .btn.btn-diag {{ color:#e8f4ff; border-color:rgba(216,185,127,.22); background:linear-gradient(135deg, rgba(70,51,18,.48), rgba(35,27,15,.7)); }}
+    .btn.btn-danger {{ color:#ffe6eb; border-color:rgba(251,113,133,.22); background:linear-gradient(135deg, rgba(79,18,35,.55), rgba(40,12,20,.76)); }}
+    .panel-right {{ background:linear-gradient(180deg, rgba(11,22,38,.96), rgba(7,14,25,.88)); }}
+    .live-row {{
+      border-radius:18px; border:1px solid rgba(120,215,216,.15);
+      background:linear-gradient(180deg, rgba(13,31,42,.9), rgba(8,17,29,.84));
+    }}
+    .live-row strong, .service-name, .kv-value {{ color:#f2f8ff; }}
+    .live-dot {{ background:var(--good); box-shadow:0 0 0 4px rgba(74,222,128,.14); }}
+    .live-row.is-warn .live-dot {{ background:var(--warn); box-shadow:0 0 0 4px rgba(246,196,83,.14); }}
+    .live-row.is-danger .live-dot {{ background:var(--danger); box-shadow:0 0 0 4px rgba(251,113,133,.16); }}
+    .summary-strip-card::before {{ top:16px; bottom:16px; border-radius:3px; }}
+    .summary-strip-card.tone-good::before {{ background:var(--good); }}
+    .summary-strip-card.tone-warn::before {{ background:var(--warn); }}
+    .summary-strip-card.tone-danger::before {{ background:var(--danger); }}
+    .summary-strip-card.tone-blue::before {{ background:#69a8ff; }}
+    .summary-strip-card.tone-teal::before {{ background:var(--accent); }}
+    .summary-strip-card.tone-violet::before {{ background:#9ca9ff; }}
+    .pill-inline, .pid-chip, .pill, .service-state {{
+      background:rgba(13,29,50,.84); border:1px solid rgba(136,174,214,.14); color:#d5e7fa;
+    }}
+    .service-badge.is-online {{ border-color:rgba(74,222,128,.22); }}
+    .service-badge.is-offline {{ border-color:rgba(251,113,133,.18); }}
+    .service-badge.is-online .svc-dot {{ background:var(--good); box-shadow:0 0 0 3px rgba(74,222,128,.16); }}
+    .service-badge.is-offline .svc-dot {{ background:var(--danger); }}
+    .token-val, .cmd-input, .field input, .field select, .ghost-field {{
+      border:1px solid rgba(136,174,214,.14); background:rgba(6,13,23,.78); color:#edf4ff;
+      font-family:"MiSans","HarmonyOS Sans SC","Noto Sans SC","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    }}
+    .cmd-input:focus, .field input:focus, .field select:focus {{ border-color:rgba(120,215,216,.32); box-shadow:0 0 0 3px rgba(120,215,216,.08); }}
+    code {{ background:rgba(9,28,42,.92); color:#b9f1ef; border:1px solid rgba(120,215,216,.12); }}
+    .page-header, .card, .panel-left, .panel-right {{ animation:oc-rise .45s ease both; }}
+    .page-grid > * {{ animation:oc-rise .52s ease both; }}
+    .page-grid > *:nth-child(2) {{ animation-delay:.04s; }}
+    .page-grid > *:nth-child(3) {{ animation-delay:.08s; }}
+    @keyframes oc-rise {{
+      from {{ opacity:0; transform:translateY(18px); }}
+      to {{ opacity:1; transform:translateY(0); }}
+    }}
+    @media (max-width:1180px) {{
+      .console-shell {{ grid-template-columns:1fr; }}
+      .app-header {{ position:relative; min-height:auto; border-right:0; border-bottom:1px solid rgba(136,174,214,.12); }}
+      .app-nav {{ grid-template-columns:repeat(4,minmax(0,1fr)); }}
+      .hero-grid, .two-col, .three-up, .split-grid, .status-panel, .ops-layout, .brief-grid, .resource-grid, .config-overview {{ grid-template-columns:1fr; }}
+      .hero-meta {{ justify-items:start; }}
+      .page-title {{ max-width:unset; }}
+    }}
+    @media (max-width:760px) {{
+      .console-main {{ padding:16px 14px 34px; }}
+      .app-header {{ padding:18px 14px; gap:18px; }}
+      .page-header {{ padding:24px 18px 22px; border-radius:24px; }}
+      .summary-strip, .feature-grid, .resource-grid, .stats-grid, .app-nav, .brief-grid {{ grid-template-columns:1fr; }}
+      .card-head, .resource-top, .service-badge-top, .token-row, .custom-cmd-row {{ flex-direction:column; align-items:flex-start; }}
+      .hero-card .header-actions {{ grid-template-columns:1fr; min-width:0; width:100%; }}
+      .btn {{ width:100%; }}
+      .header-actions .btn {{ width:auto; }}
+    }}
+  </style>
 </head>
 <body>
+  <div class="console-shell">
   <header class="app-header">
     <a class="app-brand" href="./">
       <div class="app-brand-badge">{brand_svg}</div>
       <div class="app-brand-text">
         <span class="app-brand-name">OpenClaw</span>
-        <span class="app-brand-sub">HAOS Add-on</span>
+        <span class="app-brand-sub">AI Agent Control Deck</span>
       </div>
     </a>
+    <div class="app-meta">
+      <span class="version-chip">{addon_version}</span>
+      <span class="meta-chip accent">{access_label}</span>
+    </div>
     <nav class="app-nav">{nav_home}{nav_config}{nav_commands}{nav_logs}</nav>
-    <div class="app-meta"><span class="version-chip">{addon_version}</span></div>
+    <div class="rail-stack">
+      <section class="rail-panel">
+        <div class="rail-label">控制中枢</div>
+        <div class="rail-value">{gateway_mode}</div>
+        <p>外部链路固定为 HTTPS 指挥入口，当前页面作为 OpenClaw Agent 的观察与操作壳层。</p>
+      </section>
+      <section class="rail-panel">
+        <div class="rail-label">模型基线</div>
+        <div class="rail-value">{model_name}</div>
+        <p>聊天只是能力之一。这里更像长期工作的主控台，用于观察、配置、调度与值守。</p>
+      </section>
+    </div>
   </header>
+  <main class="console-main">
   <div class="page-header">
-    <div class="page-eyebrow">OpenClaw Assistant</div>
-    <h1 class="page-title">{title}</h1>
-    <p class="page-sub muted">{subtitle}</p>
+    <div class="hero-grid">
+      <div>
+        <div class="page-eyebrow">AI Agent 主控台</div>
+        <h1 class="page-title">{title}</h1>
+        <p class="page-sub muted">{subtitle}</p>
+      </div>
+      <div class="hero-meta">
+        <span class="hero-chip tone-accent">控制入口 · HTTPS :{https_port}</span>
+        <span class="hero-chip">{access_label}</span>
+        <span class="hero-chip tone-gold">{gateway_mode}</span>
+      </div>
+    </div>
   </div>
   <div class="wrap">
     {content}
+  </div>
+  </main>
   </div>
   <script>
     const configuredGatewayUrl = {gateway_url};
@@ -1903,7 +2386,7 @@ fn render_shell(
   <title>OpenClaw Gateway</title>
   <style>
     :root {{
-      color-scheme: light;
+      color-scheme: dark;
     }}
     body {{
       margin: 0;
@@ -1911,26 +2394,31 @@ fn render_shell(
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(180deg, #eaf1ff 0%, #f4f7ff 100%);
-      color: #16345f;
-      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 18% 20%, rgba(93, 155, 255, .18), transparent 26%),
+        radial-gradient(circle at 78% 18%, rgba(120, 215, 216, .12), transparent 22%),
+        linear-gradient(180deg, #07111d 0%, #040811 62%, #02060c 100%);
+      color: #edf4ff;
+      font-family: "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     }}
     .card {{
       width: min(440px, calc(100vw - 40px));
       padding: 28px 26px;
       border-radius: 22px;
-      border: 1px solid rgba(22, 52, 95, .12);
-      background: rgba(255,255,255,.95);
-      box-shadow: 0 20px 48px rgba(18, 40, 75, .12);
+      border: 1px solid rgba(136, 174, 214, .14);
+      background: linear-gradient(180deg, rgba(10, 20, 36, .92), rgba(7, 14, 24, .86));
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .42);
       text-align: center;
+      backdrop-filter: blur(18px);
     }}
     h1 {{
       margin: 0 0 10px;
       font-size: 24px;
+      letter-spacing: -.04em;
     }}
     p {{
       margin: 0;
-      color: #58729a;
+      color: #8ca3bf;
       line-height: 1.7;
       font-size: 14px;
     }}
@@ -2091,6 +2579,9 @@ fn render_shell(
         addon_version = config.addon_version,
         content = content,
         gateway_url = gateway_url,
+        access_label = access_label,
+        gateway_mode = gateway_mode,
+        model_name = model_name,
         https_port = config.https_port,
     )))
 }
@@ -2325,8 +2816,8 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     render_shell(
         &config,
         NavPage::Home,
-        "OpenClawHAOSAddon-Rust",
-        "查看 OpenClaw 当前是否正常运行、各服务进程状态，以及系统资源占用情况。",
+        "OpenClaw AI Agent 主控台",
+        "把网关、资源、控制链路与运维入口汇聚到一个可观察、可操作、可持续使用的指挥界面。",
         &home_content(&config, &snapshot, health_ok),
     )
 }
@@ -2337,8 +2828,8 @@ async fn config_page(State(state): State<AppState>) -> impl IntoResponse {
     render_shell(
         &config,
         NavPage::Config,
-        "基础配置",
-        "查看插件当前的访问方式、数据目录位置，以及 Web 搜索、记忆搜索等能力的启用状态。",
+        "Agent 能力配置",
+        "管理模型、Web Search 与 Memory Search 等能力开关，让这台 Agent 主控台保持长期稳定可用。",
         &config_content_v2(&config),
     )
 }
@@ -2349,8 +2840,8 @@ async fn commands_page(State(state): State<AppState>) -> impl IntoResponse {
     render_shell(
         &config,
         NavPage::Commands,
-        "命令参考",
-        "在这里查看官方命令、健康检查和维护指令，然后到 Home Assistant 的 Terminal & SSH 或其它本机 shell 中执行。",
+        "运行与调度入口",
+        "从这里进入原生 TUI、维护 Shell 与官方命令路径，执行调度、诊断和日常运维操作。",
         &commands_content_native(&config),
     )
 }
@@ -2361,8 +2852,8 @@ async fn logs_page(State(state): State<AppState>) -> impl IntoResponse {
     render_shell(
         &config,
         NavPage::Logs,
-        "日志与诊断",
-        "查看 OpenClaw 运行日志、执行诊断命令，快速定位异常原因。",
+        "日志与诊断台",
+        "集中查看运行日志、健康迹象与诊断线索，帮助你快速判断这台 Agent 主控台是否稳定。",
         &logs_content(),
     )
 }

@@ -2,6 +2,31 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 21:12 Asia/Shanghai - Redesign the HA panel into an AI Agent command center
+
+- User request:
+  - redesign the page as a premium dark AI Agent control console rather than a normal chat window or SaaS admin screen
+  - keep the home page resource collection and status display
+  - continue refining the redesign, then finish and push
+- Outcome:
+  - redesigned the shell into a dark cinematic control-deck layout with a left command rail and right main workspace
+  - added restrained background glow, subtle grid texture, glassy panels, and calmer hierarchy using teal/water-blue accents
+  - reframed the home page as a command-center overview while preserving live status, PID visibility, resource telemetry, Gateway access, CLI, and Shell
+  - reorganized the commands page into a scheduling/operations center, the logs page into an observability console, and the config page into an ability-matrix control surface
+  - kept existing runtime behavior intact; this was a UI/structure redesign rather than a logic change
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Commands / validation:
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - bump add-on version to `2026.04.12.15`
+- Next handoff:
+  - visually verify the redesigned control-deck layout in Home Assistant on desktop and mobile
+  - if desired, continue by modularizing `haos-ui/src/main.rs` without changing behavior
+
 ## 2026-04-12 23:59 Asia/Shanghai - Add repository docs and keep slimming the scheme-3 UI shell
 
 - User request:
