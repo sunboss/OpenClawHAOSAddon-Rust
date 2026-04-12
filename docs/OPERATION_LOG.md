@@ -2,6 +2,35 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 23:59 Asia/Shanghai - Switch Maintenance Shell to official ttyd web shell
+
+- User request:
+  - make the `维护 Shell` button open a complete full-screen web shell page rather than the current framed page with explanatory chrome
+  - verify whether `ttyd` is present and whether the installed version is the latest complete release
+- Outcome:
+  - confirmed the image previously did not install `ttyd`; the old maintenance shell was still the custom `ingressd` PTY/xterm page
+  - aligned the image to install upstream `ttyd 1.7.7` from the official GitHub release assets
+  - added a managed `ttyd` process under `addon-supervisor`
+  - added `/shell/` reverse proxy support in `ingressd`, with WebSocket forwarding and a minimal loading fallback
+  - switched the HA panel `维护 Shell` entry to open the dedicated `/shell/` page directly
+  - updated the home status panel to show `Shell` as a first-class service and removed UI wording that implied shell commands could still be pre-injected into that page
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `Dockerfile`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+- Commands / validation:
+  - `cargo test -p ingressd`
+  - `cargo test -p haos-ui -p ingressd -p addon-supervisor`
+- Version:
+  - bump add-on version to `2026.04.12.17`
+- Source used:
+  - official ttyd release feed / GitHub release assets for `1.7.7`
+- Next handoff:
+  - verify the `/shell/` experience in the real HA panel and confirm the managed `ttyd` process appears in runtime logs and the home service overview
+
 ## 2026-04-12 21:55 Asia/Shanghai - Polish the control-deck UI, replace the brand mark, and improve mobile adaptation
 
 - User request:

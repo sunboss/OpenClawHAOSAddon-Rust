@@ -9,6 +9,7 @@ FROM node:24-bookworm-slim
 
 ARG TARGETARCH
 ARG OPENCLAW_VERSION=2026.4.11
+ARG TTYD_VERSION=1.7.7
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
 ARG BUILD_DATE=unknown
@@ -41,6 +42,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) ttyd_arch="x86_64" ;; \
+      aarch64|arm64) ttyd_arch="aarch64" ;; \
+      *) echo "unsupported TARGETARCH for ttyd: ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttyd_arch}" -o /usr/local/bin/ttyd; \
+    chmod +x /usr/local/bin/ttyd
 
 RUN npm config set fund false && npm config set audit false \
     && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @xterm/xterm @xterm/addon-fit

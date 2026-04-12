@@ -1,3 +1,11 @@
+## 2026.04.12.17
+
+- Shell：将“维护 Shell”从原先的自定义内嵌 shell 页面升级为真正的 `ttyd` Web Shell，全屏直达、无额外说明框
+- 运行时：Docker 镜像改为安装官方 `ttyd 1.7.7` 静态二进制，并由 `addon-supervisor` 托管为正式服务
+- 路由：`ingressd` 新增 `/shell/` 反向代理到本地 `ttyd`，同时保留现有 `/terminal/` 作为 `OpenClaw CLI (TUI)` 入口
+- UI：首页服务状态新增 `Shell` 进程状态；命令页与日志页中原先依赖“预置 shell 命令”的按钮改为直接打开维护 Shell，避免行为与文案不一致
+- 验证：`cargo test -p haos-ui -p ingressd -p addon-supervisor`
+
 ## 2026.04.12.16
 
 - UI：进一步强化首页标题区与按钮区的电影感层次，提升 Hero 区、操作按钮和左侧品牌导航的高级感

@@ -858,16 +858,18 @@ fn service_badge(label: &str, pid: &str) -> String {
     )
 }
 
-fn pid_row(gateway_pid: &str, ingress_pid: &str, ui_pid: &str) -> String {
+fn pid_row(gateway_pid: &str, ingress_pid: &str, ui_pid: &str, shell_pid: &str) -> String {
     format!(
         r#"<div class="service-grid">
   {gateway}
   {ingress}
   {ui}
+  {shell}
 </div>"#,
         gateway = service_badge("Gateway", gateway_pid),
         ingress = service_badge("Ingress", ingress_pid),
         ui = service_badge("UI", ui_pid),
+        shell = service_badge("Shell", shell_pid),
     )
 }
 
@@ -879,7 +881,13 @@ fn home_content(
     let gateway_pid = pid_value("openclaw-gateway");
     let ingress_pid = pid_value("ingressd");
     let ui_pid = pid_value("haos-ui");
-    let online_count = [gateway_pid.as_str(), ingress_pid.as_str(), ui_pid.as_str()]
+    let shell_pid = pid_value("ttyd");
+    let online_count = [
+        gateway_pid.as_str(),
+        ingress_pid.as_str(),
+        ui_pid.as_str(),
+        shell_pid.as_str(),
+    ]
     .into_iter()
     .filter(|value| *value != "-")
     .count();
@@ -889,9 +897,9 @@ fn home_content(
         Some(true) => ("运行正常", "服务健康检查通过", "tone-good"),
         Some(false) => ("响应异常", "健康检查未通过，请查看日志", "tone-danger"),
         None => {
-            if online_count >= 3 {
+            if online_count >= 4 {
                 ("运行正常", "关键进程全部在线", "tone-good")
-            } else if online_count >= 2 {
+            } else if online_count >= 3 {
                 ("部分在线", "建议查看命令行和日志页", "tone-warn")
             } else {
                 ("待检查", "关键进程数量不足", "tone-danger")
@@ -1004,8 +1012,8 @@ fn home_content(
         health = summary_strip("总状态", health_text, health_sub, health_tone),
         runtime = summary_strip(
             "在线进程",
-            &format!("{online_count}/3"),
-            "Gateway、Ingress、UI",
+            &format!("{online_count}/4"),
+            "Gateway、Ingress、UI、Shell",
             "tone-blue"
         ),
         https = summary_strip(
@@ -1061,7 +1069,7 @@ fn home_content(
 </div>"#, masked=masked, tok_escaped=tok_escaped)
             }
         },
-        pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid),
+        pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid, &shell_pid),
         resource_cpu = resource_card(
             "CPU 负载",
             &snapshot.cpu_load,
@@ -1406,7 +1414,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
           <div class="ops-copy">
             <div class="eyebrow">调度中枢</div>
             <h2>原生命令与工作入口</h2>
-            <p class="muted">这里不是普通帮助页，而是 Agent 的运行与调度台。默认入口仍然遵循官方文档：进入 <code>openclaw tui</code>，需要本机命令时使用 <code>!命令</code>；同时保留独立 Shell 作为维护后门。</p>
+            <p class="muted">这里不是普通帮助页，而是 Agent 的运行与调度台。默认入口仍然遵循官方文档：进入 <code>openclaw tui</code>，需要本机命令时使用 <code>!命令</code>；同时保留独立维护 Shell 作为完整 Web 终端入口。</p>
           </div>
           <div class="header-actions">
             <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('')">OpenClaw CLI</button>
@@ -1428,7 +1436,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
           <div class="summary-strip-card tone-violet">
             <div class="summary-strip-title">备用入口</div>
             <div class="summary-strip-value">维护 Shell</div>
-            <div class="summary-strip-sub">直接进入本机 shell 处理高级维护</div>
+            <div class="summary-strip-sub">直达完整 Web Shell，适合传统维护与排障</div>
           </div>
         </div>
       </section>
@@ -1444,7 +1452,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
           <div class="action-row">
             <button class="btn primary" type="button" onclick="ocOpenTerminalWindow('')">打开 OpenClaw CLI</button>
             <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw onboard')">运行初始化向导</button>
-            <button class="btn" type="button" onclick="ocOpenShellWindow('openclaw onboard')">在 Shell 中运行初始化</button>
+            <button class="btn" type="button" onclick="ocOpenShellWindow('')">打开维护 Shell</button>
           </div>
         </div>
 
@@ -1474,7 +1482,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
             <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor')">运行 doctor</button>
             <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw doctor --fix')">运行 doctor --fix</button>
           </div>
-          <div class="mini-tip">常用流程建议走 TUI；只有需要传统维护体验时，再切换到上方的独立 Shell。</div>
+          <div class="mini-tip">常用流程建议走 TUI；需要完整浏览器终端时，再切换到上方的维护 Shell。</div>
         </div>
       </section>
     </div>
@@ -1511,7 +1519,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
         </ul>
         <div class="action-row">
           <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">在 TUI 跟随日志</button>
-          <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">在 Shell 跟随网关日志</button>
+          <button class="btn" type="button" onclick="ocOpenShellWindow('')">打开维护 Shell</button>
         </div>
       </section>
     </aside>
@@ -1534,7 +1542,7 @@ fn logs_content() -> String {
           </div>
           <div class="header-actions">
             <button class="btn secondary" type="button" onclick="ocOpenTerminalWindow('!openclaw logs --follow')">打开日志终端</button>
-            <button class="btn" type="button" onclick="ocOpenShellWindow('tail -f /tmp/openclaw/openclaw-$(date +%F).log')">打开日志 Shell</button>
+            <button class="btn" type="button" onclick="ocOpenShellWindow('')">打开维护 Shell</button>
             <a class="btn" href="./commands">进入命令页</a>
           </div>
         </div>
@@ -2751,12 +2759,8 @@ fn render_shell(
       }}
       window.open(targetUrl.toString(), "_blank", "noopener,noreferrer");
     }};
-    window.ocOpenShellWindow = function (command) {{
-      const targetUrl = new URL(appUrl("./terminal/"));
-      targetUrl.searchParams.set("mode", "shell");
-      if (typeof command === "string" && command.trim()) {{
-        targetUrl.searchParams.set("command", command);
-      }}
+    window.ocOpenShellWindow = function (_command) {{
+      const targetUrl = new URL(appUrl("./shell/"));
       window.open(targetUrl.toString(), "_blank", "noopener,noreferrer");
     }};
     function ocSetFormStatus(id, text, ok) {{

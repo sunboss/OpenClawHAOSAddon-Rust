@@ -34,6 +34,8 @@ enum Commands {
         ui_bin: String,
         #[arg(long, default_value = "ingressd")]
         ingress_bin: String,
+        #[arg(long, default_value = "ttyd")]
+        ttyd_bin: String,
         #[arg(long, default_value = "local")]
         gateway_mode: String,
         #[arg(long, default_value = "")]
@@ -77,6 +79,8 @@ struct HaosEntryArgs {
     ui_bin: String,
     #[arg(long, default_value = "ingressd")]
     ingress_bin: String,
+    #[arg(long, default_value = "ttyd")]
+    ttyd_bin: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -123,6 +127,7 @@ fn main() -> ExitCode {
             gateway_bin,
             ui_bin,
             ingress_bin,
+            ttyd_bin,
             gateway_mode,
             gateway_remote_url,
             run_doctor_on_start,
@@ -130,6 +135,7 @@ fn main() -> ExitCode {
             gateway_bin,
             ui_bin,
             ingress_bin,
+            ttyd_bin,
             gateway_mode,
             gateway_remote_url,
             run_doctor_on_start,
@@ -196,6 +202,7 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         args.gateway_bin,
         args.ui_bin,
         args.ingress_bin,
+        args.ttyd_bin,
         settings.gateway_mode,
         settings.gateway_remote_url,
         settings.run_doctor_on_start,
@@ -430,6 +437,7 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("PUBLIC_SHARE_DIR", &args.public_share_dir);
         env::set_var("UI_PORT", args.ui_port.to_string());
         env::set_var("INGRESS_PORT", "48099");
+        env::set_var("TTYD_PORT", "7681");
         env::set_var("ACCESS_MODE", &settings.access_mode);
         env::set_var("GATEWAY_MODE", &settings.gateway_mode);
         env::set_var("GW_PUBLIC_URL", &settings.gateway_public_url);
@@ -810,6 +818,7 @@ fn run_services(
     gateway_bin: String,
     ui_bin: String,
     ingress_bin: String,
+    ttyd_bin: String,
     gateway_mode: String,
     gateway_remote_url: String,
     run_doctor_on_start: bool,
@@ -825,6 +834,7 @@ fn run_services(
             "openclaw-node",
             "haos-ui",
             "ingressd",
+            "ttyd",
         ] {
             remove_pid_file(name);
         }
@@ -855,6 +865,27 @@ fn run_services(
         handles.push(tokio::spawn(run_managed_process(
             ProcessSpec::new("ingressd", ingress_bin, vec![]),
             shutdown_rx,
+        )));
+
+        handles.push(tokio::spawn(run_managed_process(
+            ProcessSpec::new(
+                "ttyd",
+                ttyd_bin,
+                vec![
+                    "-i".to_string(),
+                    "127.0.0.1".to_string(),
+                    "-p".to_string(),
+                    env::var("TTYD_PORT").unwrap_or_else(|_| "7681".to_string()),
+                    "-t".to_string(),
+                    "titleFixed=OpenClaw Maintenance Shell".to_string(),
+                    "-t".to_string(),
+                    "fontSize=14".to_string(),
+                    "-t".to_string(),
+                    "rendererType=webgl".to_string(),
+                    "bash".to_string(),
+                ],
+            ),
+            shutdown_tx.subscribe(),
         )));
 
         if should_run_startup_doctor(run_doctor_on_start) {
@@ -1265,6 +1296,7 @@ fn apply_child_env(command: &mut Command) {
         "PUBLIC_SHARE_DIR",
         "UI_PORT",
         "INGRESS_PORT",
+        "TTYD_PORT",
         "ACCESS_MODE",
         "GATEWAY_MODE",
         "GW_PUBLIC_URL",
@@ -1446,6 +1478,7 @@ mod tests {
             oc_config_bin: "oc-config".to_string(),
             ui_bin: "haos-ui".to_string(),
             ingress_bin: "ingressd".to_string(),
+            ttyd_bin: "ttyd".to_string(),
         };
 
         ensure_mcporter_config(&args).expect("seed mcporter config");
@@ -1500,6 +1533,7 @@ mod tests {
             oc_config_bin: "oc-config".to_string(),
             ui_bin: "haos-ui".to_string(),
             ingress_bin: "ingressd".to_string(),
+            ttyd_bin: "ttyd".to_string(),
         };
 
         ensure_mcporter_config(&args).expect("seed mcporter config");

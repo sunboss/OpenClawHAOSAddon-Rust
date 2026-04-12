@@ -43,6 +43,8 @@ struct AppState {
     ui_base: String,
     gateway_http_base: String,
     gateway_ws_base: String,
+    shell_http_base: String,
+    shell_ws_base: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,6 +101,10 @@ async fn main() {
     let enable_https = env::var("ENABLE_HTTPS_PROXY")
         .map(|value| value == "true")
         .unwrap_or(true);
+    let ttyd_port = env::var("TTYD_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(7681);
 
     let state = AppState {
         client: Client::builder()
@@ -109,6 +115,8 @@ async fn main() {
         ui_base: format!("http://127.0.0.1:{ui_port}"),
         gateway_http_base: format!("http://127.0.0.1:{gateway_internal_port}"),
         gateway_ws_base: format!("ws://127.0.0.1:{gateway_internal_port}"),
+        shell_http_base: format!("http://127.0.0.1:{ttyd_port}"),
+        shell_ws_base: format!("ws://127.0.0.1:{ttyd_port}"),
     };
 
     let ingress_app = build_ingress_router(state.clone());
@@ -154,6 +162,9 @@ fn build_ingress_router(state: AppState) -> Router {
         .route("/terminal", get(terminal_redirect))
         .route("/terminal/", get(terminal_page))
         .route("/terminal/ws", any(terminal_ws))
+        .route("/shell", get(shell_redirect))
+        .route("/shell/", any(proxy_shell))
+        .route("/shell/{*path}", any(proxy_shell))
         .route("/terminal/assets/xterm.js", get(terminal_xterm_js))
         .route("/terminal/assets/xterm.css", get(terminal_xterm_css))
         .route(
@@ -182,6 +193,10 @@ fn build_gateway_router(state: AppState) -> Router {
 
 async fn terminal_redirect() -> impl IntoResponse {
     Redirect::temporary("/terminal/")
+}
+
+async fn shell_redirect() -> impl IntoResponse {
+    Redirect::temporary("/shell/")
 }
 
 async fn terminal_page(Query(query): Query<TerminalPageQuery>) -> impl IntoResponse {
@@ -691,7 +706,8 @@ async fn proxy_health(State(_state): State<AppState>, request: Request) -> impl 
 
 async fn proxy_ui(State(state): State<AppState>, request: Request) -> impl IntoResponse {
     let path = request.uri().path().to_string();
-    let response = proxy_http_request(&state.client, &state.ui_base, request, false, None).await;
+    let response =
+        proxy_http_request(&state.client, &state.ui_base, request, false, None, None).await;
     if response.status() != StatusCode::BAD_GATEWAY {
         return response;
     }
@@ -725,11 +741,54 @@ async fn proxy_gateway(
         request,
         true,
         Some(peer_addr),
+        None,
     )
     .await;
     if response.status() == StatusCode::BAD_GATEWAY {
         return fallback_gateway_response();
     }
+    response
+}
+
+async fn proxy_shell(
+    State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    ws: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
+    request: Request,
+) -> impl IntoResponse {
+    if let Ok(ws) = ws {
+        let path = request.uri().path().to_string();
+        let query = request.uri().query().map(|q| q.to_string());
+        let headers = request.headers().clone();
+        return ws
+            .on_upgrade(move |socket| {
+                proxy_upstream_ws(
+                    state.shell_ws_base.clone(),
+                    socket,
+                    path,
+                    query,
+                    Some("/shell"),
+                    headers,
+                    peer_addr,
+                )
+            })
+            .into_response();
+    }
+
+    let response = proxy_http_request(
+        &state.client,
+        &state.shell_http_base,
+        request,
+        true,
+        Some(peer_addr),
+        Some("/shell"),
+    )
+    .await;
+
+    if response.status() == StatusCode::BAD_GATEWAY {
+        return fallback_shell_response();
+    }
+
     response
 }
 
@@ -741,13 +800,34 @@ async fn proxy_gateway_ws(
     headers: HeaderMap,
     peer_addr: SocketAddr,
 ) {
-    let mut target = format!("{}{}", state.gateway_ws_base, path);
+    proxy_upstream_ws(
+        state.gateway_ws_base.clone(),
+        socket,
+        path,
+        query,
+        None,
+        headers,
+        peer_addr,
+    )
+    .await;
+}
+
+async fn proxy_upstream_ws(
+    base_ws: String,
+    socket: WebSocket,
+    path: String,
+    query: Option<String>,
+    strip_prefix: Option<&str>,
+    headers: HeaderMap,
+    peer_addr: SocketAddr,
+) {
+    let mut target = format!("{}{}", base_ws, rewrite_proxy_path(&path, strip_prefix));
     if let Some(query) = query {
         target.push('?');
         target.push_str(&query);
     }
 
-    let mut upstream_request: WsClientRequest = match target.clone().into_client_request() {
+    let mut upstream_request: WsClientRequest = match target.into_client_request() {
         Ok(request) => request,
         Err(_) => return,
     };
@@ -910,9 +990,10 @@ async fn proxy_http_request(
     request: Request,
     preserve_host: bool,
     peer_addr: Option<SocketAddr>,
+    strip_prefix: Option<&str>,
 ) -> Response<Body> {
     let (parts, body) = request.into_parts();
-    let mut target = format!("{base}{}", parts.uri.path());
+    let mut target = format!("{base}{}", rewrite_proxy_path(parts.uri.path(), strip_prefix));
     if let Some(query) = parts.uri.query() {
         target.push('?');
         target.push_str(query);
@@ -965,6 +1046,18 @@ async fn proxy_http_request(
         }
     };
     build_response(status, &headers, bytes)
+}
+
+fn rewrite_proxy_path(path: &str, strip_prefix: Option<&str>) -> String {
+    if let Some(prefix) = strip_prefix
+        && let Some(stripped) = path.strip_prefix(prefix)
+    {
+        if stripped.is_empty() {
+            return "/".to_string();
+        }
+        return stripped.to_string();
+    }
+    path.to_string()
 }
 
 fn copy_request_headers(
@@ -1058,6 +1151,63 @@ fn fallback_gateway_response() -> Response<Body> {
 </body>
 </html>"#
         .to_string(),
+    )
+    .into_response()
+}
+
+fn fallback_shell_response() -> Response<Body> {
+    Html(
+        r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="5">
+  <title>维护 Shell</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at top, #183250 0%, #0a1220 55%, #04070d 100%);
+      color: #dfeaff;
+      font-family: "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .card {
+      width: min(92vw, 460px);
+      padding: 28px;
+      border-radius: 24px;
+      border: 1px solid rgba(122, 180, 225, .18);
+      background: rgba(10, 18, 32, .88);
+      box-shadow: 0 28px 84px rgba(0, 0, 0, .45);
+    }
+    h1 { margin: 0 0 10px; font-size: 24px; letter-spacing: -.02em; }
+    p { margin: 0 0 18px; color: #93a8c7; line-height: 1.7; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(122, 180, 225, .28);
+      background: rgba(18, 35, 60, .92);
+      color: #e7f5ff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>维护 Shell 正在启动</h1>
+    <p>ttyd 服务还没就绪，页面会自动刷新。通常只需要几秒。</p>
+    <button class="btn" onclick="location.reload()">立即刷新</button>
+  </div>
+</body>
+</html>"#
+            .to_string(),
     )
     .into_response()
 }
