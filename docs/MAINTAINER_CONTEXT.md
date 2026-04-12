@@ -26,8 +26,8 @@ Read this before making UI, runtime, or release changes.
 - `crates/ingressd`
   - HA ingress
   - browser terminal transport
-- `crates/actiond`
-  - local actions such as managed gateway restart
+  - local health/readiness endpoints
+  - managed gateway restart endpoint
 - `crates/haos-ui`
   - multi-page HAOS UI
 
@@ -43,8 +43,8 @@ Read this before making UI, runtime, or release changes.
 - Do not use `openclaw gateway restart` for the add-on restart button.
   - In this containerized setup that command prints guidance and does not restart
     the supervisor-managed foreground gateway process.
-- The restart button must use the local action endpoint:
-  - `POST http://127.0.0.1:48100/action/restart`
+- The restart button must use the ingress-managed local action endpoint:
+  - `POST http://127.0.0.1:48099/action/restart`
 - `OpenClaw runtime` must be based on the real gateway PID written under:
   - `/run/openclaw-rs/openclaw-gateway.pid`
   - fallback `/run/openclaw-rs/openclaw-node.pid`
@@ -54,7 +54,7 @@ Read this before making UI, runtime, or release changes.
 
 - `GET /healthz`
   - liveness only
-  - confirms `actiond` / ingress path is alive
+  - confirms the local ingress path is alive
   - must stay lightweight and unauthenticated
 - `GET /readyz`
   - readiness probe for the managed gateway path
@@ -107,6 +107,10 @@ Read this before making UI, runtime, or release changes.
   - If embedded terminal works, that does not automatically mean native Gateway works.
 
 ## Known noisy logs
+
+- `actiond`
+  - no longer part of the runtime architecture
+  - if it appears in logs or docs again, treat that as regression drift
 
 - `No pending device pairing requests to approve`
   - not an error

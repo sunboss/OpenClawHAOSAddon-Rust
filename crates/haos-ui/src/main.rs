@@ -512,7 +512,7 @@ async fn fetch_openclaw_health() -> Option<bool> {
         .build()
         .ok()?;
     let resp = client
-        .get("http://127.0.0.1:48100/readyz")
+        .get("http://127.0.0.1:48099/readyz")
         .send()
         .await
         .ok()?;
@@ -1003,18 +1003,16 @@ fn service_badge(label: &str, pid: &str) -> String {
     )
 }
 
-fn pid_row(gateway_pid: &str, ingress_pid: &str, ui_pid: &str, action_pid: &str) -> String {
+fn pid_row(gateway_pid: &str, ingress_pid: &str, ui_pid: &str) -> String {
     format!(
         r#"<div class="service-grid">
   {gateway}
   {ingress}
   {ui}
-  {action}
 </div>"#,
         gateway = service_badge("Gateway", gateway_pid),
         ingress = service_badge("Ingress", ingress_pid),
         ui = service_badge("UI", ui_pid),
-        action = service_badge("Action", action_pid),
     )
 }
 
@@ -1027,13 +1025,7 @@ fn home_content(
     let gateway_pid = pid_value("openclaw-gateway");
     let ingress_pid = pid_value("ingressd");
     let ui_pid = pid_value("haos-ui");
-    let action_pid = pid_value("actiond");
-    let online_count = [
-        gateway_pid.as_str(),
-        ingress_pid.as_str(),
-        ui_pid.as_str(),
-        action_pid.as_str(),
-    ]
+    let online_count = [gateway_pid.as_str(), ingress_pid.as_str(), ui_pid.as_str()]
     .into_iter()
     .filter(|value| *value != "-")
     .count();
@@ -1043,7 +1035,7 @@ fn home_content(
         Some(true) => ("运行正常", "服务健康检查通过", "tone-good"),
         Some(false) => ("响应异常", "健康检查未通过，请查看日志", "tone-danger"),
         None => {
-            if online_count >= 4 {
+            if online_count >= 3 {
                 ("运行正常", "关键进程全部在线", "tone-good")
             } else if online_count >= 2 {
                 ("部分在线", "建议查看命令行和日志页", "tone-warn")
@@ -1196,7 +1188,7 @@ fn home_content(
         } else {
             String::new()
         },
-        pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid, &action_pid),
+        pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid),
         resource_cpu = resource_card(
             "CPU 负载",
             &snapshot.cpu_load,
@@ -1357,7 +1349,7 @@ fn commands_content() -> String {
         ("本机版本", "openclaw --version"),
         (
             "重启网关",
-            "curl -fsS -X POST http://127.0.0.1:48100/action/restart",
+            "curl -fsS -X POST http://127.0.0.1:48099/action/restart",
         ),
     ]
     .iter()
@@ -1787,7 +1779,7 @@ fn commands_content_v2(config: &PageConfig) -> String {
     let health_actions = [
         (
             "探针状态",
-            "curl -fsS http://127.0.0.1:48100/healthz && echo && curl -fsS http://127.0.0.1:48100/readyz",
+            "curl -fsS http://127.0.0.1:48099/healthz && echo && curl -fsS http://127.0.0.1:48099/readyz",
         ),
         ("JSON 健康", "openclaw health --json"),
         ("运行状态", "openclaw status --deep"),
@@ -1847,7 +1839,7 @@ fn commands_content_v2(config: &PageConfig) -> String {
     );
     let restart_action = action_button(
         "重启网关",
-        "curl -fsS -X POST http://127.0.0.1:48100/action/restart",
+        "curl -fsS -X POST http://127.0.0.1:48099/action/restart",
     );
 
     format!(
@@ -3273,7 +3265,7 @@ mod tests {
     fn commands_page_uses_supervisor_restart_endpoint() {
         let html = commands_content_v2(&sample_page_config());
 
-        assert!(html.contains("curl -fsS -X POST http://127.0.0.1:48100/action/restart"));
+        assert!(html.contains("curl -fsS -X POST http://127.0.0.1:48099/action/restart"));
         assert!(!html.contains("openclaw gateway restart"));
     }
 
@@ -3296,8 +3288,8 @@ mod tests {
     fn commands_page_surfaces_probe_and_config_paths() {
         let html = commands_content_v2(&sample_page_config());
 
-        assert!(html.contains("http://127.0.0.1:48100/healthz"));
-        assert!(html.contains("http://127.0.0.1:48100/readyz"));
+        assert!(html.contains("http://127.0.0.1:48099/healthz"));
+        assert!(html.contains("http://127.0.0.1:48099/readyz"));
         assert!(html.contains("/config/.openclaw/openclaw.json"));
         assert!(html.contains("/config/.mcporter/mcporter.json"));
         assert!(html.contains("/config/.openclaw/workspace"));

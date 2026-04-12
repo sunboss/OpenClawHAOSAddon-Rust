@@ -1,3 +1,9 @@
+## 2026.04.12.6
+
+- 精简：移除 `actiond` crate 和镜像打包，原本的本地健康检查、readiness 与重启入口统一并入 `ingressd`
+- 调整：`haos-ui` 的本地探针与重启命令改为走 `http://127.0.0.1:48099`
+- 维护：同步更新 supervisor / README / maintainer context，当前常驻服务收敛为 `openclaw-gateway`、`haos-ui`、`ingressd`
+
 ## 2026.04.12.5
 
 - 修复：在镜像构建阶段补装 `@azure/identity` 和 `jwks-rsa`，避免 `msteams` 相关 bundled plugin 依赖在 `doctor --fix` 和启动日志里反复报缺失

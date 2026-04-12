@@ -1,11 +1,12 @@
 use axum::{
+    Json,
     Router,
     body::{Body, Bytes, to_bytes},
     extract::{
         ConnectInfo, Path, Query, Request, State,
         ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
     },
-    http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode},
+    http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode, header},
     response::{Html, IntoResponse, Redirect},
     routing::{any, get},
 };
@@ -14,7 +15,7 @@ use futures_util::{SinkExt, StreamExt};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use reqwest::Client;
 use rustls::crypto::aws_lc_rs;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     env, fs,
     io::{Read, Write},
@@ -22,7 +23,7 @@ use std::{
     sync::{Arc, Mutex},
     thread,
 };
-use tokio::sync::mpsc;
+use tokio::{net::TcpStream, process::Command, sync::mpsc, time::{Duration, sleep, timeout}};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{
@@ -35,10 +36,27 @@ use tokio_tungstenite::{
 struct AppState {
     client: Client,
     ui_base: String,
-    action_base: String,
     gateway_http_base: String,
     gateway_ws_base: String,
     enable_terminal: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ActionResponse {
+    ok: bool,
+    action: String,
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+    error: Option<String>,
+}
+
+struct GatewayProbe {
+    ok: bool,
+    status: StatusCode,
+    stdout: String,
+    stderr: String,
+    error: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -65,10 +83,6 @@ async fn main() {
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(48101);
-    let action_port = env::var("ACTION_SERVER_PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(48100);
     let gateway_internal_port = env::var("GATEWAY_INTERNAL_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
@@ -91,7 +105,6 @@ async fn main() {
             .build()
             .expect("build reqwest client"),
         ui_base: format!("http://127.0.0.1:{ui_port}"),
-        action_base: format!("http://127.0.0.1:{action_port}"),
         gateway_http_base: format!("http://127.0.0.1:{gateway_internal_port}"),
         gateway_ws_base: format!("ws://127.0.0.1:{gateway_internal_port}"),
         enable_terminal,
@@ -751,17 +764,38 @@ async fn handle_terminal_socket(socket: WebSocket) {
     let _ = child.kill();
 }
 
-async fn proxy_health(State(state): State<AppState>, request: Request) -> impl IntoResponse {
-    proxy_http_request(&state.client, &state.action_base, request, false, None).await
+async fn proxy_health(State(_state): State<AppState>, request: Request) -> impl IntoResponse {
+    let path = request.uri().path().to_string();
+    match path.as_str() {
+        "/health" => local_health().await.into_response(),
+        "/healthz" => local_healthz().await.into_response(),
+        "/readyz" => local_readyz().await.into_response(),
+        "/control-readyz" => local_control_readyz().await.into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn proxy_action(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Path(action): Path<String>,
-    request: Request,
+    _request: Request,
 ) -> impl IntoResponse {
-    let _ = action;
-    proxy_http_request(&state.client, &state.action_base, request, false, None).await
+    match action.as_str() {
+        "restart" => local_restart_action().await.into_response(),
+        "status" => local_status_action().await.into_response(),
+        _ => (
+            StatusCode::NOT_FOUND,
+            Json(ActionResponse {
+                ok: false,
+                action,
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error: Some("unknown_action".to_string()),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 async fn proxy_ui(State(state): State<AppState>, request: Request) -> impl IntoResponse {
@@ -1288,6 +1322,348 @@ fn should_skip_response_header(name: &HeaderName) -> bool {
         name.as_str().to_ascii_lowercase().as_str(),
         "content-length" | "connection" | "transfer-encoding"
     )
+}
+
+async fn local_health() -> (StatusCode, Json<ActionResponse>) {
+    let probe = local_gateway_probe().await;
+    (
+        probe.status,
+        Json(ActionResponse {
+            ok: probe.ok,
+            action: "health".to_string(),
+            exit_code: Some(if probe.ok { 0 } else { 1 }),
+            stdout: probe.stdout,
+            stderr: probe.stderr,
+            error: probe.error,
+        }),
+    )
+}
+
+async fn local_healthz() -> (StatusCode, [(HeaderName, &'static str); 1], &'static str) {
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        "ok\n",
+    )
+}
+
+async fn local_readyz() -> (StatusCode, [(HeaderName, &'static str); 1], String) {
+    probe_text_response(local_gateway_probe().await)
+}
+
+async fn local_control_readyz() -> (StatusCode, [(HeaderName, &'static str); 1], String) {
+    probe_text_response(local_control_probe().await)
+}
+
+fn probe_text_response(probe: GatewayProbe) -> (StatusCode, [(HeaderName, &'static str); 1], String) {
+    let body = if probe.ok {
+        format!("ok: {}\n", probe.stdout)
+    } else if !probe.stderr.is_empty() {
+        format!("not ready: {}\n", probe.stderr)
+    } else {
+        format!(
+            "not ready: {}\n",
+            probe.error.unwrap_or_else(|| "unknown".to_string())
+        )
+    };
+    (
+        probe.status,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        body,
+    )
+}
+
+async fn local_status_action() -> (StatusCode, Json<ActionResponse>) {
+    run_command("status", &["openclaw", "gateway", "status", "--deep"], 20).await
+}
+
+async fn local_restart_action() -> (StatusCode, Json<ActionResponse>) {
+    let pid_path = "/run/openclaw-rs/openclaw-gateway.pid";
+    let old_pid = match fs::read_to_string(pid_path) {
+        Ok(value) => value.trim().to_string(),
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ActionResponse {
+                    ok: false,
+                    action: "restart".to_string(),
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error: Some(format!("missing_pid_file: {err}")),
+                }),
+            );
+        }
+    };
+
+    if old_pid.is_empty() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ActionResponse {
+                ok: false,
+                action: "restart".to_string(),
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error: Some("empty_gateway_pid".to_string()),
+            }),
+        );
+    }
+
+    let kill_output = match Command::new("kill").args(["-TERM", &old_pid]).output().await {
+        Ok(output) => output,
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ActionResponse {
+                    ok: false,
+                    action: "restart".to_string(),
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error: Some(err.to_string()),
+                }),
+            );
+        }
+    };
+
+    if !kill_output.status.success() {
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(ActionResponse {
+                ok: false,
+                action: "restart".to_string(),
+                exit_code: kill_output.status.code(),
+                stdout: String::from_utf8_lossy(&kill_output.stdout).trim().to_string(),
+                stderr: String::from_utf8_lossy(&kill_output.stderr).trim().to_string(),
+                error: Some("kill_failed".to_string()),
+            }),
+        );
+    }
+
+    for _ in 0..100 {
+        sleep(Duration::from_millis(200)).await;
+        if let Ok(value) = fs::read_to_string(pid_path) {
+            let new_pid = value.trim().to_string();
+            if !new_pid.is_empty() && new_pid != old_pid {
+                return (
+                    StatusCode::OK,
+                    Json(ActionResponse {
+                        ok: true,
+                        action: "restart".to_string(),
+                        exit_code: Some(0),
+                        stdout: format!("gateway restarted: {old_pid} -> {new_pid}"),
+                        stderr: String::new(),
+                        error: None,
+                    }),
+                );
+            }
+        }
+    }
+
+    (
+        StatusCode::GATEWAY_TIMEOUT,
+        Json(ActionResponse {
+            ok: false,
+            action: "restart".to_string(),
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some("restart_timeout".to_string()),
+        }),
+    )
+}
+
+async fn run_command(
+    action: &str,
+    argv: &[&str],
+    timeout_secs: u64,
+) -> (StatusCode, Json<ActionResponse>) {
+    let Some((program, args)) = argv.split_first() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ActionResponse {
+                ok: false,
+                action: action.to_string(),
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error: Some("empty_command".to_string()),
+            }),
+        );
+    };
+
+    let mut command = Command::new(program);
+    command.args(args);
+    match timeout(Duration::from_secs(timeout_secs), command.output()).await {
+        Ok(Ok(output)) => {
+            let ok = output.status.success();
+            let status = if ok {
+                StatusCode::OK
+            } else {
+                StatusCode::BAD_GATEWAY
+            };
+            (
+                status,
+                Json(ActionResponse {
+                    ok,
+                    action: action.to_string(),
+                    exit_code: output.status.code(),
+                    stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                    stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                    error: None,
+                }),
+            )
+        }
+        Ok(Err(err)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ActionResponse {
+                ok: false,
+                action: action.to_string(),
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error: Some(err.to_string()),
+            }),
+        ),
+        Err(_) => (
+            StatusCode::GATEWAY_TIMEOUT,
+            Json(ActionResponse {
+                ok: false,
+                action: action.to_string(),
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error: Some("timeout".to_string()),
+            }),
+        ),
+    }
+}
+
+async fn local_gateway_probe() -> GatewayProbe {
+    let port = configured_gateway_port();
+    let gateway_mode = env::var("GATEWAY_MODE").unwrap_or_else(|_| "local".to_string());
+
+    let Some((process_name, pid)) = current_gateway_process() else {
+        return GatewayProbe {
+            ok: false,
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            stdout: String::new(),
+            stderr: "no managed gateway pid file present".to_string(),
+            error: Some("missing_gateway_pid".to_string()),
+        };
+    };
+
+    if !gateway_process_requires_local_port(&gateway_mode, process_name) {
+        return GatewayProbe {
+            ok: true,
+            status: StatusCode::OK,
+            stdout: format!("{process_name} pid {pid} running in {gateway_mode} mode"),
+            stderr: String::new(),
+            error: None,
+        };
+    }
+
+    let target = format!("127.0.0.1:{port}");
+    let port_ready = timeout(Duration::from_millis(800), TcpStream::connect(&target))
+        .await
+        .map(|result| result.is_ok())
+        .unwrap_or(false);
+
+    if port_ready {
+        return GatewayProbe {
+            ok: true,
+            status: StatusCode::OK,
+            stdout: format!("{process_name} pid {pid} listening on {target}"),
+            stderr: String::new(),
+            error: None,
+        };
+    }
+
+    GatewayProbe {
+        ok: false,
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        stdout: format!("{process_name} pid {pid} present"),
+        stderr: format!("gateway port {target} is not accepting connections yet"),
+        error: Some("gateway_port_not_ready".to_string()),
+    }
+}
+
+async fn local_control_probe() -> GatewayProbe {
+    let gateway_probe = local_gateway_probe().await;
+    if !gateway_probe.ok {
+        return gateway_probe;
+    }
+
+    let gateway_mode = env::var("GATEWAY_MODE").unwrap_or_else(|_| "local".to_string());
+    if gateway_mode == "remote" {
+        return gateway_probe;
+    }
+
+    let target = format!(
+        "127.0.0.1:{}",
+        browser_control_port_from_gateway_port(configured_gateway_port())
+    );
+    let port_ready = timeout(Duration::from_millis(800), TcpStream::connect(&target))
+        .await
+        .map(|result| result.is_ok())
+        .unwrap_or(false);
+
+    if port_ready {
+        return GatewayProbe {
+            ok: true,
+            status: StatusCode::OK,
+            stdout: format!("{}; browser control on {}", gateway_probe.stdout, target),
+            stderr: String::new(),
+            error: None,
+        };
+    }
+
+    GatewayProbe {
+        ok: false,
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        stdout: gateway_probe.stdout,
+        stderr: format!("browser control port {target} is not accepting connections yet"),
+        error: Some("browser_control_not_ready".to_string()),
+    }
+}
+
+fn configured_gateway_port() -> u16 {
+    env::var("GATEWAY_INTERNAL_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(18790)
+}
+
+fn browser_control_port_from_gateway_port(gateway_port: u16) -> u16 {
+    gateway_port.saturating_add(2)
+}
+
+fn current_gateway_process() -> Option<(&'static str, String)> {
+    select_gateway_process(
+        non_empty_trimmed_file("/run/openclaw-rs/openclaw-gateway.pid"),
+        non_empty_trimmed_file("/run/openclaw-rs/openclaw-node.pid"),
+    )
+}
+
+fn select_gateway_process(
+    gateway_pid: Option<String>,
+    node_pid: Option<String>,
+) -> Option<(&'static str, String)> {
+    gateway_pid
+        .map(|pid| ("openclaw-gateway", pid))
+        .or_else(|| node_pid.map(|pid| ("openclaw-node", pid)))
+}
+
+fn gateway_process_requires_local_port(gateway_mode: &str, process_name: &str) -> bool {
+    !(gateway_mode == "remote" && process_name == "openclaw-node")
+}
+
+fn non_empty_trimmed_file(path: &str) -> Option<String> {
+    fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]

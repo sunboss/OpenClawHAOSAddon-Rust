@@ -102,7 +102,6 @@ RUN cd /usr/local/lib/node_modules/openclaw \
       "silk-wasm@^3.7.1" \
       "zca-js@2.1.2"
 
-COPY --from=builder /src/target/release/actiond /usr/local/bin/actiond
 COPY --from=builder /src/target/release/addon-supervisor /usr/local/bin/addon-supervisor
 COPY --from=builder /src/target/release/haos-ui /usr/local/bin/haos-ui
 COPY --from=builder /src/target/release/ingressd /usr/local/bin/ingressd

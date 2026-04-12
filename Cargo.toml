@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "crates/actiond",
   "crates/addon-supervisor",
   "crates/haos-ui",
   "crates/ingressd",

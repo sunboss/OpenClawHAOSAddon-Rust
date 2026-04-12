@@ -36,8 +36,6 @@ enum Commands {
         gateway_bin: String,
         #[arg(long, default_value = "haos-ui")]
         ui_bin: String,
-        #[arg(long, default_value = "actiond")]
-        action_bin: String,
         #[arg(long, default_value = "ingressd")]
         ingress_bin: String,
         #[arg(long, default_value = "local")]
@@ -77,8 +75,6 @@ struct HaosEntryArgs {
     nginx_html_dir: PathBuf,
     #[arg(long, default_value_t = 18790)]
     gateway_internal_port: u16,
-    #[arg(long, default_value_t = 48100)]
-    action_server_port: u16,
     #[arg(long, default_value_t = 48101)]
     ui_port: u16,
     #[arg(long, default_value = "openclaw")]
@@ -89,8 +85,6 @@ struct HaosEntryArgs {
     mcporter_bin: String,
     #[arg(long, default_value = "haos-ui")]
     ui_bin: String,
-    #[arg(long, default_value = "actiond")]
-    action_bin: String,
     #[arg(long, default_value = "ingressd")]
     ingress_bin: String,
     #[arg(long, default_value = "/etc/nginx/nginx.conf")]
@@ -146,7 +140,6 @@ fn main() -> ExitCode {
         Some(Commands::RunServices {
             gateway_bin,
             ui_bin,
-            action_bin,
             ingress_bin,
             gateway_mode,
             gateway_remote_url,
@@ -154,12 +147,11 @@ fn main() -> ExitCode {
             terminal_port,
             enable_terminal,
         }) => run_services(
-            gateway_bin,
-            ui_bin,
-            action_bin,
-            ingress_bin,
-            gateway_mode,
-            gateway_remote_url,
+                gateway_bin,
+                ui_bin,
+                ingress_bin,
+                gateway_mode,
+                gateway_remote_url,
             run_doctor_on_start,
             terminal_port,
             enable_terminal,
@@ -244,7 +236,6 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
     run_services(
         args.gateway_bin,
         args.ui_bin,
-        args.action_bin,
         args.ingress_bin,
         settings.gateway_mode,
         settings.gateway_remote_url,
@@ -484,9 +475,8 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("MCPORTER_CONFIG", &args.mcporter_config);
         env::set_var("BACKUP_DIR", &args.backup_dir);
         env::set_var("CERT_DIR", &args.cert_dir);
-        env::set_var("ACTION_SERVER_PORT", args.action_server_port.to_string());
-        env::set_var("UI_PORT", args.ui_port.to_string());
-        env::set_var("INGRESS_PORT", "48099");
+    env::set_var("UI_PORT", args.ui_port.to_string());
+    env::set_var("INGRESS_PORT", "48099");
         env::set_var("ACCESS_MODE", &settings.access_mode);
         env::set_var("GATEWAY_MODE", &settings.gateway_mode);
         env::set_var("GW_PUBLIC_URL", &settings.gateway_public_url);
@@ -833,7 +823,6 @@ fn configure_home_assistant_mcp(args: &HaosEntryArgs, homeassistant_token: &str)
 
 fn render_nginx(output: PathBuf) -> ExitCode {
     let terminal_port = env_value("TERMINAL_PORT", "7681");
-    let action_port = env_value("ACTION_SERVER_PORT", "48100");
     let ui_port = env_value("UI_PORT", "48101");
     let enable_https = env::var("ENABLE_HTTPS_PROXY")
         .map(|value| value == "true")
@@ -940,22 +929,6 @@ http {{
       add_header Content-Disposition 'attachment; filename="openclaw-ca.crt"';
     }}
 
-    location = /health {{
-      proxy_pass http://127.0.0.1:{action_port}/health;
-      proxy_http_version 1.1;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_read_timeout 30s;
-    }}
-
-    location ~ ^/action/(status|restart)$ {{
-      proxy_pass http://127.0.0.1:{action_port};
-      proxy_http_version 1.1;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_read_timeout 70s;
-    }}
-
     location / {{
       proxy_pass http://127.0.0.1:{ui_port};
       proxy_http_version 1.1;
@@ -1029,7 +1002,6 @@ fn remove_pid_file(name: &str) {
 fn run_services(
     gateway_bin: String,
     ui_bin: String,
-    action_bin: String,
     ingress_bin: String,
     gateway_mode: String,
     gateway_remote_url: String,
@@ -1047,7 +1019,6 @@ fn run_services(
             "openclaw-gateway",
             "openclaw-node",
             "haos-ui",
-            "actiond",
             "ingressd",
         ] {
             remove_pid_file(name);
@@ -1071,10 +1042,6 @@ fn run_services(
         )));
         handles.push(tokio::spawn(run_managed_process(
             ProcessSpec::new("haos-ui", ui_bin, vec![]),
-            shutdown_rx.clone(),
-        )));
-        handles.push(tokio::spawn(run_managed_process(
-            ProcessSpec::new("actiond", action_bin, vec![]),
             shutdown_rx.clone(),
         )));
 
@@ -1485,7 +1452,6 @@ fn apply_child_env(command: &mut Command) {
         "MCPORTER_CONFIG",
         "BACKUP_DIR",
         "CERT_DIR",
-        "ACTION_SERVER_PORT",
         "UI_PORT",
         "INGRESS_PORT",
         "ACCESS_MODE",
@@ -1670,13 +1636,11 @@ mod tests {
             backup_dir: root.join("backup"),
             nginx_html_dir: root.join("html"),
             gateway_internal_port: 18789,
-            action_server_port: 48100,
             ui_port: 48101,
             gateway_bin: "openclaw".to_string(),
             oc_config_bin: "oc-config".to_string(),
             mcporter_bin: "mcporter".to_string(),
             ui_bin: "haos-ui".to_string(),
-            action_bin: "actiond".to_string(),
             ingress_bin: "ingressd".to_string(),
             nginx_conf: root.join("nginx.conf"),
         };
@@ -1728,13 +1692,11 @@ mod tests {
             backup_dir: root.join("backup"),
             nginx_html_dir: root.join("html"),
             gateway_internal_port: 18789,
-            action_server_port: 48100,
             ui_port: 48101,
             gateway_bin: "openclaw".to_string(),
             oc_config_bin: "oc-config".to_string(),
             mcporter_bin: "mcporter".to_string(),
             ui_bin: "haos-ui".to_string(),
-            action_bin: "actiond".to_string(),
             ingress_bin: "ingressd".to_string(),
             nginx_conf: root.join("nginx.conf"),
         };

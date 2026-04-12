@@ -2,6 +2,36 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-12 18:30 Asia/Shanghai - Collapse actiond into ingressd
+
+- User request: continue simplifying toward upstream-native architecture and specifically answer whether `actiond` had really been removed.
+- Outcome:
+  - `actiond` is no longer part of the active workspace build or runtime process tree
+  - its lightweight health/restart surface was folded into `ingressd`
+- Files changed:
+  - `Cargo.toml`
+  - `Dockerfile`
+  - `README.md`
+  - `config.yaml`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `docs/OPERATION_LOG.md`
+  - `CHANGELOG.md`
+  - deleted:
+    - `crates/actiond/Cargo.toml`
+    - `crates/actiond/src/main.rs`
+- Implementation:
+  - moved local `/health`, `/healthz`, `/readyz`, `/control-readyz`, `/action/restart`, and `/action/status` handling into `ingressd`
+  - switched `haos-ui` internal health/restart calls from `127.0.0.1:48100` to `127.0.0.1:48099`
+  - removed `ACTION_SERVER_PORT` runtime env export and stopped spawning `actiond` from `addon-supervisor`
+  - removed `actiond` from the Cargo workspace and Docker image
+- Commands / validation:
+  - `cargo test -p ingressd -p haos-ui -p addon-supervisor`
+- Version:
+  - `2026.04.12.6`
+
 ## 2026-04-12 16:05 Asia/Shanghai - Preinstall missing msteams bundled-plugin deps in image
 
 - User request: continue with item `1` from the previous split, meaning handle the bundled plugin dependency problem rather than Bonjour.
