@@ -222,7 +222,7 @@ fn runtime_settings(options: &AddonOptions) -> RuntimeSettings {
             .timezone
             .clone()
             .unwrap_or_else(|| "Asia/Shanghai".to_string()),
-        disable_bonjour: options.disable_bonjour.unwrap_or(false),
+        disable_bonjour: options.disable_bonjour.unwrap_or(true),
         gateway_mode: options
             .gateway_mode
             .clone()

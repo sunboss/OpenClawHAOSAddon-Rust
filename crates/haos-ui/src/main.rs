@@ -44,6 +44,7 @@ struct PageConfig {
     memory_base_url: String,
     memory_local_model_path: String,
     memory_api_configured: bool,
+    dreaming_enabled: bool,
     current_model: String,
     gateway_token: String,
 }
@@ -82,6 +83,7 @@ impl PageConfig {
             memory_local_model_path,
             memory_api_configured,
         ) = load_memory_search_settings(config.as_ref());
+        let dreaming_enabled = load_dreaming_settings(config.as_ref());
         let current_model = config
             .as_ref()
             .and_then(|v| first_string_path(v, &[
@@ -113,6 +115,7 @@ impl PageConfig {
             memory_base_url,
             memory_local_model_path,
             memory_api_configured,
+            dreaming_enabled,
             current_model,
             gateway_token,
         }
@@ -380,6 +383,12 @@ fn load_memory_search_settings(
         .map(|value| path_exists(value, "agents.defaults.memorySearch.remote.apiKey"))
         .unwrap_or(false);
     (provider, enabled, model, fallback, base_url, local_model_path, api_configured)
+}
+
+fn load_dreaming_settings(config: Option<&serde_json::Value>) -> bool {
+    config
+        .and_then(|value| bool_path(value, "plugins.entries.memory-core.config.dreaming.enabled"))
+        .unwrap_or(false)
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -1134,6 +1143,11 @@ fn config_content_v2(config: &PageConfig) -> String {
     let model_datalist = datalist_option_tags(COMMON_MODEL_OPTIONS);
     let web_model_display = text_or_placeholder(&config.web_model, "未单独设置");
     let memory_model_display = text_or_placeholder(&config.memory_model, "未单独设置");
+    let dreaming_status = if config.dreaming_enabled {
+        "enabled"
+    } else {
+        "disabled"
+    };
 
     format!(
         r#"<div class="page-grid">
@@ -1200,6 +1214,13 @@ fn config_content_v2(config: &PageConfig) -> String {
         {memory_provider}
         {memory_model}
         {memory_api}
+      </div>
+    </section>
+    <section class="ops-panel">
+      <h3>Dreaming 概览</h3>
+      <div class="kv-list">
+        {dreaming_status}
+        {dreaming_note}
       </div>
     </section>
     </aside>
@@ -1346,6 +1367,28 @@ fn config_content_v2(config: &PageConfig) -> String {
   </section>
 
   <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">Dreaming</div>
+        <h3>后台梦境整理与日志收敛</h3>
+        <p class="muted">这一部分对应官方 <code>plugins.entries.memory-core.config.dreaming.enabled</code>。如果你不需要后台 Dreaming、反思日记和定时梦境整理，建议保持关闭。</p>
+      </div>
+      <div class="header-actions">
+        <a class="btn" href="https://docs.openclaw.ai/concepts/memory-dreaming" target="_blank" rel="noopener noreferrer">官方文档</a>
+        <a class="btn secondary" href="https://docs.openclaw.ai/reference/memory-config" target="_blank" rel="noopener noreferrer">配置参考</a>
+      </div>
+    </div>
+    <div class="config-form">
+      {dreaming_enabled_toggle}
+      <div class="mini-tip">推荐默认关闭。保存后重启插件，相关 <code>memory-core: dreaming ...</code> 日志会随配置变化。</div>
+      <div class="action-row">
+        <button class="btn primary" type="button" onclick="ocSaveDreamingConfig()">保存 Dreaming</button>
+        <span class="form-status" id="dreamingSaveStatus">保存后需重启插件</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
     <div class="card-head compact">
       <div>
         <div class="eyebrow">运维入口</div>
@@ -1372,6 +1415,8 @@ fn config_content_v2(config: &PageConfig) -> String {
         memory_provider = kv_row("Provider", &config.memory_provider),
         memory_model = kv_row("Embedding Model", &memory_model_display),
         memory_api = kv_row("API / 凭证", memory_api_state),
+        dreaming_status = kv_row("Dreaming", dreaming_status),
+        dreaming_note = kv_row("建议", "默认关闭，按需启用"),
         web_docs = html_attr_escape(web_docs),
         web_console = html_attr_escape(web_console),
         web_console_style = if web_console.is_empty() { r#" style="display:none""# } else { "" },
@@ -1402,6 +1447,12 @@ fn config_content_v2(config: &PageConfig) -> String {
         memory_fallback = html_attr_escape(&config.memory_fallback),
         memory_base_url = html_attr_escape(&config.memory_base_url),
         memory_local_model_path = html_attr_escape(&config.memory_local_model_path),
+        dreaming_enabled_toggle = form_checkbox(
+            "dreamingEnabled",
+            config.dreaming_enabled,
+            "启用 Dreaming",
+            "对应官方 plugins.entries.memory-core.config.dreaming.enabled",
+        ),
         model_docs = MODEL_CONFIG_DOCS_URL,
         current_model = html_attr_escape(&config.current_model),
         model_datalist = model_datalist,
@@ -2846,6 +2897,18 @@ fn render_shell(
         ocSetFormStatus("memorySaveStatus", "保存失败：" + (error.message || error), false);
       }}
     }};
+    window.ocSaveDreamingConfig = async function () {{
+      ocSetFormStatus("dreamingSaveStatus", "正在保存…");
+      try {{
+        const data = await ocPostJson("./action/config-dreaming", {{
+          enabled: !!document.getElementById("dreamingEnabled")?.checked
+        }});
+        ocSetFormStatus("dreamingSaveStatus", data.message || "已保存", !!data.ok);
+        if (data.ok) window.setTimeout(function() {{ location.reload(); }}, 800);
+      }} catch (error) {{
+        ocSetFormStatus("dreamingSaveStatus", "保存失败：" + (error.message || error), false);
+      }}
+    }};
     window.ocSaveModelConfig = async function () {{
       ocSetFormStatus("modelSaveStatus", "正在保存…");
       try {{
@@ -2902,6 +2965,11 @@ struct SaveMemorySearchRequest {
     api_key: String,
     clear_api_key: bool,
     local_model_path: String,
+}
+
+#[derive(serde::Deserialize)]
+struct SaveDreamingRequest {
+    enabled: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -3057,6 +3125,14 @@ fn apply_model_overlay(config: &mut serde_json::Value, body: &SaveModelRequest) 
     }
 }
 
+fn apply_dreaming_overlay(config: &mut serde_json::Value, body: &SaveDreamingRequest) {
+    set_bool_path(
+        config,
+        &["plugins", "entries", "memory-core", "config", "dreaming", "enabled"],
+        body.enabled,
+    );
+}
+
 // ─── 页面 handlers ────────────────────────────────────────────────────────────
 
 async fn save_web_search_config(Json(body): Json<SaveWebSearchRequest>) -> impl IntoResponse {
@@ -3079,6 +3155,19 @@ async fn save_memory_search_config(Json(body): Json<SaveMemorySearchRequest>) ->
         Ok(()) => Json(serde_json::json!({
             "ok": true,
             "message": "Memory Search 配置已保存，重启插件后会应用到 OpenClaw",
+            "restart_required": true
+        })),
+        Err(err) => Json(serde_json::json!({ "ok": false, "message": err })),
+    }
+}
+
+async fn save_dreaming_config(Json(body): Json<SaveDreamingRequest>) -> impl IntoResponse {
+    let mut config = load_panel_config_mutable();
+    apply_dreaming_overlay(&mut config, &body);
+    match save_panel_config_value(&config) {
+        Ok(()) => Json(serde_json::json!({
+            "ok": true,
+            "message": "Dreaming 配置已保存，重启插件后会应用到 OpenClaw",
             "restart_required": true
         })),
         Err(err) => Json(serde_json::json!({ "ok": false, "message": err })),
@@ -3125,7 +3214,7 @@ async fn config_page(State(state): State<AppState>) -> impl IntoResponse {
         &config,
         NavPage::Config,
         "Agent 能力配置",
-        "管理模型、Web Search 与 Memory Search 等能力开关，让这台 Agent 主控台保持长期稳定可用。",
+        "管理模型、Web Search、Memory Search 与 Dreaming 等能力开关，让这台 Agent 主控台保持长期稳定可用。",
         &config_content_v2(&config),
     )
 }
@@ -3177,6 +3266,7 @@ async fn main() {
         .route("/logs", get(logs_page))
         .route("/action/config-web-search", post(save_web_search_config))
         .route("/action/config-memory-search", post(save_memory_search_config))
+        .route("/action/config-dreaming", post(save_dreaming_config))
         .route("/action/config-model", post(save_model_config))
         .with_state(app_state);
 
@@ -3216,6 +3306,7 @@ mod tests {
             memory_base_url: String::new(),
             memory_local_model_path: String::new(),
             memory_api_configured: true,
+            dreaming_enabled: false,
             current_model: "gpt-4o".to_string(),
             gateway_token: String::new(),
         }
@@ -3240,6 +3331,7 @@ mod tests {
 
         assert!(html.contains("ocSaveWebSearchConfig()"));
         assert!(html.contains("ocSaveMemorySearchConfig()"));
+        assert!(html.contains("ocSaveDreamingConfig()"));
         assert!(html.contains("ocSaveModelConfig()"));
         assert!(html.contains("https://docs.openclaw.ai/tools/web"));
         assert!(html.contains("https://docs.openclaw.ai/reference/memory-config"));

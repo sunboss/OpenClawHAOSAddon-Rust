@@ -2,6 +2,26 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-13 08:25 Asia/Shanghai - Quiet defaults for Bonjour and Dreaming
+
+- User request:
+  - reduce ongoing noisy logs by default and expose a direct Dreaming switch in the HA add-on UI
+- Outcome:
+  - changed the add-on default so `disable_bonjour` now defaults to `true`
+  - updated supervisor runtime defaults to export `OPENCLAW_DISABLE_BONJOUR=1` unless the user explicitly opts back in
+  - added a dedicated `Dreaming` section to the HA configuration page
+  - wired the page to save the official `plugins.entries.memory-core.config.dreaming.enabled` path
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+- Version:
+  - bump add-on version to `2026.04.13.2`
+
 ## 2026-04-13 01:20 Asia/Shanghai - Restore colorful brand direction
 
 - User request:

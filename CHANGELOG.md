@@ -1,3 +1,9 @@
+## 2026.04.13.2
+
+- 默认值：将 `disable_bonjour` 的默认值改为开启，新的安装默认不再广播 Bonjour，减少 `bonjour ... advertiser` 噪音
+- 配置页：新增独立的 `Dreaming` 开关，直接写入官方 `plugins.entries.memory-core.config.dreaming.enabled`
+- 观测：配置页新增 `Dreaming` 概览，让后台梦境整理状态更直观
+
 ## 2026.04.13.1
 
 - Logo：恢复更有辨识度的彩色品牌方案，根目录 `logo.png` / `icon.png` 与 UI 头部品牌标识重新同步
