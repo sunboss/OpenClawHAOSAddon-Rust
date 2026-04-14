@@ -2,6 +2,31 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-14 21:15 Asia/Shanghai - Make device listing a direct page action
+
+- User request:
+  - keep Dreaming as a manual toggle, then investigate why “列出待批准设备” appeared to hang
+- Investigation:
+  - verified against official devices docs
+  - executed `openclaw devices list --json` directly inside the running add-on container
+  - confirmed the command returns normally and quickly; the “hang” was not in OpenClaw itself
+- Root cause:
+  - the old button launched `!openclaw devices list` through the TUI boot-command path
+  - when the TUI session was still settling, the user-facing experience could look stalled even though the backend command was fine
+- Outcome:
+  - replaced the fragile TUI-injected listing path with a direct page action that runs `openclaw devices list --json`
+  - added inline output rendering so pending/paired devices appear immediately on the commands page
+  - kept the one-click latest approval action in place
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+- Version:
+  - bump add-on version to `2026.04.14.4`
+
 ## 2026-04-14 20:35 Asia/Shanghai - Upgrade upstream runtime to v2026.4.14
 
 - User request:

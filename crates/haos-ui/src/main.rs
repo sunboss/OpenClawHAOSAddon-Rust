@@ -1544,10 +1544,12 @@ fn commands_content_native(_config: &PageConfig) -> String {
             <li><code>openclaw devices remove &lt;deviceId&gt;</code></li>
             <li><code>openclaw devices rotate --device &lt;deviceId&gt; --role operator</code></li>
           </ul>
-          <div class="action-row">
-            <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw devices list')">列出待批准设备</button>
+        <div class="action-row">
+            <button class="btn" type="button" onclick="ocListDevices('deviceListStatus','deviceListOutput')">列出待批准设备</button>
             <button class="btn primary" type="button" onclick="ocApproveLatestDevice('deviceApproveStatus')">自动批准最新请求</button>
           </div>
+          <span class="form-status" id="deviceListStatus">页面会直接执行官方 <code>openclaw devices list --json</code></span>
+          <pre class="command-output" id="deviceListOutput">点击“列出待批准设备”后，会在这里显示 pending 与 paired 设备快照。</pre>
           <span class="form-status" id="deviceApproveStatus">按钮会在本机执行官方 <code>openclaw devices approve --latest</code></span>
           <div class="mini-tip">按官方文档，新设备如果在重试时更换了角色、scope 或公钥，旧 pending 会被 supersede。按钮适合处理“当前最新请求”；如果你怀疑批到旧 requestId，先重新执行 <code>openclaw devices list</code> 再手动核对。</div>
         </div>
@@ -2242,6 +2244,20 @@ fn render_shell(
     .command-block + .command-block {{ margin-top:14px; }}
     .command-block .section-label {{ margin-bottom:10px; display:block; }}
     .command-block .mini-tip {{ margin-top:12px; }}
+    .command-output {{
+      margin: 12px 0 0;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(96, 132, 176, .22);
+      background: rgba(6, 14, 26, .78);
+      color: #dbe8ff;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 320px;
+      overflow: auto;
+    }}
     .console-ribbon {{
       display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px;
       margin-top:16px;
@@ -2959,6 +2975,19 @@ fn render_shell(
         ocSetFormStatus(statusId, "执行失败：" + (error.message || error), false);
       }}
     }};
+    window.ocListDevices = async function (statusId, outputId) {{
+      ocSetFormStatus(statusId, "正在读取设备列表…");
+      const output = document.getElementById(outputId);
+      if (output) output.textContent = "正在读取…";
+      try {{
+        const data = await ocPostJson("./action/devices-list", {{}});
+        ocSetFormStatus(statusId, data.message || "已完成", !!data.ok);
+        if (output) output.textContent = data.output || "没有返回设备数据";
+      }} catch (error) {{
+        ocSetFormStatus(statusId, "读取失败：" + (error.message || error), false);
+        if (output) output.textContent = "读取失败：" + (error.message || error);
+      }}
+    }};
     syncGatewayLink();
     ocSyncProviderMeta("web");
     ocSyncProviderMeta("memory");
@@ -3015,24 +3044,23 @@ struct SaveModelRequest {
     fallback_models: String,
 }
 
-async fn run_openclaw_command(args: Vec<&'static str>) -> Result<(bool, String), String> {
+struct OpenClawCommandResult {
+    ok: bool,
+    stdout: String,
+    stderr: String,
+}
+
+async fn run_openclaw_command(args: Vec<&'static str>) -> Result<OpenClawCommandResult, String> {
     tokio::task::spawn_blocking(move || {
         let output = Command::new("openclaw")
             .args(&args)
             .output()
             .map_err(|err| format!("无法执行 openclaw：{err}"))?;
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let message = if !stdout.is_empty() {
-            stdout
-        } else if !stderr.is_empty() {
-            stderr
-        } else if output.status.success() {
-            "命令执行完成".to_string()
-        } else {
-            format!("命令退出码 {:?}", output.status.code())
-        };
-        Ok((output.status.success(), message))
+        Ok(OpenClawCommandResult {
+            ok: output.status.success(),
+            stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        })
     })
     .await
     .map_err(|err| format!("后台任务失败：{err}"))?
@@ -3249,23 +3277,62 @@ async fn save_model_config(Json(body): Json<SaveModelRequest>) -> impl IntoRespo
 
 async fn approve_latest_device() -> impl IntoResponse {
     match run_openclaw_command(vec!["devices", "approve", "--latest"]).await {
-        Ok((true, message)) => Json(serde_json::json!({
+        Ok(result) if result.ok => Json(serde_json::json!({
             "ok": true,
-            "message": if message.is_empty() {
-                "已执行 openclaw devices approve --latest".to_string()
+            "message": if !result.stdout.is_empty() {
+                result.stdout
+            } else if !result.stderr.is_empty() {
+                result.stderr
             } else {
-                message
+                "已执行 openclaw devices approve --latest".to_string()
             }
         })),
-        Ok((false, message)) => Json(serde_json::json!({
+        Ok(result) => Json(serde_json::json!({
             "ok": false,
-            "message": if message.is_empty() {
-                "授权失败，请先检查待批准设备列表".to_string()
+            "message": if !result.stderr.is_empty() {
+                result.stderr
+            } else if !result.stdout.is_empty() {
+                result.stdout
             } else {
-                message
+                "授权失败，请先检查待批准设备列表".to_string()
             }
         })),
         Err(err) => Json(serde_json::json!({ "ok": false, "message": err })),
+    }
+}
+
+async fn list_devices() -> impl IntoResponse {
+    match run_openclaw_command(vec!["devices", "list", "--json"]).await {
+        Ok(result) if result.ok => {
+            let output = if result.stdout.is_empty() {
+                "没有返回设备数据".to_string()
+            } else {
+                match serde_json::from_str::<serde_json::Value>(&result.stdout) {
+                    Ok(json) => serde_json::to_string_pretty(&json)
+                        .unwrap_or_else(|_| result.stdout.clone()),
+                    Err(_) => result.stdout.clone(),
+                }
+            };
+            let pending = serde_json::from_str::<serde_json::Value>(&result.stdout)
+                .ok()
+                .and_then(|v| v.get("pending").and_then(|x| x.as_array()).map(|x| x.len()))
+                .unwrap_or(0);
+            let paired = serde_json::from_str::<serde_json::Value>(&result.stdout)
+                .ok()
+                .and_then(|v| v.get("paired").and_then(|x| x.as_array()).map(|x| x.len()))
+                .unwrap_or(0);
+            Json(serde_json::json!({
+                "ok": true,
+                "message": format!("已读取设备列表：pending {}，paired {}", pending, paired),
+                "output": output
+            }))
+        }
+        Ok(result) => Json(serde_json::json!({
+            "ok": false,
+            "message": if !result.stderr.is_empty() { result.stderr.clone() } else { "读取设备列表失败".to_string() },
+            "output": if result.stdout.is_empty() { result.stderr } else { result.stdout }
+        })),
+        Err(err) => Json(serde_json::json!({ "ok": false, "message": err, "output": "" })),
     }
 }
 
@@ -3350,6 +3417,7 @@ async fn main() {
         .route("/action/config-memory-search", post(save_memory_search_config))
         .route("/action/config-dreaming", post(save_dreaming_config))
         .route("/action/config-model", post(save_model_config))
+        .route("/action/devices-list", post(list_devices))
         .route("/action/devices-approve-latest", post(approve_latest_device))
         .with_state(app_state);
 
