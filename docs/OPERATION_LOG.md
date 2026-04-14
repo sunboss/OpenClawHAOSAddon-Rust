@@ -2,6 +2,30 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-14 20:35 Asia/Shanghai - Upgrade upstream runtime to v2026.4.14
+
+- User request:
+  - check the latest official release, prioritize upgrading first, then continue fixing issues
+- Outcome:
+  - bumped the Docker image runtime from upstream OpenClaw `v2026.4.12` to `v2026.4.14`
+  - kept all current local add-on behaviors unchanged so we can compare post-upgrade logs against the same HA wrapper
+- Official references reviewed:
+  - `https://github.com/openclaw/openclaw/releases/tag/v2026.4.14`
+  - `https://registry.npmjs.org/openclaw/latest`
+- Notable upstream improvements relevant to this add-on:
+  - doctor/plugins now caches external `preferOver` lookups so large plugin configs stop pegging CPU
+  - context-engine maintenance now runs as idle-aware background work so foreground turns stop waiting on proactive maintenance
+  - multiple Ollama, memory embeddings, browser SSRF/CDP, and startup-path fixes landed in the same release
+- Files changed:
+  - `Dockerfile`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+- Version:
+  - bump add-on version to `2026.04.14.3`
+
 ## 2026-04-14 12:05 Asia/Shanghai - Add Python runtime and improve device approval guidance
 
 - User request:

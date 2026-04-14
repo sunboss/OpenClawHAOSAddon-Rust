@@ -1,3 +1,9 @@
+## 2026.04.14.3
+
+- 升级：Docker 镜像内的 upstream OpenClaw runtime 从 `v2026.4.12` 升到 `v2026.4.14`
+- 对齐：这版上游包含多项稳定性与性能修复，例如 doctor/plugins catalog 缓存、context engine 后台维护、以及多项 Ollama / memory / browser 修复
+- 保持：继续沿用当前 add-on 的 Python 运行环境、静音默认值与设备授权按钮
+
 ## 2026.04.14.2
 
 - 运行时：镜像补齐 `python3`、`pip`、`venv` 和 `python` 命令别名，便于在维护 Shell 里直接执行 Python 脚本和安装工具
