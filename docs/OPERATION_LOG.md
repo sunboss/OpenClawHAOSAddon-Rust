@@ -2,6 +2,28 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-14 22:10 Asia/Shanghai - Speed up the Gateway popup path
+
+- User request:
+  - the popup shown by “打开网关” stayed on the loading page for too long
+- Investigation:
+  - reviewed the local HAOS UI flow and compared it with the official Control UI expectation of entering the native page directly
+  - found the popup script was waiting for two successful `readyz` checks plus an extra fixed delay before navigation
+- Root cause:
+  - the old logic optimized for conservatism, not responsiveness
+  - even when the Gateway itself was already reachable, the popup would keep waiting several additional seconds
+- Outcome:
+  - reduced the readiness probe window to a short best-effort check
+  - started token fetch and readiness probing in parallel
+  - navigates to the native Gateway quickly, while allowing the Control UI to finish its own initialization after opening
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-14 21:15 Asia/Shanghai - Make device listing a direct page action
 
 - User request:

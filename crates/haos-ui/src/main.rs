@@ -2739,34 +2739,47 @@ fn render_shell(
       if (!link) return;
       link.href = nativeGatewayUrl();
     }}
-    async function fetchGatewayToken() {{
-      if (gatewayTokenValue) return gatewayTokenValue;
-      const response = await fetch(appUrl('./token'), {{ credentials: 'same-origin', cache: 'no-cache' }});
-      if (!response.ok) throw new Error(`token-${{response.status}}`);
-      const text = (await response.text()).trim();
-      if (!text) throw new Error('empty-token');
-      gatewayTokenValue = text;
-      return gatewayTokenValue;
+    function delay(ms) {{
+      return new Promise((resolve) => window.setTimeout(resolve, ms));
     }}
-    async function waitForGatewayReady(timeoutMs = 150000) {{
+    async function fetchGatewayToken(timeoutMs = 1800) {{
+      if (gatewayTokenValue) return gatewayTokenValue;
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+      try {{
+        const response = await fetch(appUrl('./token'), {{
+          credentials: 'same-origin',
+          cache: 'no-cache',
+          signal: controller.signal,
+        }});
+        if (!response.ok) throw new Error(`token-${{response.status}}`);
+        const text = (await response.text()).trim();
+        if (!text) throw new Error('empty-token');
+        gatewayTokenValue = text;
+        return gatewayTokenValue;
+      }} finally {{
+        window.clearTimeout(timer);
+      }}
+    }}
+    async function waitForGatewayReady(timeoutMs = 6000) {{
       const deadline = Date.now() + timeoutMs;
-      let stable = 0;
       while (Date.now() < deadline) {{
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 1200);
         try {{
-          const response = await fetch(appUrl('./readyz'), {{ credentials: 'same-origin', cache: 'no-cache' }});
+          const response = await fetch(appUrl('./readyz'), {{
+            credentials: 'same-origin',
+            cache: 'no-cache',
+            signal: controller.signal,
+          }});
           if (response.ok) {{
-            stable += 1;
-            if (stable >= 2) {{
-              await new Promise((resolve) => window.setTimeout(resolve, 2500));
-              return true;
-            }}
-          }} else {{
-            stable = 0;
+            return true;
           }}
         }} catch (_) {{
-          stable = 0;
+        }} finally {{
+          window.clearTimeout(timer);
         }}
-        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+        await delay(450);
       }}
       return false;
     }}
@@ -2821,8 +2834,8 @@ fn render_shell(
 </head>
 <body>
   <div class="card">
-    <h1>正在打开 OpenClaw Gateway</h1>
-    <p>正在等待原生控制台就绪，请稍候几秒。</p>
+    <h1>正在连接 OpenClaw Gateway</h1>
+    <p>正在切换到原生控制台；如果控制层仍在启动，页面会在打开后继续完成初始化。</p>
   </div>
 </body>
 </html>`);
@@ -2833,11 +2846,15 @@ fn render_shell(
       const popup = window.open("", "_blank");
       writeGatewayLoadingPage(popup);
       const targetUrl = nativeGatewayUrl();
-      await waitForGatewayReady();
+      const tokenPromise = fetchGatewayToken().catch(() => "");
+      const readyPromise = waitForGatewayReady();
+      await Promise.race([readyPromise, delay(1200)]);
       let finalUrl = targetUrl;
       try {{
-        const token = await fetchGatewayToken();
-        finalUrl = withTokenHash(targetUrl, token);
+        const token = await Promise.race([tokenPromise, delay(700).then(() => "")]);
+        if (token) {{
+          finalUrl = withTokenHash(targetUrl, token);
+        }}
       }} catch (_) {{}}
       if (popup) {{
         popup.location.replace(finalUrl);
