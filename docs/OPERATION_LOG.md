@@ -2,6 +2,28 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-14 10:35 Asia/Shanghai - Upgrade upstream runtime to v2026.4.12
+
+- User request:
+  - review the latest official `v2026.4.12` release and docs, then upgrade and optimize the HA add-on
+- Outcome:
+  - bumped the Docker image runtime from upstream OpenClaw `v2026.4.11` to `v2026.4.12`
+  - kept the quieter add-on defaults introduced earlier (`disable_bonjour: true`, Dreaming exposed as a dedicated switch)
+  - updated the model configuration card to surface the official LM Studio provider guide and added `lmstudio/...` suggestions in the model datalist
+- Official references reviewed:
+  - `https://github.com/openclaw/openclaw/releases/tag/v2026.4.12`
+  - `https://docs.openclaw.ai/providers/lmstudio`
+- Files changed:
+  - `Dockerfile`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+- Version:
+  - bump add-on version to `2026.04.14.1`
+
 ## 2026-04-13 08:25 Asia/Shanghai - Quiet defaults for Bonjour and Dreaming
 
 - User request:

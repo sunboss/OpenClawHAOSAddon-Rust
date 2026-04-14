@@ -627,6 +627,8 @@ const COMMON_MODEL_OPTIONS: &[&str] = &[
     "google/gemini-2.5-flash",
     "anthropic/claude-opus-4.1",
     "anthropic/claude-sonnet-4.5",
+    "lmstudio/openai/gpt-oss-20b",
+    "lmstudio/qwen/qwen3-32b",
     "openrouter/qwen/qwen-2.5-72b-instruct",
 ];
 
@@ -1336,13 +1338,14 @@ fn config_content_v2(config: &PageConfig) -> String {
 
   <section class="card">
     <div class="card-head">
-      <div>
+        <div>
         <div class="eyebrow">模型</div>
         <h3>对话模型选择</h3>
-        <p class="muted">这里写入官方 <code>agents.defaults.model.primary</code> 和 <code>fallbacks</code>。主模型可直接填完整模型 ID，也可以从常用建议里选择。</p>
+        <p class="muted">这里写入官方 <code>agents.defaults.model.primary</code> 和 <code>fallbacks</code>。主模型可直接填完整模型 ID，也可以从常用建议里选择；如果你在本机跑 LM Studio，这里也支持直接填官方 <code>lmstudio/&lt;provider&gt;/&lt;model&gt;</code> 形式。</p>
       </div>
       <div class="header-actions">
         <a class="btn" href="{model_docs}" target="_blank" rel="noopener noreferrer">官方文档</a>
+        <a class="btn secondary" href="https://docs.openclaw.ai/providers/lmstudio" target="_blank" rel="noopener noreferrer">LM Studio 指南</a>
         <a class="btn secondary" href="https://docs.openclaw.ai/onboard" target="_blank" rel="noopener noreferrer">初始化文档</a>
       </div>
     </div>
@@ -1350,8 +1353,9 @@ fn config_content_v2(config: &PageConfig) -> String {
       <div class="form-grid">
         <label class="field field-span-2">
           <span class="field-label">Primary Model</span>
-          <input type="text" id="primaryModel" value="{current_model}" list="modelSuggestions" placeholder="例如 openai-codex/gpt-5.4">
+          <input type="text" id="primaryModel" value="{current_model}" list="modelSuggestions" placeholder="例如 openai-codex/gpt-5.4 或 lmstudio/openai/gpt-oss-20b">
           <datalist id="modelSuggestions">{model_datalist}</datalist>
+          <span class="field-help">LM Studio 参考官方 provider 文档：先启动本地服务，再在这里填 <code>lmstudio/&lt;provider&gt;/&lt;model&gt;</code>。</span>
         </label>
         <label class="field field-span-2">
           <span class="field-label">Fallback Models</span>

@@ -1,3 +1,9 @@
+## 2026.04.14.1
+
+- 升级：Docker 镜像内的 upstream OpenClaw runtime 从 `v2026.4.11` 升到 `v2026.4.12`
+- 对齐：配置页模型部分补充 `LM Studio` 官方文档入口，并加入常用 `lmstudio/...` 模型建议值
+- 保持：继续沿用较安静的默认值，`disable_bonjour` 默认开启，`Dreaming` 仍保持独立开关
+
 ## 2026.04.13.2
 
 - 默认值：将 `disable_bonjour` 的默认值改为开启，新的安装默认不再广播 Bonjour，减少 `bonjour ... advertiser` 噪音
