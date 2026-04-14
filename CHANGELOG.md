@@ -1,3 +1,9 @@
+## 2026.04.14.2
+
+- 运行时：镜像补齐 `python3`、`pip`、`venv` 和 `python` 命令别名，便于在维护 Shell 里直接执行 Python 脚本和安装工具
+- 配对：首页和命令页补充官方 `openclaw devices` 授权路径，并新增“一键批准最新请求”按钮
+- 诊断：为新客户端授权问题增加官方文档入口和 token drift / superseded request 的排查提示，同时保留精确 `requestId` 处理路径
+
 ## 2026.04.14.1
 
 - 升级：Docker 镜像内的 upstream OpenClaw runtime 从 `v2026.4.11` 升到 `v2026.4.12`

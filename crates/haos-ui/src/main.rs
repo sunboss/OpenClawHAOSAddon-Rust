@@ -989,8 +989,13 @@ fn home_content(
 
           <section class="note-box note-panel">
             <strong>设备配对与身份</strong>
-            <p>设备配对已收回原生入口处理。建议优先在原生 Control UI 中完成批准，或前往命令行页手动执行 <code>openclaw devices approve --latest</code>。</p>
-            <div class="mini-tip">若设备连接时提示 token 错误或被拒绝，请在该设备浏览器中清除此站点的 Cookies 与本地存储，然后重新打开页面。</div>
+            <p>设备配对已收回原生入口处理。建议优先在原生 Control UI 中完成批准，或前往命令行页先执行 <code>openclaw devices list</code> 核对当前 pending，再执行 <code>openclaw devices approve --latest</code> 或按精确 <code>requestId</code> 批准。</p>
+            <div class="mini-tip">如果设备重试配对且 auth 细节变化，旧 pending 会被新 requestId 取代，所以“授权没生效”时要先重新 <code>list</code>。自动按钮会直接执行官方 <code>openclaw devices approve --latest</code>；如果你怀疑批到旧请求，再手动用精确 ID 处理，并在该设备浏览器里清除此站点的 Cookies 与本地存储。</div>
+            <div class="action-row" style="margin-top:12px;">
+              <button class="btn primary" type="button" onclick="ocApproveLatestDevice('homeDeviceApproveStatus')">自动批准最新请求</button>
+              <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw devices list')">打开待批准列表</button>
+            </div>
+            <span class="form-status" id="homeDeviceApproveStatus">会在本机直接执行官方授权命令</span>
           </section>
         </div>
       </section>
@@ -1530,6 +1535,24 @@ fn commands_content_native(_config: &PageConfig) -> String {
         </div>
 
         <div class="command-block">
+          <span class="section-label">设备配对与授权</span>
+          <ul class="clean-list">
+            <li><code>openclaw devices list</code></li>
+            <li><code>openclaw devices approve --latest</code></li>
+            <li><code>openclaw devices approve &lt;requestId&gt;</code></li>
+            <li><code>openclaw devices reject &lt;requestId&gt;</code></li>
+            <li><code>openclaw devices remove &lt;deviceId&gt;</code></li>
+            <li><code>openclaw devices rotate --device &lt;deviceId&gt; --role operator</code></li>
+          </ul>
+          <div class="action-row">
+            <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw devices list')">列出待批准设备</button>
+            <button class="btn primary" type="button" onclick="ocApproveLatestDevice('deviceApproveStatus')">自动批准最新请求</button>
+          </div>
+          <span class="form-status" id="deviceApproveStatus">按钮会在本机执行官方 <code>openclaw devices approve --latest</code></span>
+          <div class="mini-tip">按官方文档，新设备如果在重试时更换了角色、scope 或公钥，旧 pending 会被 supersede。按钮适合处理“当前最新请求”；如果你怀疑批到旧 requestId，先重新执行 <code>openclaw devices list</code> 再手动核对。</div>
+        </div>
+
+        <div class="command-block">
           <span class="section-label">维护与诊断</span>
           <ul class="clean-list">
             <li><code>openclaw doctor</code></li>
@@ -1564,6 +1587,7 @@ fn commands_content_native(_config: &PageConfig) -> String {
         <div class="doc-link-list">
           <a href="https://docs.openclaw.ai/tui" target="_blank" rel="noopener noreferrer"><span>TUI 文档</span><span>官方入口说明</span></a>
           <a href="https://docs.openclaw.ai/cli/index" target="_blank" rel="noopener noreferrer"><span>CLI 文档</span><span>命令全集</span></a>
+          <a href="https://docs.openclaw.ai/cli/devices" target="_blank" rel="noopener noreferrer"><span>设备授权文档</span><span>list / approve / rotate</span></a>
           <a href="./openclaw-ca.crt" target="_blank" rel="noopener noreferrer"><span>下载 CA 证书</span><span>浏览器信任链</span></a>
         </div>
       </section>
@@ -2926,6 +2950,15 @@ fn render_shell(
         ocSetFormStatus("modelSaveStatus", "保存失败：" + (error.message || error), false);
       }}
     }};
+    window.ocApproveLatestDevice = async function (statusId) {{
+      ocSetFormStatus(statusId, "正在执行授权…");
+      try {{
+        const data = await ocPostJson("./action/devices-approve-latest", {{}});
+        ocSetFormStatus(statusId, data.message || "已完成", !!data.ok);
+      }} catch (error) {{
+        ocSetFormStatus(statusId, "执行失败：" + (error.message || error), false);
+      }}
+    }};
     syncGatewayLink();
     ocSyncProviderMeta("web");
     ocSyncProviderMeta("memory");
@@ -2980,6 +3013,29 @@ struct SaveDreamingRequest {
 struct SaveModelRequest {
     primary_model: String,
     fallback_models: String,
+}
+
+async fn run_openclaw_command(args: Vec<&'static str>) -> Result<(bool, String), String> {
+    tokio::task::spawn_blocking(move || {
+        let output = Command::new("openclaw")
+            .args(&args)
+            .output()
+            .map_err(|err| format!("无法执行 openclaw：{err}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let message = if !stdout.is_empty() {
+            stdout
+        } else if !stderr.is_empty() {
+            stderr
+        } else if output.status.success() {
+            "命令执行完成".to_string()
+        } else {
+            format!("命令退出码 {:?}", output.status.code())
+        };
+        Ok((output.status.success(), message))
+    })
+    .await
+    .map_err(|err| format!("后台任务失败：{err}"))?
 }
 
 fn clear_known_web_provider_overrides(config: &mut serde_json::Value) {
@@ -3191,6 +3247,28 @@ async fn save_model_config(Json(body): Json<SaveModelRequest>) -> impl IntoRespo
     }
 }
 
+async fn approve_latest_device() -> impl IntoResponse {
+    match run_openclaw_command(vec!["devices", "approve", "--latest"]).await {
+        Ok((true, message)) => Json(serde_json::json!({
+            "ok": true,
+            "message": if message.is_empty() {
+                "已执行 openclaw devices approve --latest".to_string()
+            } else {
+                message
+            }
+        })),
+        Ok((false, message)) => Json(serde_json::json!({
+            "ok": false,
+            "message": if message.is_empty() {
+                "授权失败，请先检查待批准设备列表".to_string()
+            } else {
+                message
+            }
+        })),
+        Err(err) => Json(serde_json::json!({ "ok": false, "message": err })),
+    }
+}
+
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let config = PageConfig::from_env();
     let guard = state.cache.read().await;
@@ -3272,6 +3350,7 @@ async fn main() {
         .route("/action/config-memory-search", post(save_memory_search_config))
         .route("/action/config-dreaming", post(save_dreaming_config))
         .route("/action/config-model", post(save_model_config))
+        .route("/action/devices-approve-latest", post(approve_latest_device))
         .with_state(app_state);
 
     let port = env::var("UI_PORT")
@@ -3322,6 +3401,8 @@ mod tests {
 
         assert!(html.contains("openclaw tui"));
         assert!(html.contains("openclaw onboard"));
+        assert!(html.contains("openclaw devices approve --latest"));
+        assert!(html.contains("自动批准最新请求"));
         assert!(html.contains("openclaw health --json"));
         assert!(html.contains("openclaw status --deep"));
         assert!(!html.contains("ocRunCustomCommand"));

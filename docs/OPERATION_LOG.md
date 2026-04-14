@@ -2,6 +2,35 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-14 12:05 Asia/Shanghai - Add Python runtime and improve device approval guidance
+
+- User request:
+  - install a complete `python3 + pip` environment in the add-on container
+  - re-check why new client authorization seemed ineffective
+- Outcome:
+  - added `python3`, `python3-pip`, `python3-venv`, and `python-is-python3` to the runtime image
+  - updated the home page pairing guidance to match the official `openclaw devices` flow
+  - added a dedicated device approval block to the commands page with `list`, `approve`, `reject`, `remove`, and `rotate` commands
+  - added a one-click approval action in the UI that runs the official `openclaw devices approve --latest`
+  - linked the commands page to the official devices CLI docs
+- Official references reviewed:
+  - `https://docs.openclaw.ai/cli/devices`
+  - `https://docs.openclaw.ai/gateway/protocol`
+- Notes:
+  - official docs clarify that a retried pairing request with changed auth details supersedes the old pending request and gets a new `requestId`
+  - `openclaw devices approve --latest` is the fastest path to approve the newest pending request, while exact `requestId` approval remains useful for manual verification
+  - for “authorization had no effect”, the correct sequence is to run `openclaw devices list` right before approval, then either approve the newest request or use the exact current `requestId`
+- Files changed:
+  - `Dockerfile`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+- Version:
+  - bump add-on version to `2026.04.14.2`
+
 ## 2026-04-14 10:35 Asia/Shanghai - Upgrade upstream runtime to v2026.4.12
 
 - User request:
