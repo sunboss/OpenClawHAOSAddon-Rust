@@ -1,3 +1,10 @@
+## 2026.04.15.13
+
+- Runtime: automatically merge discovered local extension plugins into `plugins.allow`, so trusted extensions like `openclaw-weixin` no longer trigger the empty-allowlist warning on startup
+- UI: automatically hide the `HAOS 网关（测试）` button when the add-on page itself is running over insecure HTTP ingress, because official Control UI device identity is not supported there
+- UI: updated the explanatory copy so the native HTTPS Gateway stays the primary path and the HAOS-side route is only presented when the current page is already a secure context
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.12
 
 - UI: tuned the redesigned shell to follow the concept composition more closely, with a wider poster layout, larger hero spacing, stronger action-card proportion, and thinner notice rhythm

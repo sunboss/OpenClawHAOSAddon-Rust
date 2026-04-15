@@ -292,6 +292,7 @@ fn bootstrap_openclaw_config(args: &HaosEntryArgs) -> std::io::Result<()> {
         object.remove("workspaceDir");
     }
     ensure_workspace_path(&mut config, args);
+    ensure_trusted_local_plugins(&mut config, args);
 
     if let Some(parent) = args.openclaw_config_path.parent() {
         fs::create_dir_all(parent)?;
@@ -332,6 +333,93 @@ fn ensure_workspace_path(config: &mut serde_json::Value, args: &HaosEntryArgs) {
         "workspace".to_string(),
         serde_json::Value::String(args.openclaw_workspace_dir.display().to_string()),
     );
+}
+
+fn ensure_trusted_local_plugins(config: &mut serde_json::Value, args: &HaosEntryArgs) {
+    let discovered = discover_local_plugin_ids(args);
+    if discovered.is_empty() {
+        return;
+    }
+
+    if !config.is_object() {
+        *config = serde_json::json!({});
+    }
+
+    let root = config.as_object_mut().expect("config object");
+    let plugins = root
+        .entry("plugins".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !plugins.is_object() {
+        *plugins = serde_json::json!({});
+    }
+
+    let allow = plugins
+        .as_object_mut()
+        .expect("plugins object")
+        .entry("allow".to_string())
+        .or_insert_with(|| serde_json::json!([]));
+    if !allow.is_array() {
+        *allow = serde_json::json!([]);
+    }
+
+    let allow_values = allow.as_array_mut().expect("allow array");
+    let mut merged = allow_values
+        .iter()
+        .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+        .collect::<Vec<_>>();
+
+    for plugin_id in discovered {
+        if !merged.iter().any(|existing| existing == &plugin_id) {
+            merged.push(plugin_id);
+        }
+    }
+
+    merged.sort();
+    merged.dedup();
+
+    *allow_values = merged
+        .into_iter()
+        .map(serde_json::Value::String)
+        .collect::<Vec<_>>();
+}
+
+fn discover_local_plugin_ids(args: &HaosEntryArgs) -> Vec<String> {
+    let plugin_root = args.openclaw_config_dir.join("extensions");
+    let entries = match fs::read_dir(plugin_root) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut ids = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => continue,
+        };
+
+        if file_type.is_file() {
+            if path.extension().and_then(|value| value.to_str()) == Some("ts")
+                && let Some(stem) = path.file_stem().and_then(|value| value.to_str())
+                && !stem.is_empty()
+            {
+                ids.push(stem.to_string());
+            }
+            continue;
+        }
+
+        if file_type.is_dir()
+            && path.join("index.ts").exists()
+            && let Some(name) = path.file_name().and_then(|value| value.to_str())
+            && !name.is_empty()
+        {
+            ids.push(name.to_string());
+        }
+    }
+
+    ids.sort();
+    ids.dedup();
+    ids
 }
 
 fn generate_gateway_token() -> String {
@@ -1275,6 +1363,55 @@ mod tests {
             &mut suppress_health_details,
             &mut suppressed_section
         ));
+    }
+
+    #[test]
+    fn ensure_trusted_local_plugins_merges_discovered_extensions() {
+        let unique = format!("openclaw-plugin-allow-{}", random::<u64>());
+        let root = std::env::temp_dir().join(unique);
+        let plugin_dir = root
+            .join(".openclaw")
+            .join("extensions")
+            .join("openclaw-weixin");
+        fs::create_dir_all(&plugin_dir).expect("create plugin dir");
+        fs::write(plugin_dir.join("index.ts"), "export default {};").expect("write plugin entry");
+
+        let args = HaosEntryArgs {
+            options_file: root.join("options.json"),
+            openclaw_config_dir: root.join(".openclaw"),
+            openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
+            openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
+            mcporter_home_dir: root.join(".mcporter"),
+            mcporter_config: root.join(".mcporter").join("mcporter.json"),
+            cert_dir: root.join("certs"),
+            public_share_dir: root.join("html"),
+            gateway_internal_port: 18789,
+            ui_port: 48101,
+            gateway_bin: "openclaw".to_string(),
+            oc_config_bin: "oc-config".to_string(),
+            ui_bin: "haos-ui".to_string(),
+            ingress_bin: "ingressd".to_string(),
+            ttyd_bin: "ttyd".to_string(),
+        };
+
+        let mut config = serde_json::json!({
+            "plugins": {
+                "allow": ["custom-existing"]
+            }
+        });
+        ensure_trusted_local_plugins(&mut config, &args);
+
+        let allow = config["plugins"]["allow"]
+            .as_array()
+            .expect("allow array")
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(allow.contains(&"custom-existing"));
+        assert!(allow.contains(&"openclaw-weixin"));
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

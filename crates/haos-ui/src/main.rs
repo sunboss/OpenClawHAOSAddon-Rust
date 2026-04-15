@@ -712,6 +712,7 @@ h1 {{
   color:var(--text);
   border:1px solid rgba(70,211,236,.3);
 }}
+.btn.is-hidden {{ display:none !important; }}
 .ops-strip {{
   display:grid;
   grid-template-columns:minmax(280px,.82fr) minmax(0,1.18fr);
@@ -904,7 +905,7 @@ pre {{
         <p class="lede">这不是聊天窗口，而是一张持续值守的 Agent 入口面板。默认优先直连原生 HTTPS Gateway，同时保留一条 HAOS Ingress 测试链路，方便我们并排验证。</p>
         <div class="hero-flags">
           <span class="flag">原生 HTTPS Gateway</span>
-          <span class="flag">HAOS Ingress Test</span>
+          <span class="flag">安全上下文测试入口</span>
           <span class="flag">维护 Shell</span>
         </div>
       </div>
@@ -928,7 +929,7 @@ pre {{
             <strong>{openclaw_uptime}</strong>
           </div>
         </div>
-        <p class="hero-note">外部默认入口是 <code>https://主机:{gateway_port}</code>。HAOS 测试入口会沿着当前 Ingress 路径走 <code>./gateway/</code>，只用于确认侧边栏链路。</p>
+        <p class="hero-note">外部默认入口是 <code>https://主机:{gateway_port}</code>。HAOS 测试入口只在安全上下文里保留；如果当前页面本身是 <code>http://</code>，它会自动隐藏，避免继续打出无意义的 <code>1006</code> 日志。</p>
       </aside>
     </div>
   </section>
@@ -954,9 +955,9 @@ pre {{
       <div>
         <div class="metric-label">访问方式</div>
         <div class="metric-value">双路径</div>
-        <div class="metric-sub">原生直连与 HAOS Ingress 测试入口同时保留。</div>
+        <div class="metric-sub">原生直连始终可用，HAOS 测试入口只在安全上下文下启用。</div>
       </div>
-      <div class="micro-copy">主入口使用外部 HTTPS，测试入口使用 <code>./gateway/</code>。</div>
+      <div class="micro-copy">主入口使用外部 HTTPS，测试入口使用 <code>./gateway/</code>，并且会在 HTTP Ingress 页里自动隐藏。</div>
     </article>
   </section>
 
@@ -980,11 +981,12 @@ pre {{
       <div class="glyph">⌁</div>
       <div class="eyebrow" style="margin-top:18px">官方 Web 控制面板</div>
       <h2>打开 Gateway</h2>
-      <p>把主入口做得更直接。主按钮直连原生 HTTPS Gateway，副按钮保留 HAOS Ingress 测试链路，方便我们快速对比哪条路径最稳。</p>
+      <p>把主入口做得更直接。主按钮直连原生 HTTPS Gateway；只有在当前页面本身也是安全上下文时，才保留 HAOS Ingress 测试链路，避免继续走一条官方本来就不支持的 HTTP 路径。</p>
       <div class="action-buttons">
         <a class="btn btn-primary" id="ocGatewayLink" href="#" target="_blank" rel="noopener noreferrer" onclick="return ocOpenGatewayLink(event,this)">打开网关</a>
-        <button class="btn btn-secondary" type="button" onclick="ocOpenIngressGatewayWindow()">HAOS 网关（测试）</button>
+        <button class="btn btn-secondary" id="ocIngressGatewayLink" type="button" onclick="ocOpenIngressGatewayWindow()">HAOS 网关（测试）</button>
       </div>
+      <div class="status-hint" id="ocIngressGatewayHint">测试入口只用于安全上下文下验证侧边栏链路。</div>
     </article>
     <article class="action-card">
       <div class="glyph">&gt;_</div>
@@ -1048,6 +1050,7 @@ function ocBaseGatewayUrl() {{
 
 function ocGatewayHref() {{ return appendTokenHash(ocBaseGatewayUrl()); }}
 function ocIngressGatewayHref() {{ return appendTokenHash(new URL("./gateway/", window.location.href).toString()); }}
+function ocIngressGatewayAllowed() {{ return window.location.protocol === "https:"; }}
 
 function openAddonWindow(url, name) {{
   const win = window.open(url, name, "popup=yes,width=1440,height=920,noopener,noreferrer");
@@ -1060,6 +1063,21 @@ function syncGatewayLink() {{
   if (link) link.href = ocGatewayHref();
 }}
 
+function syncIngressGatewayAvailability() {{
+  const button = document.getElementById("ocIngressGatewayLink");
+  const hint = document.getElementById("ocIngressGatewayHint");
+  const allowed = ocIngressGatewayAllowed();
+  if (button) {{
+    button.classList.toggle("is-hidden", !allowed);
+    button.disabled = !allowed;
+  }}
+  if (hint) {{
+    hint.textContent = allowed
+      ? "当前页面是安全上下文，测试入口可用于验证 Home Assistant 侧边栏路径。"
+      : "当前页面是 HTTP Ingress，上游官方不支持在这种非安全上下文里跑 Control UI，所以测试入口已自动隐藏。";
+  }}
+}}
+
 function ocOpenGatewayLink(event, anchor) {{
   if (event) event.preventDefault();
   const targetUrl = anchor && anchor.href ? anchor.href : ocGatewayHref();
@@ -1067,6 +1085,7 @@ function ocOpenGatewayLink(event, anchor) {{
 }}
 
 function ocOpenIngressGatewayWindow() {{
+  if (!ocIngressGatewayAllowed()) return false;
   return openAddonWindow(ocIngressGatewayHref(), "openclaw-gateway-haos");
 }}
 
@@ -1157,6 +1176,7 @@ window.ocListDevices = async function(statusId, outputId) {{
     else fallback();
   }};
   syncGatewayLink();
+  syncIngressGatewayAvailability();
 }})();
 </script>
 </body>
@@ -1207,6 +1227,7 @@ mod tests {
         assert!(html.contains("OpenClaw 主控台"));
         assert!(html.contains("HAOS 网关（测试）"));
         assert!(html.contains("ocOpenIngressGatewayWindow"));
+        assert!(html.contains("window.location.protocol === \"https:\""));
         assert!(html.contains("#token="));
         assert!(html.contains("当前模型"));
     }

@@ -2,6 +2,28 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-16 00:42 Asia/Shanghai - Hide the insecure HAOS gateway test path and auto-trust discovered local plugins
+
+- User request:
+  - fix the repeated `1006` noise caused by the HTTP Home Assistant ingress route
+  - check the official docs first, then make the page and runtime behave accordingly
+- Ground truth checked:
+  - official Control UI documentation only supports secure contexts (`https` or localhost) for remote browser use
+  - the current repeated `1006` logs were coming from `origin=http://192.168.1.66:8123`, which is not a secure context
+  - startup warning showed `plugins.allow is empty` while a trusted local extension (`openclaw-weixin`) was present
+- Outcome:
+  - updated `crates/haos-ui/src/main.rs` so the `HAOS 网关（测试）` button is automatically hidden and disabled when the add-on page itself is served over HTTP ingress
+  - updated the shell copy so the native HTTPS Gateway is the clear primary route and the HAOS-side route is only offered in secure contexts
+  - updated `crates/addon-supervisor/src/main.rs` to discover local extension plugin ids under `/config/.openclaw/extensions` and merge them into `plugins.allow`, removing the empty-allowlist warning for trusted local plugins like `openclaw-weixin`
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-16 00:24 Asia/Shanghai - Apply the concept-sheet composition back into the real shell
 
 - User request:
