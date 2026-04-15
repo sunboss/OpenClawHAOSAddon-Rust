@@ -2,6 +2,25 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 23:10 Asia/Shanghai - Add a temporary HAOS gateway test path beside the native gateway entry
+
+- User request:
+  - stop guessing and add a second button immediately so the native gateway path and the HAOS-side path can be tested separately
+  - keep the page in the Hermes dark entry-shell style while doing it
+- Outcome:
+  - rebuilt `crates/haos-ui/src/main.rs` into a shorter Hermes-style dark single page
+  - kept `打开网关` for the native `https://<host>:18789/#token=...` route
+  - added `HAOS 网关（测试）` that opens `./gateway/#token=...`
+  - added `/gateway/` proxy routes in `crates/ingressd/src/main.rs` so the HAOS-side test path has a real backing route
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 21:55 Asia/Shanghai - Fix the Gateway launch path on top of the Hermes-style dark shell
 
 - User request:

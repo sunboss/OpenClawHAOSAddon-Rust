@@ -129,6 +129,9 @@ async fn main() {
 
 fn build_ingress_router(state: AppState) -> Router {
     Router::new()
+        .route("/gateway", get(gateway_redirect))
+        .route("/gateway/", any(proxy_gateway_ingress))
+        .route("/gateway/{*path}", any(proxy_gateway_ingress))
         .route("/shell", get(shell_redirect))
         .route("/shell/", any(proxy_shell))
         .route("/shell/{*path}", any(proxy_shell))
@@ -154,6 +157,10 @@ fn build_gateway_router(state: AppState) -> Router {
 
 async fn shell_redirect() -> impl IntoResponse {
     Redirect::temporary("/shell/")
+}
+
+async fn gateway_redirect() -> impl IntoResponse {
+    Redirect::temporary("/gateway/")
 }
 
 async fn proxy_health(State(_state): State<AppState>, request: Request) -> impl IntoResponse {
@@ -209,6 +216,48 @@ async fn proxy_gateway(
     if response.status() == StatusCode::BAD_GATEWAY {
         return fallback_gateway_response();
     }
+    response
+}
+
+async fn proxy_gateway_ingress(
+    State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    ws: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
+    request: Request,
+) -> impl IntoResponse {
+    if let Ok(ws) = ws {
+        let path = request.uri().path().to_string();
+        let query = request.uri().query().map(|q| q.to_string());
+        let headers = request.headers().clone();
+        return ws
+            .on_upgrade(move |socket| {
+                proxy_upstream_ws(
+                    state.gateway_ws_base.clone(),
+                    socket,
+                    path,
+                    query,
+                    Some("/gateway"),
+                    headers,
+                    peer_addr,
+                )
+            })
+            .into_response();
+    }
+
+    let response = proxy_http_request(
+        &state.client,
+        &state.gateway_http_base,
+        request,
+        true,
+        Some(peer_addr),
+        Some("/gateway"),
+    )
+    .await;
+
+    if response.status() == StatusCode::BAD_GATEWAY {
+        return fallback_gateway_response();
+    }
+
     response
 }
 

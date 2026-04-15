@@ -1,3 +1,10 @@
+## 2026.04.15.9
+
+- UI: rebuilt the thin-shell page again around the Hermes dark palette, with a shorter single-page layout closer to the Hermes entry surface
+- UI: kept the native `打开网关` path and temporarily added a second `HAOS 网关（测试）` entry so native HTTPS and Home Assistant Ingress routes can be compared side by side
+- Runtime: added `/gateway/` ingress proxy routes in `ingressd` to support the HAOS-side gateway test path
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.8
 
 - Fix: restored the single-page Hermes-style shell as a dark navy / teal / cyan thin shell instead of the broken mixed light/garbled page state
