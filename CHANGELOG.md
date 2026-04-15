@@ -1,3 +1,10 @@
+## 2026.04.15.8
+
+- Fix: restored the single-page Hermes-style shell as a dark navy / teal / cyan thin shell instead of the broken mixed light/garbled page state
+- Fix: made the `打开网关` action always build a fixed external `https://<host>:18789/#token=...` URL so Home Assistant sidebar launches no longer lose scheme or token
+- Fix: kept `维护 Shell` as a direct new-window jump into `/shell/`, without routing through old terminal wrapper behavior
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.7
 
 - Cleanup: removed the last exposed remote/local gateway mode options from `config.yaml`, leaving only the small option surface the Hermes-style single-page shell still uses

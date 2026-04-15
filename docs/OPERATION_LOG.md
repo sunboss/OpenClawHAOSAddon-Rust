@@ -2,6 +2,28 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 21:55 Asia/Shanghai - Fix the Gateway launch path on top of the Hermes-style dark shell
+
+- User request:
+  - fix the broken `打开网关` action that currently does nothing
+  - keep the already modified Hermes-style dark page instead of rolling back to a plain shell
+- Ground truth checked:
+  - the old page had mixed/garbled strings and a broken launch path
+  - native Gateway launch is expected to include `#token=...`
+  - the add-on should always open the external Gateway on HTTPS
+- Outcome:
+  - rewrote `crates/haos-ui/src/main.rs` into a clean dark Hermes-style single page
+  - made `打开网关` always open `https://<host>:18789/#token=...`
+  - kept `维护 Shell` as a direct `/shell/` new-window launch
+  - preserved the single-page structure with status, token display, pending-device list, and latest-device approval
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 21:10 Asia/Shanghai - Remove the last dead multi-mode config surface
 
 - User request:
