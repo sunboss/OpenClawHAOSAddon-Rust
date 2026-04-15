@@ -1,7 +1,8 @@
 use axum::{
     Json, Router,
     extract::State,
-    response::{Html, IntoResponse},
+    http::{HeaderMap, header},
+    response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
 use std::{env, fs, net::SocketAddr, path::PathBuf, process::Command, sync::Arc, time::Duration};
@@ -55,11 +56,7 @@ impl PageConfig {
             gateway_token,
             agent_model: runtime_config
                 .as_ref()
-                .and_then(|value| {
-                    string_path(value, "gateway.agent.model")
-                        .or_else(|| string_path(value, "agent.model"))
-                        .or_else(|| string_path(value, "model"))
-                })
+                .and_then(detect_agent_model)
                 .unwrap_or_else(|| "未配置".to_string()),
         }
     }
@@ -90,6 +87,14 @@ fn string_path(config: &serde_json::Value, path: &str) -> Option<String> {
         .as_str()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn detect_agent_model(config: &serde_json::Value) -> Option<String> {
+    string_path(config, "agents.defaults.model.primary")
+        .or_else(|| string_path(config, "agents.defaults.model"))
+        .or_else(|| string_path(config, "gateway.agent.model"))
+        .or_else(|| string_path(config, "agent.model"))
+        .or_else(|| string_path(config, "model"))
 }
 
 async fn fetch_openclaw_health() -> Option<bool> {
@@ -242,6 +247,64 @@ async fn list_devices() -> impl IntoResponse {
     }
 }
 
+fn host_name_from_headers(headers: &HeaderMap) -> Option<String> {
+    let host = headers.get("host")?.to_str().ok()?.trim();
+    if host.is_empty() {
+        return None;
+    }
+
+    if let Some(stripped) = host.strip_prefix('[')
+        && let Some((ipv6, _rest)) = stripped.split_once(']')
+    {
+        return Some(format!("[{ipv6}]"));
+    }
+
+    if let Some((name, port)) = host.rsplit_once(':')
+        && !name.is_empty()
+        && !port.is_empty()
+        && port.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return Some(name.to_string());
+    }
+
+    Some(host.to_string())
+}
+
+fn with_gateway_token(url: &str, token: &str) -> String {
+    if token.trim().is_empty() {
+        return url.to_string();
+    }
+    format!("{}#token={}", url.trim_end_matches('#'), token.trim())
+}
+
+fn gateway_redirect_target(config: &PageConfig, headers: &HeaderMap) -> String {
+    if !config.gateway_url.trim().is_empty() {
+        return with_gateway_token(config.gateway_url.trim(), &config.gateway_token);
+    }
+
+    let host = host_name_from_headers(headers).unwrap_or_else(|| "127.0.0.1".to_string());
+    with_gateway_token(
+        &format!("https://{host}:{DEFAULT_GATEWAY_PORT}/"),
+        &config.gateway_token,
+    )
+}
+
+async fn open_gateway(headers: HeaderMap) -> impl IntoResponse {
+    let config = PageConfig::from_env();
+    Redirect::temporary(&gateway_redirect_target(&config, &headers))
+}
+
+async fn open_shell() -> impl IntoResponse {
+    Redirect::temporary("shell/")
+}
+
+async fn brand_icon() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/png")],
+        include_bytes!("../../../icon.png").as_slice(),
+    )
+}
+
 async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let config = PageConfig::from_env();
     let guard = state.cache.read().await;
@@ -274,6 +337,9 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/open-gateway", get(open_gateway))
+        .route("/open-shell", get(open_shell))
+        .route("/assets/icon.png", get(brand_icon))
         .route("/action/devices-list", post(list_devices))
         .route(
             "/action/devices-approve-latest",
@@ -298,7 +364,6 @@ fn render_shell(
     snapshot: &SystemSnapshot,
     health_ok: Option<bool>,
 ) -> Html<String> {
-    let gateway_url = js_string(&config.gateway_url);
     let gateway_token = js_string(&config.gateway_token);
     let gateway_pid = pid_value("openclaw-gateway");
     let (health_text, health_sub, tone, health_label) = match health_ok {
@@ -445,39 +510,12 @@ h1,h2,h3,p {{ margin:0; }}
   gap:18px;
   margin-bottom:26px;
 }}
-.mark {{
-  position:relative;
-  width:84px;
-  height:84px;
-  display:grid;
-  place-items:center;
-  border-radius:26px;
-  border:1px solid rgba(255,255,255,.08);
-  background:linear-gradient(145deg, rgba(70,211,236,.92), rgba(240,198,90,.38));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 18px 48px rgba(0,0,0,.18);
-}}
-.mark::before {{
-  content:"";
-  position:absolute;
-  inset:9px;
-  border-radius:20px;
-  background:linear-gradient(180deg, rgba(9,18,30,.16), rgba(9,18,30,.36));
-}}
-.mark .o {{
-  position:relative;
-  z-index:1;
-  font-size:42px;
-  font-weight:900;
-  color:#05101c;
-}}
-.mark .trace {{
-  position:absolute;
-  z-index:1;
-  width:54px;
-  height:3px;
-  bottom:13px;
-  border-radius:999px;
-  background:rgba(7,16,28,.62);
+.brand-icon {{
+  width:90px;
+  height:90px;
+  object-fit:contain;
+  object-position:center;
+  filter:drop-shadow(0 18px 42px rgba(0,0,0,.26));
 }}
 .brand-meta {{ display:grid; gap:8px; }}
 .brand-rule {{
@@ -819,8 +857,7 @@ pre {{
   .action-deck,
   .ops-strip {{ grid-template-columns:1fr; }}
   .brand-lockup {{ align-items:flex-start; }}
-  .mark {{ width:72px; height:72px; border-radius:22px; }}
-  .mark .o {{ font-size:36px; }}
+  .brand-icon {{ width:78px; height:78px; }}
   .hero-side,
   .metric-card,
   .action-card,
@@ -873,10 +910,7 @@ pre {{
 @media (max-width: 420px) {{
   .shell {{ width:calc(100% - 12px); }}
   .hero {{ border-radius:20px; }}
-  .mark {{ width:62px; height:62px; border-radius:18px; }}
-  .mark::before {{ inset:7px; border-radius:14px; }}
-  .mark .o {{ font-size:30px; }}
-  .mark .trace {{ width:42px; bottom:10px; }}
+  .brand-icon {{ width:66px; height:66px; }}
   h1 {{ font-size:30px; }}
   .eyebrow,
   .metric-label,
@@ -895,7 +929,7 @@ pre {{
     <div class="hero-grid">
       <div class="hero-main">
         <div class="brand-lockup">
-          <div class="mark"><span class="o">O</span><span class="trace"></span></div>
+          <img class="brand-icon" src="./assets/icon.png" alt="OpenClaw official lobster logo">
           <div class="brand-meta">
             <div class="eyebrow">Home Assistant Ingress</div>
             <div class="brand-rule"></div>
@@ -983,7 +1017,7 @@ pre {{
       <h2>打开 Gateway</h2>
       <p>把主入口做得更直接。主按钮直连原生 HTTPS Gateway；只有在当前页面本身也是安全上下文时，才保留 HAOS Ingress 测试链路，避免继续走一条官方本来就不支持的 HTTP 路径。</p>
       <div class="action-buttons">
-        <a class="btn btn-primary" id="ocGatewayLink" href="#" target="_blank" rel="noopener noreferrer" onclick="return ocOpenGatewayLink(event,this)">打开网关</a>
+        <a class="btn btn-primary" id="ocGatewayLink" href="./open-gateway" target="_blank" rel="noopener noreferrer">打开网关</a>
         <button class="btn btn-secondary" id="ocIngressGatewayLink" type="button" onclick="ocOpenIngressGatewayWindow()">HAOS 网关（测试）</button>
       </div>
       <div class="status-hint" id="ocIngressGatewayHint">测试入口只用于安全上下文下验证侧边栏链路。</div>
@@ -994,7 +1028,7 @@ pre {{
       <h2>维护 Shell</h2>
       <p>这里直接进入完整的 Web Shell。查看日志、运行 <code>openclaw</code> 命令、核对设备授权，都应该从这里一键进入，不再绕路。</p>
       <div class="action-buttons">
-        <button class="btn btn-primary" type="button" onclick="ocOpenShellWindow()">进入命令行</button>
+        <a class="btn btn-primary" href="./open-shell" target="_blank" rel="noopener noreferrer">进入命令行</a>
       </div>
     </article>
   </section>
@@ -1034,7 +1068,6 @@ pre {{
   </section>
 </div>
 <script>
-const OC_GATEWAY_URL = {gateway_url};
 const OC_GATEWAY_TOKEN = {gateway_token};
 const OC_GATEWAY_PORT = "{gateway_port}";
 
@@ -1043,25 +1076,8 @@ function appendTokenHash(url) {{
   return String(url).replace(/#.*$/, "") + "#token=" + encodeURIComponent(String(OC_GATEWAY_TOKEN).trim());
 }}
 
-function ocBaseGatewayUrl() {{
-  if (OC_GATEWAY_URL && OC_GATEWAY_URL.trim()) return OC_GATEWAY_URL.trim();
-  return "https://" + window.location.hostname + ":" + OC_GATEWAY_PORT + "/";
-}}
-
-function ocGatewayHref() {{ return appendTokenHash(ocBaseGatewayUrl()); }}
 function ocIngressGatewayHref() {{ return appendTokenHash(new URL("./gateway/", window.location.href).toString()); }}
 function ocIngressGatewayAllowed() {{ return window.location.protocol === "https:"; }}
-
-function openAddonWindow(url, name) {{
-  const win = window.open(url, name, "popup=yes,width=1440,height=920,noopener,noreferrer");
-  if (!win) window.location.href = url;
-  return false;
-}}
-
-function syncGatewayLink() {{
-  const link = document.getElementById("ocGatewayLink");
-  if (link) link.href = ocGatewayHref();
-}}
 
 function syncIngressGatewayAvailability() {{
   const button = document.getElementById("ocIngressGatewayLink");
@@ -1078,19 +1094,12 @@ function syncIngressGatewayAvailability() {{
   }}
 }}
 
-function ocOpenGatewayLink(event, anchor) {{
-  if (event) event.preventDefault();
-  const targetUrl = anchor && anchor.href ? anchor.href : ocGatewayHref();
-  return openAddonWindow(targetUrl, "openclaw-gateway");
-}}
-
 function ocOpenIngressGatewayWindow() {{
   if (!ocIngressGatewayAllowed()) return false;
-  return openAddonWindow(ocIngressGatewayHref(), "openclaw-gateway-haos");
-}}
-
-function ocOpenShellWindow() {{
-  return openAddonWindow(new URL("./shell/", window.location.href).toString(), "openclaw-shell");
+  const url = ocIngressGatewayHref();
+  const win = window.open(url, "openclaw-gateway-haos", "popup=yes,width=1440,height=920,noopener,noreferrer");
+  if (!win) window.location.href = url;
+  return false;
 }}
 
 async function ocPostJson(url, payload) {{
@@ -1175,7 +1184,6 @@ window.ocListDevices = async function(statusId, outputId) {{
     if (navigator.clipboard) navigator.clipboard.writeText(t).then(done, fallback);
     else fallback();
   }};
-  syncGatewayLink();
   syncIngressGatewayAvailability();
 }})();
 </script>
@@ -1183,7 +1191,6 @@ window.ocListDevices = async function(statusId, outputId) {{
 </html>"##,
         addon_version = html_escape(&config.addon_version),
         gateway_port = DEFAULT_GATEWAY_PORT,
-        gateway_url = gateway_url,
         gateway_token = gateway_token,
         tone = tone,
         health_label = health_label,
@@ -1218,6 +1225,41 @@ mod tests {
     }
 
     #[test]
+    fn detect_agent_model_prefers_official_defaults_path() {
+        let config = serde_json::json!({
+            "agents": {
+                "defaults": {
+                    "model": {
+                        "primary": "openai-codex/gpt-5.4"
+                    }
+                }
+            },
+            "gateway": {
+                "agent": {
+                    "model": "legacy/provider"
+                }
+            }
+        });
+
+        assert_eq!(
+            detect_agent_model(&config).as_deref(),
+            Some("openai-codex/gpt-5.4")
+        );
+    }
+
+    #[test]
+    fn gateway_redirect_target_uses_host_header_and_token() {
+        let config = sample_page_config();
+        let mut headers = HeaderMap::new();
+        headers.insert("host", "192.168.1.66:8123".parse().expect("host header"));
+
+        assert_eq!(
+            gateway_redirect_target(&config, &headers),
+            "https://192.168.1.66:18789/#token=tok_test_12345678"
+        );
+    }
+
+    #[test]
     fn render_shell_keeps_single_page_controls() {
         let config = sample_page_config();
         let snapshot = SystemSnapshot {
@@ -1226,9 +1268,8 @@ mod tests {
         let Html(html) = render_shell(&config, &snapshot, Some(true));
         assert!(html.contains("OpenClaw 主控台"));
         assert!(html.contains("HAOS 网关（测试）"));
-        assert!(html.contains("ocOpenIngressGatewayWindow"));
-        assert!(html.contains("window.location.protocol === \"https:\""));
-        assert!(html.contains("#token="));
+        assert!(html.contains("href=\"./open-gateway\""));
+        assert!(html.contains("href=\"./open-shell\""));
         assert!(html.contains("当前模型"));
     }
 

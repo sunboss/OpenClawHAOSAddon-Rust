@@ -1,3 +1,11 @@
+## 2026.04.15.14
+
+- Runtime: write add-on timezone into the official `agents.defaults.userTimezone` field instead of keeping it only as a container-level wrapper setting
+- Runtime: harden generated `openclaw.json` toward the official nested shape by ensuring `gateway.mode`, `gateway.bind`, `gateway.port`, `gateway.auth`, `gateway.trustedProxies`, and `gateway.http.endpoints.chatCompletions.enabled` exist even when an older config is partially missing them
+- UI: read the homepage model card from the official `agents.defaults.model.primary` path before falling back to older legacy locations, so configured models such as `openai-codex/gpt-5.4` no longer show up as `未配置`
+- Branding: replace the custom geometric brand mark with the official OpenClaw lobster artwork; keep the full official logo in docs and the cropped lobster icon in the add-on shell
+- Validation: `cargo test -p addon-supervisor -p haos-ui -p ingressd`
+
 ## 2026.04.15.13
 
 - Runtime: automatically merge discovered local extension plugins into `plugins.allow`, so trusted extensions like `openclaw-weixin` no longer trigger the empty-allowlist warning on startup

@@ -2,6 +2,53 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-16 22:48 Asia/Shanghai - Replace shell and documentation branding with the official OpenClaw lobster artwork
+
+- User request:
+  - replace the top-left custom mark with the official OpenClaw lobster image
+  - update the related add-on branding images and keep the full official artwork in the documentation
+- Ground truth checked:
+  - the current shell header was still rendering a custom geometric `O` mark from inline HTML/CSS instead of any official asset
+  - the official full OpenClaw artwork was pulled into the repo as a separate source image and cropped locally so the shell icon could use the lobster without the trailing wordmark remnants
+- Outcome:
+  - updated `crates/haos-ui/src/main.rs` so the shell header now serves `./assets/icon.png` from a dedicated route and renders the official lobster graphic instead of the previous custom glyph
+  - replaced root `logo.png` / `logo.svg` with the full official OpenClaw logo artwork so README and DOCS pick up the complete image automatically
+  - rebuilt root `icon.png` / `icon.svg` from the lobster-only crop and stored the source artwork under `docs/`
+- Files changed:
+  - `CHANGELOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `icon.png`
+  - `icon.svg`
+  - `logo.png`
+  - `logo.svg`
+  - `docs/openclaw-logo-official.png`
+  - `docs/openclaw-lobster-official.png`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
+## 2026-04-16 11:26 Asia/Shanghai - Align generated runtime config more tightly with the official OpenClaw shape
+
+- User request:
+  - compare the add-on option list against the latest official OpenClaw configuration model
+  - keep the Home Assistant add-on layer thin, but make the generated runtime config follow official nested fields more closely
+- Ground truth checked:
+  - official config is strictly schema-validated, so unknown root keys cannot be written into `openclaw.json`
+  - `timezone` is not an official root key, but the official runtime does support `agents.defaults.userTimezone`
+  - gateway runtime settings are documented under nested official keys such as `gateway.mode`, `gateway.bind`, `gateway.port`, `gateway.auth`, and `gateway.http.endpoints.chatCompletions.enabled`
+- Outcome:
+  - updated `crates/addon-supervisor/src/main.rs` so bootstrap now writes `agents.defaults.userTimezone` alongside the workspace path
+  - added a new `ensure_gateway_defaults` step so partially missing older configs are repaired back toward the official nested runtime shape before the gateway starts
+  - updated `crates/haos-ui/src/main.rs` so the homepage model card reads the official `agents.defaults.model.primary` path first, which fixes false `未配置` states after users configure a current OpenClaw model normally
+  - kept the Home Assistant `config.yaml` surface thin instead of reintroducing old flat pseudo-official keys into the add-on form
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p addon-supervisor -p haos-ui -p ingressd`
+
 ## 2026-04-16 00:42 Asia/Shanghai - Hide the insecure HAOS gateway test path and auto-trust discovered local plugins
 
 - User request:

@@ -131,7 +131,7 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    if let Err(err) = bootstrap_openclaw_config(&args) {
+    if let Err(err) = bootstrap_openclaw_config(&args, &settings) {
         eprintln!("addon-supervisor: failed to bootstrap OpenClaw config: {err}");
         return ExitCode::from(1);
     }
@@ -260,7 +260,10 @@ fn create_dir_symlink(_src: &Path, _dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn bootstrap_openclaw_config(args: &HaosEntryArgs) -> std::io::Result<()> {
+fn bootstrap_openclaw_config(
+    args: &HaosEntryArgs,
+    settings: &RuntimeSettings,
+) -> std::io::Result<()> {
     let mut config = if args.openclaw_config_path.exists() {
         fs::read_to_string(&args.openclaw_config_path)
             .ok()
@@ -291,7 +294,8 @@ fn bootstrap_openclaw_config(args: &HaosEntryArgs) -> std::io::Result<()> {
     if let Some(object) = config.as_object_mut() {
         object.remove("workspaceDir");
     }
-    ensure_workspace_path(&mut config, args);
+    ensure_agent_defaults(&mut config, args, settings);
+    ensure_gateway_defaults(&mut config, args);
     ensure_trusted_local_plugins(&mut config, args);
 
     if let Some(parent) = args.openclaw_config_path.parent() {
@@ -307,7 +311,11 @@ fn bootstrap_openclaw_config(args: &HaosEntryArgs) -> std::io::Result<()> {
     Ok(())
 }
 
-fn ensure_workspace_path(config: &mut serde_json::Value, args: &HaosEntryArgs) {
+fn ensure_agent_defaults(
+    config: &mut serde_json::Value,
+    args: &HaosEntryArgs,
+    settings: &RuntimeSettings,
+) {
     if !config.is_object() {
         *config = serde_json::json!({});
     }
@@ -329,10 +337,97 @@ fn ensure_workspace_path(config: &mut serde_json::Value, args: &HaosEntryArgs) {
         *defaults = serde_json::json!({});
     }
 
-    defaults.as_object_mut().expect("defaults object").insert(
+    let defaults = defaults.as_object_mut().expect("defaults object");
+    defaults.insert(
         "workspace".to_string(),
         serde_json::Value::String(args.openclaw_workspace_dir.display().to_string()),
     );
+    defaults.insert(
+        "userTimezone".to_string(),
+        serde_json::Value::String(settings.timezone.clone()),
+    );
+}
+
+fn ensure_gateway_defaults(config: &mut serde_json::Value, args: &HaosEntryArgs) {
+    if !config.is_object() {
+        *config = serde_json::json!({});
+    }
+
+    let root = config.as_object_mut().expect("config object");
+    let gateway = root
+        .entry("gateway".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !gateway.is_object() {
+        *gateway = serde_json::json!({});
+    }
+
+    let gateway = gateway.as_object_mut().expect("gateway object");
+    if !matches!(gateway.get("mode"), Some(value) if value.is_string()) {
+        gateway.insert("mode".to_string(), serde_json::Value::String("local".to_string()));
+    }
+    if !matches!(gateway.get("bind"), Some(value) if value.is_string()) {
+        gateway.insert(
+            "bind".to_string(),
+            serde_json::Value::String("loopback".to_string()),
+        );
+    }
+    if !matches!(gateway.get("port"), Some(value) if value.is_u64()) {
+        gateway.insert(
+            "port".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(args.gateway_internal_port)),
+        );
+    }
+
+    let trusted_proxies = gateway
+        .entry("trustedProxies".to_string())
+        .or_insert_with(|| serde_json::json!(["127.0.0.1/32", "::1/128"]));
+    if !trusted_proxies.is_array() {
+        *trusted_proxies = serde_json::json!(["127.0.0.1/32", "::1/128"]);
+    }
+
+    let auth = gateway
+        .entry("auth".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !auth.is_object() {
+        *auth = serde_json::json!({});
+    }
+    let auth = auth.as_object_mut().expect("auth object");
+    if !matches!(auth.get("mode"), Some(value) if value.is_string()) {
+        auth.insert("mode".to_string(), serde_json::Value::String("token".to_string()));
+    }
+    if !matches!(auth.get("token"), Some(value) if value.is_string()) {
+        auth.insert(
+            "token".to_string(),
+            serde_json::Value::String(generate_gateway_token()),
+        );
+    }
+
+    let http = gateway
+        .entry("http".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !http.is_object() {
+        *http = serde_json::json!({});
+    }
+    let http = http.as_object_mut().expect("http object");
+    let endpoints = http
+        .entry("endpoints".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !endpoints.is_object() {
+        *endpoints = serde_json::json!({});
+    }
+    let endpoints = endpoints.as_object_mut().expect("endpoints object");
+    let chat_completions = endpoints
+        .entry("chatCompletions".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !chat_completions.is_object() {
+        *chat_completions = serde_json::json!({});
+    }
+    let chat_completions = chat_completions
+        .as_object_mut()
+        .expect("chatCompletions object");
+    if !matches!(chat_completions.get("enabled"), Some(value) if value.is_boolean()) {
+        chat_completions.insert("enabled".to_string(), serde_json::Value::Bool(true));
+    }
 }
 
 fn ensure_trusted_local_plugins(config: &mut serde_json::Value, args: &HaosEntryArgs) {
@@ -1465,6 +1560,79 @@ mod tests {
     #[test]
     fn certificate_renew_window_is_thirty_days() {
         assert_eq!(certificate_renew_before_seconds(), 2_592_000);
+    }
+
+    #[test]
+    fn ensure_agent_defaults_writes_workspace_and_user_timezone() {
+        let unique = format!("openclaw-agent-defaults-{}", random::<u64>());
+        let root = std::env::temp_dir().join(unique);
+        let settings = sample_settings();
+        let args = HaosEntryArgs {
+            options_file: root.join("options.json"),
+            openclaw_config_dir: root.join(".openclaw"),
+            openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
+            openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
+            mcporter_home_dir: root.join(".mcporter"),
+            mcporter_config: root.join(".mcporter").join("mcporter.json"),
+            cert_dir: root.join("certs"),
+            public_share_dir: root.join("html"),
+            gateway_internal_port: 18789,
+            ui_port: 48101,
+            gateway_bin: "openclaw".to_string(),
+            oc_config_bin: "oc-config".to_string(),
+            ui_bin: "haos-ui".to_string(),
+            ingress_bin: "ingressd".to_string(),
+            ttyd_bin: "ttyd".to_string(),
+        };
+
+        let mut config = serde_json::json!({});
+        ensure_agent_defaults(&mut config, &args, &settings);
+
+        assert_eq!(
+            config["agents"]["defaults"]["workspace"],
+            args.openclaw_workspace_dir.display().to_string()
+        );
+        assert_eq!(config["agents"]["defaults"]["userTimezone"], settings.timezone);
+    }
+
+    #[test]
+    fn ensure_gateway_defaults_writes_official_nested_shape() {
+        let unique = format!("openclaw-gateway-defaults-{}", random::<u64>());
+        let root = std::env::temp_dir().join(unique);
+        let args = HaosEntryArgs {
+            options_file: root.join("options.json"),
+            openclaw_config_dir: root.join(".openclaw"),
+            openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
+            openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
+            mcporter_home_dir: root.join(".mcporter"),
+            mcporter_config: root.join(".mcporter").join("mcporter.json"),
+            cert_dir: root.join("certs"),
+            public_share_dir: root.join("html"),
+            gateway_internal_port: 18789,
+            ui_port: 48101,
+            gateway_bin: "openclaw".to_string(),
+            oc_config_bin: "oc-config".to_string(),
+            ui_bin: "haos-ui".to_string(),
+            ingress_bin: "ingressd".to_string(),
+            ttyd_bin: "ttyd".to_string(),
+        };
+
+        let mut config = serde_json::json!({});
+        ensure_gateway_defaults(&mut config, &args);
+
+        assert_eq!(config["gateway"]["mode"], "local");
+        assert_eq!(config["gateway"]["bind"], "loopback");
+        assert_eq!(config["gateway"]["port"], 18789);
+        assert_eq!(config["gateway"]["auth"]["mode"], "token");
+        assert!(config["gateway"]["auth"]["token"].as_str().is_some());
+        assert_eq!(
+            config["gateway"]["trustedProxies"],
+            serde_json::json!(["127.0.0.1/32", "::1/128"])
+        );
+        assert_eq!(
+            config["gateway"]["http"]["endpoints"]["chatCompletions"]["enabled"],
+            true
+        );
     }
 
     #[test]
