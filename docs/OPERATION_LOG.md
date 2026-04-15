@@ -2,6 +2,24 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 11:45 Asia/Shanghai - Rewrite haos-ui into a true Hermes-style single page
+
+- User request:
+  - continue optimizing the simplified HA UI
+  - stop treating the new layout as a visual wrapper over the old multi-page structure
+  - keep the Hermes-inspired architecture as the real page model
+- Outcome:
+  - rebuilt `crates/haos-ui/src/main.rs` into a compact single-page shell
+  - kept only the Home Assistant sidebar single page, Gateway popup entry, maintenance Shell entry, Gateway real-time status, token display, and device approval actions
+  - left legacy `/config`, `/commands`, and `/logs` as redirects to `/` only for compatibility with old bookmarks
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 09:20 Asia/Shanghai - Collapse the HA UI into a single Hermes-style page
 
 - User request:

@@ -1,3 +1,10 @@
+## 2026.04.15.2
+
+- UI: rewrote `haos-ui` into a true Hermes-style single-page shell instead of keeping the old hidden multi-page architecture behind redirects
+- UI: keeps only the Home Assistant sidebar entry, Gateway open action, maintenance Shell action, OpenClaw Gateway real-time status, token display, pending-device listing, and latest-device approval
+- Cleanup: removed thousands of lines of stale multi-page/config/navigation logic from `crates/haos-ui/src/main.rs` while preserving the popup Gateway and Shell flows
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.1
 
 - 界面：参考 `sunboss/hermes-agent-ha-addon` 的薄壳思路，把 HA 面板压成单页，只保留“打开网关”“维护 Shell”“Gateway 状态”“令牌显示”“授权确认”
