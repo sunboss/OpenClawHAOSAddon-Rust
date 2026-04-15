@@ -2,6 +2,27 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 09:20 Asia/Shanghai - Collapse the HA UI into a single Hermes-style page
+
+- User request:
+  - reference `https://github.com/sunboss/hermes-agent-ha-addon`
+  - simplify the UI as much as possible
+  - keep only Gateway open, maintenance shell, real-time OpenClaw Gateway status, authorization reminder and confirmation
+  - make it a true single page still opened from the Home Assistant sidebar
+  - add back token display
+- Outcome:
+  - reduced the HA panel to a single page
+  - redirected legacy `/config`, `/commands`, and `/logs` routes back to `/`
+  - removed the multi-page navigation flow from the user-facing experience
+  - kept only the Gateway button, Shell button, token display, Gateway status, and direct device approval actions
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-14 22:10 Asia/Shanghai - Speed up the Gateway popup path
 
 - User request:

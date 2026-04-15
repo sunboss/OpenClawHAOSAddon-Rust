@@ -1,7 +1,7 @@
 ﻿use axum::{
     Router,
     extract::State,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect},
     routing::{get, post},
     Json,
 };
@@ -888,242 +888,136 @@ fn pid_row(gateway_pid: &str, ingress_pid: &str, ui_pid: &str, shell_pid: &str) 
     )
 }
 
+fn gateway_token_section(token: &str) -> String {
+    if token.is_empty() {
+        return String::new();
+    }
+
+    let masked = format!("••••••••{}", &token[token.len().saturating_sub(8)..]);
+    let tok_escaped = token.replace('\\', "\\\\").replace('"', "\\\"");
+
+    format!(
+        r#"<section class="card">
+  <div class="card-head compact">
+    <div>
+      <div class="eyebrow">访问令牌</div>
+      <h2>显示 Gateway Token</h2>
+    </div>
+  </div>
+  <div class="note-box note-panel">
+    <p>这个令牌用于直接打开原生 OpenClaw Gateway。只在你明确需要调试或手动连接时显示，平时建议保持隐藏。</p>
+  </div>
+  <div class="token-section">
+    <div class="token-header">
+      <span class="token-label">Gateway Token</span>
+      <span class="token-hint">请勿分享给不受信任设备</span>
+    </div>
+    <div class="token-row">
+      <code class="token-val" id="ocTokenVal">{masked}</code>
+      <button class="btn" id="ocTokenToggleBtn" type="button" onclick="ocToggleToken()">显示</button>
+      <button class="btn btn-action" type="button" onclick="ocCopyToken(this)">复制</button>
+    </div>
+  </div>
+  <script>(function(){{var t="{tok_escaped}";window.ocToggleToken=function(){{var v=document.getElementById("ocTokenVal"),b=document.getElementById("ocTokenToggleBtn");if(!v||!b)return;if(b.dataset.vis==="1"){{v.textContent="••••••••"+t.slice(-8);b.textContent="显示";b.dataset.vis="";}}else{{v.textContent=t;b.textContent="隐藏";b.dataset.vis="1";}}}};window.ocCopyToken=function(btn){{var orig=btn.textContent;function done(){{btn.textContent="已复制 ✓";setTimeout(function(){{btn.textContent=orig;}},1500);}}function fb(){{try{{var ta=document.createElement("textarea");ta.value=t;ta.style.cssText="position:fixed;opacity:0;top:0;left:0;width:1px;height:1px";document.body.appendChild(ta);ta.focus();ta.select();var ok=document.execCommand("copy");document.body.removeChild(ta);if(ok){{done();}}else{{alert("Token: "+t);}}}}catch(e){{alert("Token: "+t);}}}}if(navigator.clipboard){{navigator.clipboard.writeText(t).then(done,fb);}}else{{fb();}}}};}})()</script>
+</section>"#,
+        masked = masked,
+        tok_escaped = tok_escaped
+    )
+}
+
 fn home_content(
     config: &PageConfig,
     snapshot: &SystemSnapshot,
     health_ok: Option<bool>,
 ) -> String {
     let gateway_pid = pid_value("openclaw-gateway");
-    let ingress_pid = pid_value("ingressd");
-    let ui_pid = pid_value("haos-ui");
-    let shell_pid = pid_value("ttyd");
-    let online_count = [
-        gateway_pid.as_str(),
-        ingress_pid.as_str(),
-        ui_pid.as_str(),
-        shell_pid.as_str(),
-    ]
-    .into_iter()
-    .filter(|value| *value != "-")
-    .count();
-
-    // Health check result takes priority over PID count when available
     let (health_text, health_sub, health_tone) = match health_ok {
-        Some(true) => ("运行正常", "服务健康检查通过", "tone-good"),
-        Some(false) => ("响应异常", "健康检查未通过，请查看日志", "tone-danger"),
+        Some(true) => ("在线", "Gateway 已响应健康检查", "tone-good"),
+        Some(false) => ("异常", "Gateway 当前未通过健康检查", "tone-danger"),
         None => {
-            if online_count >= 4 {
-                ("运行正常", "关键进程全部在线", "tone-good")
-            } else if online_count >= 3 {
-                ("部分在线", "建议查看命令行和日志页", "tone-warn")
+            if gateway_pid != "-" {
+                ("待确认", "已检测到 Gateway 进程，等待健康结果", "tone-warn")
             } else {
-                ("待检查", "关键进程数量不足", "tone-danger")
+                ("离线", "未检测到 Gateway 进程", "tone-danger")
             }
         }
     };
-    let live_row_class = match health_tone {
-        "tone-good" => "is-good",
-        "tone-warn" => "is-warn",
-        _ => "is-danger",
-    };
 
     format!(
-        r#"<div class="page-grid">
-  <section class="card hero-card">
+        r#"<div class="page-grid single-page-grid">
+  <section class="card hero-card single-hero-card">
     <div class="card-head">
       <div>
-        <div class="eyebrow">主控总览</div>
-        <h2>指挥台状态与资源视图</h2>
-        <p class="muted">统一观察 Agent 网关、服务进程、访问链路与系统负载，作为日常值守和调度入口。</p>
+        <div class="eyebrow">Hermes 风格极简入口</div>
+        <h2>OpenClaw Gateway 单页控制台</h2>
+        <p class="muted">只保留通过 Home Assistant 侧边栏最常用的入口：打开网关、进入维护 Shell、查看 Gateway 状态，以及处理新设备授权。</p>
       </div>
       <div class="header-actions">
         {open_gateway}
-        {open_cli}
         {open_shell}
-        {goto_commands}
       </div>
     </div>
-
-    <div class="status-panel">
-      <section class="panel-left">
-        <div class="live-row {live_row_class}">
-          <span class="live-dot"></span>
-          <div class="live-copy">
-            <strong>{health_text}</strong>
-            <p class="muted">{health_sub}</p>
-          </div>
-        </div>
-
-        <div class="summary-strip status-summary-strip">
-          {runtime}
-          {https}
-          {openclaw_runtime}
-        </div>
-
-        <div class="stats-grid status-stats-grid">
-          {stat_access}
-          {stat_mode}
-          {stat_addon}
-          {stat_openclaw}
-          {stat_model}
-        </div>
-
-        {token_section}
-
-        <div class="brief-grid">
-          <section class="note-box note-panel">
-            <strong>首次部署路径</strong>
-            <ol class="clean-list">
-              <li>先确认上方总状态为“运行正常”，再点击“打开网关”。</li>
-              <li>首次进入原生 Control UI 时，按官方引导完成初始化、登录或模型配置。</li>
-              <li>如果网页提示权限、身份或 token 问题，优先检查 HTTPS 入口，然后再重新打开页面。</li>
-            </ol>
-            <div class="mini-tip">需要进一步初始化模型、Web Search 或 Memory Search 时，再去“基础配置”页保存并重启插件。</div>
-          </section>
-
-          <section class="note-box note-panel">
-            <strong>{access_title}</strong>
-            <p>{access_help}</p>
-            <div class="mini-tip">{gateway_mode_help}</div>
-          </section>
-
-          <section class="note-box note-panel">
-            <strong>设备配对与身份</strong>
-            <p>设备配对已收回原生入口处理。建议优先在原生 Control UI 中完成批准，或前往命令行页先执行 <code>openclaw devices list</code> 核对当前 pending，再执行 <code>openclaw devices approve --latest</code> 或按精确 <code>requestId</code> 批准。</p>
-            <div class="mini-tip">如果设备重试配对且 auth 细节变化，旧 pending 会被新 requestId 取代，所以“授权没生效”时要先重新 <code>list</code>。自动按钮会直接执行官方 <code>openclaw devices approve --latest</code>；如果你怀疑批到旧请求，再手动用精确 ID 处理，并在该设备浏览器里清除此站点的 Cookies 与本地存储。</div>
-            <div class="action-row" style="margin-top:12px;">
-              <button class="btn primary" type="button" onclick="ocApproveLatestDevice('homeDeviceApproveStatus')">自动批准最新请求</button>
-              <button class="btn" type="button" onclick="ocOpenTerminalWindow('!openclaw devices list')">打开待批准列表</button>
-            </div>
-            <span class="form-status" id="homeDeviceApproveStatus">会在本机直接执行官方授权命令</span>
-          </section>
-        </div>
-      </section>
-
-      <aside class="panel-right">
-        <div class="panel-title-row">
-          <div>
-            <div class="eyebrow">进程面板</div>
-            <h3>服务与 PID</h3>
-          </div>
-          {health}
-        </div>
-        {pid_row}
-      </aside>
+    <div class="note-box note-panel">
+      <strong>使用方式</strong>
+      <p>从 Home Assistant 侧边栏打开这里即可。原生 Control UI 继续在新窗口里打开，维护 Shell 则直接进入完整 Web Shell。</p>
     </div>
   </section>
 
   <section class="card">
     <div class="card-head compact">
       <div>
-        <div class="eyebrow">资源遥测</div>
-        <h2>主机资源概览</h2>
+        <div class="eyebrow">实时状态</div>
+        <h2>OpenClaw 网关状态</h2>
+      </div>
+      {health}
+    </div>
+    <div class="single-status-block">
+      {gateway_badge}
+      <div class="kv-list">
+        {version_row}
+        {uptime_row}
+        {entry_row}
       </div>
     </div>
-    <div class="resource-grid">
-      {resource_cpu}
-      {resource_memory}
-      {resource_disk}
-      {resource_uptime}
-      {resource_openclaw_uptime}
+  </section>
+
+  {token_section}
+
+  <section class="card">
+    <div class="card-head compact">
+      <div>
+        <div class="eyebrow">授权提醒</div>
+        <h2>确认新设备授权</h2>
+      </div>
     </div>
+    <div class="note-box note-panel">
+      <p>新客户端登录后，先读取待批准设备，再确认最新请求。这个流程直接走官方 <code>openclaw devices</code> 命令，不再依赖容易卡住的 TUI 注入链路。</p>
+      <div class="mini-tip">如果设备多次重试登录，旧请求可能会被 supersede。先看列表，再点确认，会更稳。</div>
+    </div>
+    <div class="action-row" style="margin-top:16px;">
+      <button class="btn" type="button" onclick="ocListDevices('deviceListStatus','deviceListOutput')">列出待批准设备</button>
+      <button class="btn primary" type="button" onclick="ocApproveLatestDevice('deviceApproveStatus')">确认最新授权</button>
+    </div>
+    <span class="form-status" id="deviceListStatus">页面会直接执行官方 <code>openclaw devices list --json</code></span>
+    <pre class="command-output" id="deviceListOutput">点击“列出待批准设备”后，会在这里显示 pending 与 paired 设备快照。</pre>
+    <span class="form-status" id="deviceApproveStatus">按钮会在本机执行官方 <code>openclaw devices approve --latest</code></span>
   </section>
 </div>"#,
-        health = summary_strip("总状态", health_text, health_sub, health_tone),
-        runtime = summary_strip(
-            "在线进程",
-            &format!("{online_count}/4"),
-            "Gateway、Ingress、UI、Shell",
-            "tone-blue"
-        ),
-        https = summary_strip(
-            "HTTPS 入口",
-            &format!(":{}", config.https_port),
-            "原生网关默认监听端口",
-            "tone-teal"
-        ),
-        openclaw_runtime = summary_strip(
-            "OpenClaw 时长",
-            &snapshot.openclaw_uptime,
-            "基于 Gateway 或 Node 主进程存活时间",
-            "tone-violet"
-        ),
         open_gateway = primary_link_button(
             "打开网关",
             "ocGatewayLink",
             "return ocOpenGatewayLink(event, this)"
         ),
-        open_cli = terminal_window_button("OpenClaw CLI", ""),
         open_shell = shell_window_button("维护 Shell", ""),
-        goto_commands = hero_action_link("进入命令行", "./commands"),
-        stat_access = stat_tile("访问模式", &config.access_mode, "当前插件的访问入口模式"),
-        stat_mode = stat_tile(
-            "网关模式",
-            &config.gateway_mode,
-            "当前 OpenClaw 网关运行模式"
+        health = summary_strip("Gateway", health_text, health_sub, health_tone),
+        gateway_badge = service_badge("OpenClaw Gateway", &gateway_pid),
+        version_row = kv_row("OpenClaw 版本", &config.openclaw_version),
+        uptime_row = kv_row("运行时长", &snapshot.openclaw_uptime),
+        entry_row = kv_row(
+            "入口",
+            &format!("HTTPS :{} / {}", config.https_port, access_mode_label(&config.access_mode))
         ),
-        stat_addon = stat_tile("Add-on 版本", &config.addon_version, "插件发布版本"),
-        stat_openclaw = stat_tile("OpenClaw 版本", &config.openclaw_version, "上游运行时版本"),
-        stat_model = stat_tile("AI 模型", &config.current_model, "当前 OpenClaw 使用的对话模型"),
-        access_title = access_mode_label(&config.access_mode),
-        access_help = access_mode_help(&config.access_mode),
-        gateway_mode_help = gateway_mode_help(&config.gateway_mode),
-        token_section = {
-            let tok = &config.gateway_token;
-            if tok.is_empty() {
-                String::new()
-            } else {
-                let masked = format!("••••••••{}", &tok[tok.len().saturating_sub(8)..]);
-                let tok_escaped = tok.replace('\\', "\\\\").replace('"', "\\\"");
-                format!(r#"<div class="token-section">
-  <div class="token-header">
-    <span class="token-label">Gateway Token</span>
-    <span class="token-hint">用于直接访问 OpenClaw API，请勿泄露</span>
-  </div>
-  <div class="token-row">
-    <code class="token-val" id="ocTokenVal">{masked}</code>
-    <button class="btn" id="ocTokenToggleBtn" onclick="ocToggleToken()">显示</button>
-    <button class="btn btn-action" onclick="ocCopyToken(this)">复制</button>
-  </div>
-  <script>(function(){{var t="{tok_escaped}";window.ocToggleToken=function(){{var v=document.getElementById("ocTokenVal"),b=document.getElementById("ocTokenToggleBtn");if(b.dataset.vis==="1"){{v.textContent="••••••••"+t.slice(-8);b.textContent="显示";b.dataset.vis="";}}else{{v.textContent=t;b.textContent="隐藏";b.dataset.vis="1";}}}}; window.ocCopyToken=function(btn){{var orig=btn.textContent;function done(){{btn.textContent="已复制 ✓";setTimeout(function(){{btn.textContent=orig;}},1500);}}function fb(){{try{{var ta=document.createElement("textarea");ta.value=t;ta.style.cssText="position:fixed;opacity:0;top:0;left:0;width:1px;height:1px";document.body.appendChild(ta);ta.focus();ta.select();var ok=document.execCommand("copy");document.body.removeChild(ta);if(ok){{done();}}else{{alert("Token: "+t);}}}}catch(e){{alert("Token: "+t);}}}}if(navigator.clipboard){{navigator.clipboard.writeText(t).then(done,fb);}}else{{fb();}}}};}})()</script>
-</div>"#, masked=masked, tok_escaped=tok_escaped)
-            }
-        },
-        pid_row = pid_row(&gateway_pid, &ingress_pid, &ui_pid, &shell_pid),
-        resource_cpu = resource_card(
-            "CPU 负载",
-            &snapshot.cpu_load,
-            snapshot.cpu_percent,
-            "tone-blue",
-            "按 CPU 核心数换算成近似百分比，仅用于首页概览。"
-        ),
-        resource_memory = resource_card(
-            "内存占用",
-            &snapshot.memory_used,
-            snapshot.memory_percent,
-            "tone-teal",
-            "适合快速判断容器或宿主机是否有内存压力。"
-        ),
-        resource_disk = resource_card(
-            "磁盘占用",
-            &snapshot.disk_used,
-            snapshot.disk_percent,
-            "tone-gold",
-            "重点观察 /config 所在卷，避免状态目录被写满。"
-        ),
-        resource_uptime = time_card(
-            "系统运行时长",
-            &snapshot.uptime,
-            "适合判断是否刚重启、是否发生过异常恢复。"
-        ),
-        resource_openclaw_uptime = time_card(
-            "OpenClaw 运行时长",
-            &snapshot.openclaw_uptime,
-            "适合判断 Gateway 是否刚重启，或是否发生过短暂掉线。"
-        ),
-        live_row_class = live_row_class,
-        health_text = health_text,
-        health_sub = health_sub,
+        token_section = gateway_token_section(&config.gateway_token),
     )
 }
 
@@ -2070,23 +1964,25 @@ fn render_shell(
     }}
     .console-shell {{
       position:relative;
-      display:grid;
-      grid-template-columns:300px minmax(0,1fr);
+      display:block;
       min-height:100vh;
     }}
     .app-header {{
       position:sticky;
       top:0;
-      min-height:100vh;
+      min-height:auto;
       align-self:start;
       display:flex;
-      flex-direction:column;
-      gap:24px;
-      padding:28px 24px 24px;
+      flex-direction:row;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      padding:18px 22px;
       background:linear-gradient(180deg, rgba(7,13,23,.92) 0%, rgba(5,10,18,.82) 100%);
-      border-right:1px solid rgba(136,174,214,.12);
-      box-shadow:inset -1px 0 0 rgba(255,255,255,.03);
+      border-bottom:1px solid rgba(136,174,214,.12);
+      box-shadow:inset 0 -1px 0 rgba(255,255,255,.03);
       backdrop-filter:blur(20px);
+      z-index:100;
     }}
     .app-header::before {{
       content:"";
@@ -2096,17 +1992,7 @@ fn render_shell(
       background:linear-gradient(90deg, rgba(120,215,216,.22), rgba(120,215,216,0));
       pointer-events:none;
     }}
-    .app-header::after {{
-      content:"";
-      position:absolute;
-      right:-40px;
-      top:15%;
-      width:120px;
-      height:280px;
-      background:radial-gradient(circle, rgba(120,215,216,.08), transparent 72%);
-      filter:blur(26px);
-      pointer-events:none;
-    }}
+    .app-header::after {{ display:none; }}
     .app-brand {{ gap:14px; }}
     .app-brand-badge {{
       width:48px; height:48px; border-radius:16px;
@@ -2121,7 +2007,7 @@ fn render_shell(
     .brand-mark {{ width:28px; height:28px; }}
     .app-brand-name {{ color:#f3f9ff; font-size:17px; font-weight:800; }}
     .app-brand-sub {{ color:#7d94b2; letter-spacing:.16em; text-transform:uppercase; }}
-    .app-meta {{ display:flex; flex-wrap:wrap; gap:10px; }}
+    .app-meta {{ display:flex; flex-wrap:wrap; gap:10px; margin-left:auto; }}
     .version-chip, .meta-chip {{
       display:inline-flex; align-items:center; min-height:30px; padding:0 12px;
       border-radius:999px; border:1px solid rgba(136,174,214,.12);
@@ -2129,7 +2015,7 @@ fn render_shell(
       font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
     }}
     .meta-chip.accent {{ color:#d0faf8; border-color:rgba(120,215,216,.22); }}
-    .app-nav {{ display:grid; gap:8px; overflow:visible; }}
+    .app-nav {{ display:none; }}
     .nav-link {{
       min-height:46px; border-radius:14px; padding:0 16px;
       border:1px solid transparent; color:#90a7c6; background:transparent;
@@ -2164,7 +2050,7 @@ fn render_shell(
       background:rgba(120,215,216,.96);
       box-shadow:0 0 0 4px rgba(120,215,216,.12);
     }}
-    .rail-stack {{ display:grid; gap:14px; margin-top:auto; }}
+    .rail-stack {{ display:none; }}
     .rail-panel {{
       padding:16px; border-radius:20px; border:1px solid var(--line);
       background:linear-gradient(180deg, rgba(13,24,41,.9), rgba(8,15,26,.84)); box-shadow:var(--shadow-soft);
@@ -2174,9 +2060,9 @@ fn render_shell(
     }}
     .rail-value {{ margin:8px 0 4px; color:#f4f9ff; font-size:17px; font-weight:800; letter-spacing:-.03em; }}
     .rail-panel p {{ color:var(--muted); font-size:12px; line-height:1.7; }}
-    .console-main {{ min-width:0; padding:28px 28px 52px; }}
+    .console-main {{ max-width:980px; min-width:0; margin:0 auto; padding:24px 20px 40px; }}
     .page-header {{
-      position:relative; overflow:hidden; max-width:none; margin:0 0 22px; padding:34px 36px 28px;
+      position:relative; overflow:hidden; max-width:none; margin:0 0 18px; padding:24px 26px 20px;
       border:1px solid rgba(136,174,214,.14); border-radius:30px;
       background:linear-gradient(180deg, rgba(10,20,36,.92), rgba(7,14,24,.84));
       box-shadow:var(--shadow); animation:oc-rise .45s ease both;
@@ -2194,15 +2080,15 @@ fn render_shell(
       background:linear-gradient(90deg, rgba(120,215,216,.34), rgba(120,215,216,0));
       opacity:.75;
     }}
-    .hero-grid {{ position:relative; display:grid; grid-template-columns:minmax(0,1.45fr) minmax(260px,.7fr); gap:22px; align-items:end; }}
+    .hero-grid {{ position:relative; display:grid; grid-template-columns:1fr; gap:14px; align-items:end; }}
     .page-eyebrow {{ margin-bottom:12px; color:#98badd; }}
     .page-title {{
-      max-width:9ch; margin-bottom:14px; color:#f5fbff; font-size:clamp(2.5rem,4.8vw,4.7rem);
+      max-width:12ch; margin-bottom:10px; color:#f5fbff; font-size:clamp(2.2rem,4vw,3.6rem);
       line-height:1.02; letter-spacing:-.07em; font-weight:900; text-wrap:balance;
       text-shadow:0 10px 32px rgba(0,0,0,.24);
     }}
     .page-sub, .muted {{ max-width:760px; color:var(--muted); line-height:1.8; }}
-    .hero-meta {{ display:grid; gap:10px; justify-items:end; }}
+    .hero-meta {{ display:flex; gap:10px; flex-wrap:wrap; justify-items:start; }}
     .hero-chip {{
       display:inline-flex; align-items:center; min-height:38px; padding:0 14px; border-radius:999px;
       border:1px solid rgba(136,174,214,.14); background:rgba(11,21,38,.84); color:#d9eafc; font-size:12px; font-weight:700;
@@ -2211,6 +2097,19 @@ fn render_shell(
     .hero-chip.tone-gold {{ color:#efd8a6; border-color:rgba(216,185,127,.2); }}
     .wrap {{ max-width:none; padding:0; }}
     .page-grid {{ gap:18px; }}
+    .single-page-grid {{ max-width:none; }}
+    .single-hero-card .header-actions {{ align-items:center; }}
+    .single-status-block {{ display:grid; gap:14px; }}
+    .single-status-block .service-badge {{
+      background:linear-gradient(180deg, rgba(10,24,41,.9), rgba(8,18,32,.86));
+      border-color:rgba(120,215,216,.18);
+    }}
+    .single-status-block .service-name,
+    .single-status-block .service-meta {{ color:#d8e8fb; }}
+    .single-status-block .service-state {{
+      background:rgba(120,215,216,.14);
+      color:#baf4f4;
+    }}
     .ops-layout {{ display:grid; grid-template-columns:minmax(0,1.4fr) minmax(280px,.76fr); gap:18px; align-items:start; }}
     .ops-stack {{ display:grid; gap:18px; }}
     .ops-panel {{
@@ -3367,46 +3266,22 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     render_shell(
         &config,
         NavPage::Home,
-        "OpenClaw AI Agent 主控台",
-        "把网关、资源、控制链路与运维入口汇聚到一个可观察、可操作、可持续使用的指挥界面。",
+        "OpenClaw 单页入口",
+        "参考 Hermes Add-on 的薄壳思路，这里只保留最常用的网关入口、维护 Shell、令牌显示与授权确认。",
         &home_content(&config, &snapshot, health_ok),
     )
 }
 
-async fn config_page(State(state): State<AppState>) -> impl IntoResponse {
-    let _ = state;
-    let config = PageConfig::from_env();
-    render_shell(
-        &config,
-        NavPage::Config,
-        "Agent 能力配置",
-        "管理模型、Web Search、Memory Search 与 Dreaming 等能力开关，让这台 Agent 主控台保持长期稳定可用。",
-        &config_content_v2(&config),
-    )
+async fn config_page(State(_state): State<AppState>) -> impl IntoResponse {
+    Redirect::temporary("/")
 }
 
-async fn commands_page(State(state): State<AppState>) -> impl IntoResponse {
-    let _ = state;
-    let config = PageConfig::from_env();
-    render_shell(
-        &config,
-        NavPage::Commands,
-        "运行与调度入口",
-        "从这里进入原生 TUI、维护 Shell 与官方命令路径，执行调度、诊断和日常运维操作。",
-        &commands_content_native(&config),
-    )
+async fn commands_page(State(_state): State<AppState>) -> impl IntoResponse {
+    Redirect::temporary("/")
 }
 
-async fn logs_page(State(state): State<AppState>) -> impl IntoResponse {
-    let _ = state;
-    let config = PageConfig::from_env();
-    render_shell(
-        &config,
-        NavPage::Logs,
-        "日志与诊断台",
-        "集中查看运行日志、健康迹象与诊断线索，帮助你快速判断这台 Agent 主控台是否稳定。",
-        &logs_content(),
-    )
+async fn logs_page(State(_state): State<AppState>) -> impl IntoResponse {
+    Redirect::temporary("/")
 }
 
 #[tokio::main]
@@ -3596,6 +3471,33 @@ mod tests {
         assert!(online.contains("PID 1234"));
         assert!(offline.contains("待启动"));
         assert!(offline.contains("未检测到 PID"));
+    }
+
+    #[test]
+    fn home_page_stays_single_page_and_keeps_auth_controls() {
+        let mut config = sample_page_config();
+        config.gateway_token = "tok_test_12345678".to_string();
+        let snapshot = SystemSnapshot {
+            cpu_load: "0.4 / 0.3 / 0.2".to_string(),
+            memory_used: "512 MiB / 2 GiB".to_string(),
+            disk_used: "8 GiB / 64 GiB".to_string(),
+            uptime: "1h".to_string(),
+            openclaw_uptime: "35m".to_string(),
+            cpu_percent: 20,
+            memory_percent: 25,
+            disk_percent: 15,
+        };
+
+        let html = home_content(&config, &snapshot, Some(true));
+
+        assert!(html.contains("打开网关"));
+        assert!(html.contains("维护 Shell"));
+        assert!(html.contains("确认最新授权"));
+        assert!(html.contains("列出待批准设备"));
+        assert!(html.contains("显示 Gateway Token"));
+        assert!(!html.contains("OpenClaw CLI"));
+        assert!(!html.contains("资源遥测"));
+        assert!(!html.contains("主机资源概览"));
     }
 }
 
