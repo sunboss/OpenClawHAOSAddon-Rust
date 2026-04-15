@@ -2,6 +2,25 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 23:55 Asia/Shanghai - Rebuild the Hermes-style single page into a stronger command-center composition
+
+- User request:
+  - stop approximating the reference and make the add-on entry page better than the provided Hermes screenshot
+  - keep both Gateway open paths and keep the maintenance shell path intact
+  - preserve the modified dark Hermes-style page rather than changing the architecture again
+- Outcome:
+  - re-art-directed `crates/haos-ui/src/main.rs` into a poster-like single page with a stronger hero, three metric cards, a slim support strip, two large action panels, and a thinner token/approval operations strip
+  - kept the native `打开网关` action and the `HAOS 网关（测试）` action side by side inside the main Gateway card
+  - kept the direct `维护 Shell` path while making the page hierarchy, spacing, and mobile layout much closer to the provided reference image
+  - added live model extraction from runtime config so the first metric card no longer has to be hand-written
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 23:10 Asia/Shanghai - Add a temporary HAOS gateway test path beside the native gateway entry
 
 - User request:

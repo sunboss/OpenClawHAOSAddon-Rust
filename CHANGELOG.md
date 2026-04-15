@@ -1,3 +1,10 @@
+## 2026.04.15.10
+
+- UI: art-directed the single-page shell again into a stronger Hermes-adjacent control surface with a full hero, cleaner metric hierarchy, two large action panels, and a thinner operations strip
+- UI: kept both Gateway paths intact while moving the native HTTPS path and the HAOS ingress test path into a clearer command-deck layout
+- UI: promoted the live model, live Gateway state, token controls, and device approval tools into a tighter one-page composition that works better on mobile
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.9
 
 - UI: rebuilt the thin-shell page again around the Hermes dark palette, with a shorter single-page layout closer to the Hermes entry surface
