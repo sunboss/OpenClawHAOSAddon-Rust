@@ -1,4 +1,4 @@
-﻿use axum::{extract::State,response::{Html,IntoResponse,Redirect},routing::{get,post},Json,Router};
+use axum::{extract::State,response::{Html,IntoResponse},routing::{get,post},Json,Router};
 use std::{env,fs,net::SocketAddr,path::PathBuf,process::Command,sync::Arc,time::Duration};
 use tokio::{io::{AsyncReadExt,AsyncWriteExt},net::TcpStream,sync::RwLock,time::timeout};
 
@@ -96,9 +96,6 @@ fn html_attr_escape(value: &str) -> String {
     value.replace('&', "&amp;").replace('"', "&quot;").replace('\'', "&#39;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-fn openclaw_brand_svg(class_name: &str) -> String {
-    format!(r##"<svg class="{class_name}" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenClaw logo" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="ocPanelBg" x1="12" y1="10" x2="84" y2="88" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#11263b"/><stop offset="0.55" stop-color="#0a1827"/><stop offset="1" stop-color="#060d16"/></linearGradient><linearGradient id="ocCoreGlow" x1="24" y1="20" x2="72" y2="76" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7ae7ff"/><stop offset="0.55" stop-color="#5bc0ff"/><stop offset="1" stop-color="#2e6fe2"/></linearGradient></defs><rect x="5.5" y="5.5" width="85" height="85" rx="17" fill="url(#ocPanelBg)" stroke="#8cc7ee" stroke-opacity=".16"/><path d="M48 17.5 68.5 29.4v23.2L48 64.5 27.5 52.6V29.4Z" fill="#0d1e31" stroke="url(#ocCoreGlow)" stroke-width="4" stroke-linejoin="round"/><path d="M48 28 58.8 34.2v12.6L48 53 37.2 46.8V34.2Z" fill="#08131f" stroke="#c9f6ff" stroke-opacity=".92" stroke-width="2.1" stroke-linejoin="round"/><path d="M31 56.2 23.6 64.8" fill="none" stroke="#f58b39" stroke-width="3.8" stroke-linecap="round"/><path d="M65 56.2 72.4 64.8" fill="none" stroke="#f58b39" stroke-width="3.8" stroke-linecap="round"/><path d="M40 59.2 48 53.8l8 5.4" fill="none" stroke="#ffd27f" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 34.2v10.8" stroke="#eef9ff" stroke-width="3.7" stroke-linecap="round"/><path d="M43.2 38.9 48 34.2l4.8 4.7" fill="none" stroke="#eef9ff" stroke-width="3.7" stroke-linecap="round" stroke-linejoin="round"/></svg>"##)
-}
 struct OpenClawCommandResult { ok: bool, stdout: String, stderr: String }
 
 async fn run_openclaw_command(args: Vec<&'static str>) -> Result<OpenClawCommandResult, String> {
@@ -135,9 +132,6 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     let (snapshot, health_ok) = if let Some(cached) = guard.as_ref() { let result = (cached.snapshot.clone(), cached.health_ok); drop(guard); result } else { drop(guard); tokio::join!(collect_system_snapshot(), fetch_openclaw_health()) };
     render_shell(&config, "OpenClaw Gateway 单页入口", "参考 Hermes Add-on 的薄壳架构，只保留打开网关、维护 Shell、实时状态、显示令牌与授权确认。", &home_content(&config, &snapshot, health_ok))
 }
-
-async fn redirect_home() -> impl IntoResponse { Redirect::temporary("/") }
-
 #[tokio::main]
 async fn main() {
     let cache: Arc<RwLock<Option<CachedSnapshot>>> = Arc::new(RwLock::new(None));
@@ -150,7 +144,7 @@ async fn main() {
         }
     });
     let app_state = AppState { cache };
-    let app = Router::new().route("/", get(index)).route("/config", get(redirect_home)).route("/commands", get(redirect_home)).route("/logs", get(redirect_home)).route("/action/devices-list", post(list_devices)).route("/action/devices-approve-latest", post(approve_latest_device)).with_state(app_state);
+    let app = Router::new().route("/", get(index)).route("/action/devices-list", post(list_devices)).route("/action/devices-approve-latest", post(approve_latest_device)).with_state(app_state);
     let port = env::var("UI_PORT").ok().and_then(|value| value.parse::<u16>().ok()).unwrap_or(48101);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind ui listener");
@@ -170,7 +164,7 @@ mod tests {
     fn render_shell_keeps_hermes_style_single_page_frame() {
         let config = sample_page_config();
         let Html(html) = render_shell(&config, "标题", "副标题", "<div>content</div>");
-        assert!(html.contains("Hermes 风格薄壳入口"));
+        assert!(html.contains("OpenClaw Add-on"));
         assert!(html.contains("ocOpenGatewayLink"));
         assert!(html.contains("ocOpenShellWindow"));
         assert!(html.contains("./action/devices-list"));
@@ -235,32 +229,29 @@ fn render_shell(config: &PageConfig, title: &str, subtitle: &str, content: &str)
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenClaw · {title}</title>
 <style>
-:root{{--line:#dbe4f0;--text:#18263a;--muted:#66758a;--blue:#2563eb;--blue-deep:#1d4ed8;--shadow:0 8px 30px rgba(15,23,42,.08);--radius:20px}}
+:root{{--bg:#f5f7fb;--panel:#ffffff;--line:#d8e2ef;--text:#1f2a37;--muted:#6b7788;--blue:#2563eb;--blue-deep:#1d4ed8;--shadow:0 10px 30px rgba(15,23,42,.06);--radius:18px}}
 *{{box-sizing:border-box}}
-body{{margin:0;min-height:100vh;background:radial-gradient(circle at top left,rgba(59,130,246,.12),transparent 24rem),linear-gradient(180deg,#f7f9fc 0%,#eef2f7 100%);color:var(--text);font:14px/1.65 "MiSans","HarmonyOS Sans SC","Noto Sans SC","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}}
-.shell{{max-width:980px;margin:0 auto;padding:20px 16px 48px}}
-.topbar{{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}}
-.brand{{display:flex;align-items:center;gap:12px}}
-.brand-mark-wrap{{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(180deg,#173055 0%,#0f2038 100%);box-shadow:0 10px 24px rgba(15,23,42,.18)}}
-.brand-mark{{width:28px;height:28px;display:block}}
-.brand-title{{font-size:16px;font-weight:900;letter-spacing:-.02em}}
-.brand-sub{{color:var(--muted);font-size:12px}}
-.version-chip{{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border-radius:999px;border:1px solid rgba(37,99,235,.14);background:rgba(255,255,255,.72);color:#35506f;font-size:12px;font-weight:800;box-shadow:0 8px 20px rgba(15,23,42,.06)}}
-.hero{{padding:26px 24px;border-radius:28px;border:1px solid rgba(219,228,240,.9);background:radial-gradient(circle at top right,rgba(37,99,235,.1),transparent 18rem),linear-gradient(180deg,rgba(255,255,255,.94),rgba(255,255,255,.88));box-shadow:var(--shadow);margin-bottom:18px}}
-.eyebrow{{margin:0 0 8px;color:#5f7390;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}}
-h1{{margin:0 0 8px;font-size:30px;line-height:1.08;letter-spacing:-.04em}}
+body{{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font:14px/1.65 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}}
+.shell{{max-width:900px;margin:0 auto;padding:20px 16px 32px}}
+.topbar{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}}
+.brand-title{{font-size:17px;font-weight:800;letter-spacing:-.02em}}
+.brand-sub{{margin-top:2px;color:var(--muted);font-size:12px}}
+.version-chip{{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:#fff;color:#536277;font-size:12px;font-weight:700}}
+.hero{{padding:24px 22px;border-radius:22px;border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow);margin-bottom:16px}}
+.eyebrow{{margin:0 0 8px;color:#5a6a7f;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}}
+h1{{margin:0 0 8px;font-size:28px;line-height:1.12;letter-spacing:-.03em}}
 .subtitle,.hero-copy,.note-box p,.form-status{{margin:0;color:var(--muted)}}
 .content,.page-grid{{display:grid;gap:16px}}
-.card{{padding:22px 20px;border-radius:var(--radius);border:1px solid var(--line);background:rgba(255,255,255,.92);box-shadow:var(--shadow);backdrop-filter:blur(6px)}}
+.card{{padding:22px 20px;border-radius:var(--radius);border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow)}}
 .card-head{{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}}
 .card-head.compact{{margin-bottom:14px}}
 .card h2{{margin:0;font-size:21px;line-height:1.15;letter-spacing:-.03em}}
 .header-actions,.action-row{{display:flex;flex-wrap:wrap;gap:10px}}
-.btn{{min-height:40px;display:inline-flex;align-items:center;justify-content:center;padding:0 16px;border-radius:999px;border:1px solid #d5deea;background:#fff;color:var(--text);text-decoration:none;font-weight:800;cursor:pointer;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease}}
-.btn:hover{{transform:translateY(-1px);border-color:#b7c7db;box-shadow:0 10px 24px rgba(15,23,42,.08)}}
+.btn{{min-height:40px;display:inline-flex;align-items:center;justify-content:center;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--text);text-decoration:none;font-weight:700;cursor:pointer;transition:border-color .12s ease,box-shadow .12s ease}}
+.btn:hover{{border-color:#bcc9da;box-shadow:0 8px 20px rgba(15,23,42,.08)}}
 .btn.primary{{border-color:transparent;background:linear-gradient(135deg,var(--blue),var(--blue-deep));color:#fff;box-shadow:0 12px 28px rgba(37,99,235,.28)}}
-.btn.secondary{{border-color:#dbe4f0;background:linear-gradient(180deg,#f8fafc,#edf3fb);color:#17324f}}
-.summary-strip-card{{position:relative;padding:14px 16px 14px 18px;border:1px solid var(--line);border-radius:16px;background:#f9fbff}}
+.btn.secondary{{background:#f8fbff;color:#17324f}}
+.summary-strip-card{{position:relative;padding:14px 16px 14px 18px;border:1px solid var(--line);border-radius:16px;background:#fafcff}}
 .summary-strip-card::before{{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:999px;background:#94a3b8}}
 .summary-strip-card.tone-good::before{{background:#22c55e}}
 .summary-strip-card.tone-warn::before{{background:#f59e0b}}
@@ -281,26 +272,23 @@ h1{{margin:0 0 8px;font-size:30px;line-height:1.08;letter-spacing:-.04em}}
 .kv-row:last-child{{border-bottom:none;padding-bottom:0}}
 .kv-label{{color:#6f849d;font-weight:700}}
 .kv-value{{text-align:right;font-weight:800;word-break:break-word}}
-.note-box{{padding:14px 16px;border-radius:16px;border:1px solid #dce6f5;background:linear-gradient(180deg,#f8fbff 0%,#f2f7fd 100%)}}
+.note-box{{padding:14px 16px;border-radius:16px;border:1px solid #dce6f5;background:#f7faff}}
 .note-box strong{{display:block;margin-bottom:4px;font-size:13px}}
 .token-section{{display:grid;gap:12px}}
 .token-header{{display:flex;justify-content:space-between;gap:12px;color:#60748d;font-size:12px;font-weight:800}}
 .token-row{{display:flex;flex-wrap:wrap;gap:10px;align-items:center}}
-.token-val{{flex:1 1 280px;min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:16px;background:#0f172a;color:#dbeafe;font:700 13px/1.4 ui-monospace,"Cascadia Code",Consolas,monospace;overflow:auto}}
-.command-output{{margin:12px 0 0;min-height:180px;padding:14px 16px;border-radius:18px;background:#0b1220;color:#d6e4ff;border:1px solid rgba(88,108,145,.32);font:13px/1.6 ui-monospace,"Cascadia Code",Consolas,monospace;white-space:pre-wrap;overflow:auto}}
+.token-val{{flex:1 1 280px;min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:16px;background:#edf3fb;color:#17324f;font:700 13px/1.4 ui-monospace,"Cascadia Code",Consolas,monospace;overflow:auto}}
+.command-output{{margin:12px 0 0;min-height:180px;padding:14px 16px;border-radius:18px;background:#f8fbff;color:#17324f;border:1px solid #d8e2ef;font:13px/1.6 ui-monospace,"Cascadia Code",Consolas,monospace;white-space:pre-wrap;overflow:auto}}
 code{{font-family:ui-monospace,"Cascadia Code",Consolas,monospace}}
-@media (max-width:720px){{.shell{{padding:16px 12px 40px}}.topbar,.card-head,.token-header,.kv-row{{flex-direction:column;align-items:flex-start}}.version-chip{{align-self:flex-start}}.token-row,.header-actions,.action-row{{width:100%}}.token-val{{width:100%}}.header-actions .btn,.action-row .btn{{flex:1 1 100%}}.kv-value{{text-align:left}}}}
+@media (max-width:720px){{.shell{{padding:16px 12px 24px}}.topbar,.card-head,.token-header,.kv-row{{flex-direction:column;align-items:flex-start}}.version-chip{{align-self:flex-start}}.token-row,.header-actions,.action-row{{width:100%}}.header-actions .btn,.action-row .btn{{flex:1 1 100%}}.kv-value{{text-align:left}}}}
 </style>
 </head>
 <body>
 <div class="shell">
 <header class="topbar">
-  <div class="brand">
-    <div class="brand-mark-wrap">{brand_svg}</div>
-    <div>
-      <div class="brand-title">OpenClaw</div>
-      <div class="brand-sub">Hermes 风格薄壳入口</div>
-    </div>
+  <div>
+    <div class="brand-title">OpenClaw Add-on</div>
+    <div class="brand-sub">Hermes 风格的单页薄壳入口</div>
   </div>
   <div class="version-chip">Add-on {addon_version}</div>
 </header>
@@ -315,11 +303,10 @@ code{{font-family:ui-monospace,"Cascadia Code",Consolas,monospace}}
 const OC_GATEWAY_URL={gateway_url};
 const OC_HTTPS_PORT={https_port};
 function ocGatewayHref(){{if(OC_GATEWAY_URL&&OC_GATEWAY_URL.trim())return OC_GATEWAY_URL;return window.location.protocol+"//"+window.location.hostname+":"+OC_HTTPS_PORT}}
+function openAddonWindow(url,name){{const win=window.open(url,name,"popup=yes,width=1440,height=920");if(!win)window.location.href=url;return false}}
 function syncGatewayLink(){{const link=document.getElementById("ocGatewayLink");if(link)link.href=ocGatewayHref()}}
-async function waitForGatewayReady(maxAttempts,delayMs){{for(let i=0;i<maxAttempts;i+=1){{try{{const resp=await fetch("./readyz",{{cache:"no-store"}});if(resp.ok)return true}}catch(_error){{}}await new Promise(resolve=>setTimeout(resolve,delayMs))}}return false}}
-function writePopupShell(win,title,body){{if(!win)return;win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${{title}}</title><style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1220;color:#dbeafe;font:14px/1.7 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}}main{{max-width:420px;padding:28px 24px;text-align:center}}h1{{margin:0 0 10px;font-size:22px}}p{{margin:0;color:#9fb2ce}}</style></head><body><main><h1>${{title}}</h1><p>${{body}}</p></main></body></html>`);win.document.close()}}
-async function ocOpenGatewayLink(event,anchor){{if(event)event.preventDefault();const targetUrl=anchor&&anchor.href?anchor.href:ocGatewayHref();const popup=window.open("about:blank","openclaw-gateway","popup=yes,width=1440,height=920");if(!popup){{window.location.href=targetUrl;return false}}writePopupShell(popup,"正在打开 OpenClaw Gateway","正在确认网关就绪，完成后会自动进入原生控制台。");await waitForGatewayReady(4,250);popup.location.href=targetUrl;return false}}
-function ocOpenShellWindow(_command){{window.open("./shell/","openclaw-shell","popup=yes,width=1440,height=920")}}
+function ocOpenGatewayLink(event,anchor){{if(event)event.preventDefault();const targetUrl=anchor&&anchor.href?anchor.href:ocGatewayHref();return openAddonWindow(targetUrl,"openclaw-gateway")}}
+function ocOpenShellWindow(_command){{return openAddonWindow("./shell/","openclaw-shell")}}
 async function ocPostJson(url,payload){{const resp=await fetch(url,{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(payload||{{}})}});const data=await resp.json().catch(()=>({{ok:false,message:"返回格式无效"}}));if(!resp.ok&&!data.ok)throw new Error(data.message||"请求失败");return data}}
 function ocSetFormStatus(id,message,ok){{const el=document.getElementById(id);if(!el)return;el.textContent=message;el.style.color=ok===false?"#b91c1c":(ok===true?"#065f46":"#66758a")}}
 window.ocApproveLatestDevice=async function(statusId){{ocSetFormStatus(statusId,"正在执行授权…");try{{const data=await ocPostJson("./action/devices-approve-latest",{{}});ocSetFormStatus(statusId,data.message||"已完成",!!data.ok)}}catch(error){{ocSetFormStatus(statusId,"执行失败："+(error.message||error),false)}}}};
@@ -330,7 +317,6 @@ syncGatewayLink();
 </html>"##,
         title = title,
         subtitle = subtitle,
-        brand_svg = openclaw_brand_svg("brand-mark"),
         addon_version = html_attr_escape(&config.addon_version),
         content = content,
         gateway_url = gateway_url,

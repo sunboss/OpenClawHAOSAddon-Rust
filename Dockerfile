@@ -33,7 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
-    jq \
     openssl \
     python3 \
     python3-pip \
@@ -43,7 +42,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     rsync \
     tzdata \
-    xz-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -57,7 +55,7 @@ RUN set -eux; \
     chmod +x /usr/local/bin/ttyd
 
 RUN npm config set fund false && npm config set audit false \
-    && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION} @xterm/xterm @xterm/addon-fit
+    && npm install -g pnpm mcporter openclaw@${OPENCLAW_VERSION}
 
 # Pre-install all openclaw bundled plugin deps into openclaw's own node_modules so that
 # `openclaw doctor --fix` reports them as already installed (no per-startup npm download).

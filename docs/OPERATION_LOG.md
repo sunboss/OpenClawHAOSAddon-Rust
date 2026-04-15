@@ -2,6 +2,35 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 17:30 Asia/Shanghai - Slim the Hermes-style shell and remove the dead embedded terminal
+
+- User request:
+  - review the latest official OpenClaw docs before optimizing further
+  - delete everything no longer needed
+  - make the HA page style and entry behavior align more closely with `sunboss/hermes-agent-ha-addon`
+  - keep the UI as a true single page opened from the Home Assistant sidebar
+- Official references checked:
+  - Control UI docs: the browser Control UI is already a small single-page app served by the Gateway on the same port
+  - TUI docs: the official terminal experience is `openclaw tui`, not a custom embedded terminal frontend
+  - Remote access docs: the recommended model keeps the real Gateway thin and loopback-bound, with remote access handled by a proxy/tunnel layer
+- Outcome:
+  - removed the entire stale `/terminal` embedded frontend implementation from `crates/ingressd/src/main.rs`
+  - kept only `/shell/` proxying to `ttyd`, while preserving `/terminal` as a lightweight compatibility redirect to `/shell/`
+  - removed the `portable-pty` dependency and the no-longer-needed xterm npm assets from the image
+  - further simplified `haos-ui` into a lighter Hermes-style single page and removed `/config`, `/commands`, and `/logs` compatibility routes
+  - made both “打开网关” and “维护 Shell” open directly in dedicated new windows
+  - removed additional unused image packages `jq` and `xz-utils`
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `Dockerfile`
+  - `Cargo.lock`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/Cargo.toml`
+  - `crates/ingressd/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 11:45 Asia/Shanghai - Rewrite haos-ui into a true Hermes-style single page
 
 - User request:

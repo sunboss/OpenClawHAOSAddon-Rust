@@ -1,3 +1,12 @@
+## 2026.04.15.3
+
+- UI: aligned the Home Assistant sidebar page further toward the Hermes thin-shell model, keeping a single light single-page surface with only Gateway open, maintenance Shell, Gateway status, token display, and device approval actions
+- UI: removed legacy compatibility routes for `/config`, `/commands`, and `/logs`, so `haos-ui` now behaves as a true single-page entry instead of redirect-backed pseudo pages
+- UX: made both “打开网关” and “维护 Shell” open directly in dedicated new windows, matching the thinner Hermes-style workflow instead of routing through extra local transition chrome
+- Cleanup: removed the old embedded `/terminal` implementation from `crates/ingressd/src/main.rs`, dropped `portable-pty`, and kept only the `ttyd`-backed `/shell/` path plus `/terminal` compatibility redirect
+- Image: removed unused runtime packages `jq` and `xz-utils`, and removed obsolete xterm asset installation from the image
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.2
 
 - UI: rewrote `haos-ui` into a true Hermes-style single-page shell instead of keeping the old hidden multi-page architecture behind redirects
