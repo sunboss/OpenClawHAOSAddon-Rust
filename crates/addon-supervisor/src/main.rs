@@ -81,6 +81,7 @@ struct AddonOptions {
     gateway_public_url: Option<String>,
     homeassistant_token: Option<String>,
     run_doctor_on_start: Option<bool>,
+    dangerous_enable_haos_http_control_ui_debug: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +91,7 @@ struct RuntimeSettings {
     gateway_public_url: String,
     homeassistant_token: String,
     run_doctor_on_start: bool,
+    dangerous_enable_haos_http_control_ui_debug: bool,
 }
 
 fn main() -> ExitCode {
@@ -187,6 +189,9 @@ fn runtime_settings(options: &AddonOptions) -> RuntimeSettings {
         gateway_public_url: options.gateway_public_url.clone().unwrap_or_default(),
         homeassistant_token: options.homeassistant_token.clone().unwrap_or_default(),
         run_doctor_on_start: options.run_doctor_on_start.unwrap_or(false),
+        dangerous_enable_haos_http_control_ui_debug: options
+            .dangerous_enable_haos_http_control_ui_debug
+            .unwrap_or(false),
     }
 }
 
@@ -363,7 +368,10 @@ fn ensure_gateway_defaults(config: &mut serde_json::Value, args: &HaosEntryArgs)
 
     let gateway = gateway.as_object_mut().expect("gateway object");
     if !matches!(gateway.get("mode"), Some(value) if value.is_string()) {
-        gateway.insert("mode".to_string(), serde_json::Value::String("local".to_string()));
+        gateway.insert(
+            "mode".to_string(),
+            serde_json::Value::String("local".to_string()),
+        );
     }
     if !matches!(gateway.get("bind"), Some(value) if value.is_string()) {
         gateway.insert(
@@ -393,7 +401,10 @@ fn ensure_gateway_defaults(config: &mut serde_json::Value, args: &HaosEntryArgs)
     }
     let auth = auth.as_object_mut().expect("auth object");
     if !matches!(auth.get("mode"), Some(value) if value.is_string()) {
-        auth.insert("mode".to_string(), serde_json::Value::String("token".to_string()));
+        auth.insert(
+            "mode".to_string(),
+            serde_json::Value::String("token".to_string()),
+        );
     }
     if !matches!(auth.get("token"), Some(value) if value.is_string()) {
         auth.insert(
@@ -542,6 +553,14 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("GW_PUBLIC_URL", &settings.gateway_public_url);
         env::set_var("HTTPS_PORT", "18789");
         env::set_var(
+            "OPENCLAW_HAOS_HTTP_UI_DEBUG",
+            if settings.dangerous_enable_haos_http_control_ui_debug {
+                "1"
+            } else {
+                "0"
+            },
+        );
+        env::set_var(
             "OPENCLAW_DISABLE_BONJOUR",
             if settings.disable_bonjour { "1" } else { "0" },
         );
@@ -560,6 +579,7 @@ fn apply_status_env(add_on_version: &str, openclaw_version: &str) {
 }
 
 fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> bool {
+    let dangerous_http_debug = settings.dangerous_enable_haos_http_control_ui_debug;
     let applied = run_status(
         &args.oc_config_bin,
         &[
@@ -594,7 +614,11 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
         &[
             "set",
             "gateway.controlUi.allowInsecureAuth",
-            "false",
+            if dangerous_http_debug {
+                "true"
+            } else {
+                "false"
+            },
             "--json",
         ],
     ) && run_status(
@@ -602,7 +626,11 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
         &[
             "set",
             "gateway.controlUi.dangerouslyDisableDeviceAuth",
-            "false",
+            if dangerous_http_debug {
+                "true"
+            } else {
+                "false"
+            },
             "--json",
         ],
     )
@@ -612,6 +640,7 @@ fn build_control_ui_allowed_origins(settings: &RuntimeSettings) -> Vec<String> {
     let mut origins = Vec::<String>::new();
     let gateway_port = 18789;
     let scheme = "https";
+    let ha_frontend_port = 8123;
 
     for ip in detect_lan_ips() {
         origins.push(format!("{scheme}://{ip}:{gateway_port}"));
@@ -620,6 +649,19 @@ fn build_control_ui_allowed_origins(settings: &RuntimeSettings) -> Vec<String> {
     origins.push(format!("{scheme}://127.0.0.1:{gateway_port}"));
     origins.push(format!("{scheme}://homeassistant.local:{gateway_port}"));
     origins.push(format!("{scheme}://homeassistant:{gateway_port}"));
+
+    if settings.dangerous_enable_haos_http_control_ui_debug {
+        for ip in detect_lan_ips() {
+            origins.push(format!("http://{ip}:{ha_frontend_port}"));
+            origins.push(format!("https://{ip}:{ha_frontend_port}"));
+        }
+        origins.push(format!("http://localhost:{ha_frontend_port}"));
+        origins.push(format!("http://127.0.0.1:{ha_frontend_port}"));
+        origins.push(format!("http://homeassistant.local:{ha_frontend_port}"));
+        origins.push(format!("http://homeassistant:{ha_frontend_port}"));
+        origins.push(format!("https://homeassistant.local:{ha_frontend_port}"));
+        origins.push(format!("https://homeassistant:{ha_frontend_port}"));
+    }
 
     if !settings.gateway_public_url.trim().is_empty()
         && let Ok(parsed) = Url::parse(settings.gateway_public_url.trim())
@@ -1336,6 +1378,7 @@ mod tests {
             gateway_public_url: String::new(),
             homeassistant_token: "token".to_string(),
             run_doctor_on_start: false,
+            dangerous_enable_haos_http_control_ui_debug: false,
         }
     }
 
@@ -1366,6 +1409,18 @@ mod tests {
         let origins = build_control_ui_allowed_origins(&settings);
 
         assert!(origins.contains(&"https://homeassistant.local:18789".to_string()));
+    }
+
+    #[test]
+    fn allowed_origins_include_ha_http_hosts_when_debug_mode_is_enabled() {
+        let mut settings = sample_settings();
+        settings.dangerous_enable_haos_http_control_ui_debug = true;
+
+        let origins = build_control_ui_allowed_origins(&settings);
+
+        assert!(origins.contains(&"http://homeassistant.local:8123".to_string()));
+        assert!(origins.contains(&"http://homeassistant:8123".to_string()));
+        assert!(origins.contains(&"https://homeassistant.local:8123".to_string()));
     }
 
     #[test]
@@ -1592,7 +1647,10 @@ mod tests {
             config["agents"]["defaults"]["workspace"],
             args.openclaw_workspace_dir.display().to_string()
         );
-        assert_eq!(config["agents"]["defaults"]["userTimezone"], settings.timezone);
+        assert_eq!(
+            config["agents"]["defaults"]["userTimezone"],
+            settings.timezone
+        );
     }
 
     #[test]

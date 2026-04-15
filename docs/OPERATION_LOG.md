@@ -2,6 +2,27 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 23:40 Asia/Shanghai - Add an explicit dangerous debug switch for HAOS HTTP Control UI testing
+
+- User request:
+  - add a debug mode so the Home Assistant HTTP sidebar page can temporarily exercise the OpenClaw Control UI path for troubleshooting mobile login
+- Ground truth checked:
+  - official Control UI expects a secure context, so the normal HAOS HTTP sidebar route should stay disabled by default
+  - the prior shell already hid the `HAOS 网关（测试）` button on insecure HTTP pages, but there was no explicit operator override for temporary debugging
+- Outcome:
+  - added a new add-on option `dangerous_enable_haos_http_control_ui_debug` in `config.yaml`
+  - updated `crates/addon-supervisor/src/main.rs` so enabling that switch now exports a runtime flag, turns on the two official break-glass Control UI settings, and adds Home Assistant frontend origins to the allowlist
+  - updated `crates/haos-ui/src/main.rs` so the single-page shell exposes the override state clearly, keeps the HAOS test button available when the explicit override is enabled, and shows an obvious warning banner while the dangerous mode is active
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `translations/en.yaml`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p addon-supervisor -p haos-ui -p ingressd`
+
 ## 2026-04-16 23:04 Asia/Shanghai - Repair the CI image build after swapping in official branding
 
 - User request:

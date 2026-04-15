@@ -1,3 +1,10 @@
+## 2026.04.15.16
+
+- Config: add an explicit `dangerous_enable_haos_http_control_ui_debug` add-on option so HAOS HTTP sidebar testing is always opt-in and clearly labeled as unsafe
+- Runtime: when that debug switch is enabled, write `gateway.controlUi.allowInsecureAuth=true`, `gateway.controlUi.dangerouslyDisableDeviceAuth=true`, and extend `gateway.controlUi.allowedOrigins` with Home Assistant frontend origins so the HAOS-side test path can be exercised deliberately
+- UI: surface the dangerous debug state in the single-page shell, keep the HAOS test button available only when HTTPS is present or the explicit debug override is on, and show a visible warning banner when the override is active
+- Validation: `cargo test -p addon-supervisor -p haos-ui -p ingressd`
+
 ## 2026.04.15.15
 
 - CI: fix GitHub Actions image builds by moving the shell header lobster asset into `crates/haos-ui/assets/`, so `include_bytes!` resolves correctly inside the Docker builder workspace

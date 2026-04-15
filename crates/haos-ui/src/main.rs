@@ -34,6 +34,7 @@ struct PageConfig {
     openclaw_version: String,
     gateway_token: String,
     agent_model: String,
+    dangerous_haos_http_ui_debug: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -58,12 +59,26 @@ impl PageConfig {
                 .as_ref()
                 .and_then(detect_agent_model)
                 .unwrap_or_else(|| "未配置".to_string()),
+            dangerous_haos_http_ui_debug: env_flag("OPENCLAW_HAOS_HTTP_UI_DEBUG"),
         }
     }
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
     env::var(key).unwrap_or_else(|_| fallback.to_string())
+}
+
+fn env_flag(key: &str) -> bool {
+    matches!(
+        env::var(key).ok().as_deref(),
+        Some("1")
+            | Some("true")
+            | Some("TRUE")
+            | Some("yes")
+            | Some("YES")
+            | Some("on")
+            | Some("ON")
+    )
 }
 
 fn runtime_config_path() -> PathBuf {
@@ -412,6 +427,19 @@ fn render_shell(
             .unwrap_or(&config.gateway_token);
         format!("••••••••{suffix}")
     };
+    let ingress_hint = if config.dangerous_haos_http_ui_debug {
+        "危险调试已开启：当前允许在 Home Assistant 的 HTTP 侧边栏里强制打开 Control UI，仅用于临时排查手机或 WebView 登录问题。"
+    } else {
+        "测试入口只用于安全上下文下验证侧边栏链路。"
+    };
+    let debug_notice = if config.dangerous_haos_http_ui_debug {
+        r#"<section class="debug-strip">
+  <strong>危险调试已开启</strong>
+  <span>当前已允许在 HAOS HTTP 侧边栏里强制打开 OpenClaw Control UI，这会弱化设备认证保护。验证完成后请尽快关闭这个开关。</span>
+</section>"#
+    } else {
+        ""
+    };
 
     Html(format!(
         r##"<!doctype html>
@@ -611,6 +639,28 @@ h1 {{
   border-radius:28px;
   background:var(--panel-soft);
   box-shadow:0 24px 70px rgba(0,0,0,.28);
+}}
+.debug-strip {{
+  margin-top:20px;
+  padding:16px 18px;
+  border-radius:24px;
+  border:1px solid rgba(246,201,40,.24);
+  background:linear-gradient(180deg, rgba(55,38,8,.28), rgba(28,20,7,.18));
+  box-shadow:0 18px 50px rgba(0,0,0,.22);
+}}
+.debug-strip strong {{
+  display:block;
+  color:#ffd76a;
+  font-size:14px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}}
+.debug-strip span {{
+  display:block;
+  margin-top:8px;
+  color:#f4dd9c;
+  font-size:14px;
+  line-height:1.7;
 }}
 .metric-card {{
   min-height:236px;
@@ -1010,6 +1060,8 @@ pre {{
     </article>
   </section>
 
+  {debug_notice}
+
   <section class="action-deck">
     <article class="action-card">
       <div class="glyph">⌁</div>
@@ -1020,7 +1072,7 @@ pre {{
         <a class="btn btn-primary" id="ocGatewayLink" href="./open-gateway" target="_blank" rel="noopener noreferrer">打开网关</a>
         <button class="btn btn-secondary" id="ocIngressGatewayLink" type="button" onclick="ocOpenIngressGatewayWindow()">HAOS 网关（测试）</button>
       </div>
-      <div class="status-hint" id="ocIngressGatewayHint">测试入口只用于安全上下文下验证侧边栏链路。</div>
+      <div class="status-hint" id="ocIngressGatewayHint">{ingress_hint}</div>
     </article>
     <article class="action-card">
       <div class="glyph">&gt;_</div>
@@ -1070,6 +1122,7 @@ pre {{
 <script>
 const OC_GATEWAY_TOKEN = {gateway_token};
 const OC_GATEWAY_PORT = "{gateway_port}";
+const OC_HAOS_HTTP_UI_DEBUG = {dangerous_haos_http_ui_debug};
 
 function appendTokenHash(url) {{
   if (!OC_GATEWAY_TOKEN || !String(OC_GATEWAY_TOKEN).trim()) return url;
@@ -1077,7 +1130,9 @@ function appendTokenHash(url) {{
 }}
 
 function ocIngressGatewayHref() {{ return appendTokenHash(new URL("./gateway/", window.location.href).toString()); }}
-function ocIngressGatewayAllowed() {{ return window.location.protocol === "https:"; }}
+function ocIngressGatewayAllowed() {{
+  return window.location.protocol === "https:" || OC_HAOS_HTTP_UI_DEBUG;
+}}
 
 function syncIngressGatewayAvailability() {{
   const button = document.getElementById("ocIngressGatewayLink");
@@ -1089,7 +1144,9 @@ function syncIngressGatewayAvailability() {{
   }}
   if (hint) {{
     hint.textContent = allowed
-      ? "当前页面是安全上下文，测试入口可用于验证 Home Assistant 侧边栏路径。"
+      ? (OC_HAOS_HTTP_UI_DEBUG
+          ? "危险调试已开启：即使当前页面是 HAOS HTTP Ingress，也会保留测试入口，方便临时排查手机登录链路。"
+          : "当前页面是安全上下文，测试入口可用于验证 Home Assistant 侧边栏路径。")
       : "当前页面是 HTTP Ingress，上游官方不支持在这种非安全上下文里跑 Control UI，所以测试入口已自动隐藏。";
   }}
 }}
@@ -1192,6 +1249,11 @@ window.ocListDevices = async function(statusId, outputId) {{
         addon_version = html_escape(&config.addon_version),
         gateway_port = DEFAULT_GATEWAY_PORT,
         gateway_token = gateway_token,
+        dangerous_haos_http_ui_debug = if config.dangerous_haos_http_ui_debug {
+            "true"
+        } else {
+            "false"
+        },
         tone = tone,
         health_label = health_label,
         health_text = health_text,
@@ -1205,6 +1267,8 @@ window.ocListDevices = async function(statusId, outputId) {{
         },
         gateway_pid = html_escape(&gateway_pid),
         token_masked = html_escape(&token_masked),
+        ingress_hint = html_escape(ingress_hint),
+        debug_notice = debug_notice,
         openclaw_version = html_escape(&config.openclaw_version),
         openclaw_uptime = html_escape(&snapshot.openclaw_uptime)
     ))
@@ -1216,11 +1280,12 @@ mod tests {
 
     fn sample_page_config() -> PageConfig {
         PageConfig {
-            addon_version: "2026.04.15.12".to_string(),
+            addon_version: "2026.04.15.16".to_string(),
             gateway_url: String::new(),
             openclaw_version: "2026.4.14".to_string(),
             gateway_token: "tok_test_12345678".to_string(),
             agent_model: "openai-codex/gpt-5.4".to_string(),
+            dangerous_haos_http_ui_debug: false,
         }
     }
 
@@ -1271,6 +1336,18 @@ mod tests {
         assert!(html.contains("href=\"./open-gateway\""));
         assert!(html.contains("href=\"./open-shell\""));
         assert!(html.contains("当前模型"));
+    }
+
+    #[test]
+    fn render_shell_marks_dangerous_http_debug_mode() {
+        let mut config = sample_page_config();
+        config.dangerous_haos_http_ui_debug = true;
+        let snapshot = SystemSnapshot {
+            openclaw_uptime: "35 分钟".to_string(),
+        };
+        let Html(html) = render_shell(&config, &snapshot, Some(true));
+        assert!(html.contains("const OC_HAOS_HTTP_UI_DEBUG = true;"));
+        assert!(html.contains("危险调试已开启"));
     }
 
     #[test]

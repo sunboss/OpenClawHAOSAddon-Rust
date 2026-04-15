@@ -38,3 +38,6 @@ configuration:
   run_doctor_on_start:
     name: Run Doctor On Start
     description: Run openclaw doctor shortly after startup for diagnostics.
+  dangerous_enable_haos_http_control_ui_debug:
+    name: Dangerous HAOS HTTP Control UI Debug
+    description: Temporarily allow the Home Assistant HTTP sidebar page to force-open the OpenClaw Control UI for debugging. This weakens device-auth protection and should stay off in normal use.
