@@ -20,12 +20,11 @@ use url::Url;
 #[command(name = "addon-supervisor")]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    Plan,
     HaosEntry(HaosEntryArgs),
     RunServices {
         #[arg(long, default_value = "openclaw")]
@@ -53,8 +52,6 @@ struct HaosEntryArgs {
     openclaw_config_dir: PathBuf,
     #[arg(long, default_value = "/config/.openclaw/openclaw.json")]
     openclaw_config_path: PathBuf,
-    #[arg(long, default_value = "/config/.openclaw/addon-panel.json")]
-    panel_config_path: PathBuf,
     #[arg(long, default_value = "/config/.openclaw/workspace")]
     openclaw_workspace_dir: PathBuf,
     #[arg(long, default_value = "/config/.mcporter")]
@@ -63,8 +60,6 @@ struct HaosEntryArgs {
     mcporter_config: PathBuf,
     #[arg(long, default_value = "/config/certs")]
     cert_dir: PathBuf,
-    #[arg(long, default_value = "/share/openclaw-backup/latest")]
-    backup_dir: PathBuf,
     #[arg(long, default_value = "/run/openclaw-rs/public")]
     public_share_dir: PathBuf,
     #[arg(long, default_value_t = 18790)]
@@ -116,14 +111,8 @@ struct RuntimeSettings {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
-        Some(Commands::Plan) => {
-            println!("Planned Rust replacements:");
-            println!("- shell bootstrap in run.sh");
-            println!("- process supervision for openclaw, ingress, and UI services");
-            ExitCode::SUCCESS
-        }
-        Some(Commands::HaosEntry(args)) => haos_entry(args),
-        Some(Commands::RunServices {
+        Commands::HaosEntry(args) => haos_entry(args),
+        Commands::RunServices {
             gateway_bin,
             ui_bin,
             ingress_bin,
@@ -131,7 +120,7 @@ fn main() -> ExitCode {
             gateway_mode,
             gateway_remote_url,
             run_doctor_on_start,
-        }) => run_services(
+        } => run_services(
             gateway_bin,
             ui_bin,
             ingress_bin,
@@ -140,11 +129,6 @@ fn main() -> ExitCode {
             gateway_remote_url,
             run_doctor_on_start,
         ),
-        None => {
-            println!("addon-supervisor scaffold ready");
-            println!("Next step: replace run.sh orchestration with Rust process control.");
-            ExitCode::SUCCESS
-        }
     }
 }
 
@@ -196,7 +180,6 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
     let add_on_version = detect_addon_version();
     let openclaw_version = detect_openclaw_version(&args.gateway_bin);
     apply_status_env(&add_on_version, &openclaw_version);
-    backup_state(&args);
 
     run_services(
         args.gateway_bin,
@@ -253,7 +236,6 @@ fn prepare_directories(args: &HaosEntryArgs) -> std::io::Result<()> {
         &args.openclaw_workspace_dir.join("memory"),
         &args.mcporter_home_dir,
         &args.cert_dir,
-        &args.backup_dir,
         &args.public_share_dir,
         &PathBuf::from("/var/tmp/openclaw-compile-cache"),
     ] {
@@ -312,29 +294,6 @@ fn create_dir_symlink(_src: &Path, _dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn merge_json_overlay(base: &mut serde_json::Value, overlay: &serde_json::Value) {
-    match (base, overlay) {
-        (serde_json::Value::Object(base_obj), serde_json::Value::Object(overlay_obj)) => {
-            for (key, value) in overlay_obj {
-                if let Some(existing) = base_obj.get_mut(key) {
-                    merge_json_overlay(existing, value);
-                } else {
-                    base_obj.insert(key.clone(), value.clone());
-                }
-            }
-        }
-        (base_slot, overlay_value) => {
-            *base_slot = overlay_value.clone();
-        }
-    }
-}
-
-fn load_panel_overrides(path: &Path) -> Option<serde_json::Value> {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-}
-
 fn bootstrap_openclaw_config(
     args: &HaosEntryArgs,
     settings: &RuntimeSettings,
@@ -370,9 +329,6 @@ fn bootstrap_openclaw_config(
         object.remove("workspaceDir");
     }
     ensure_workspace_path(&mut config, args);
-    if let Some(overlay) = load_panel_overrides(&args.panel_config_path) {
-        merge_json_overlay(&mut config, &overlay);
-    }
 
     if let Some(parent) = args.openclaw_config_path.parent() {
         fs::create_dir_all(parent)?;
@@ -426,7 +382,6 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("TZ", &settings.timezone);
         env::set_var("OPENCLAW_CONFIG_DIR", &args.openclaw_config_dir);
         env::set_var("OPENCLAW_CONFIG_PATH", &args.openclaw_config_path);
-        env::set_var("HAOS_PANEL_CONFIG_PATH", &args.panel_config_path);
         env::set_var("OPENCLAW_STATE_DIR", &args.openclaw_config_dir);
         env::set_var("OPENCLAW_WORKSPACE_DIR", &args.openclaw_workspace_dir);
         env::set_var("XDG_CONFIG_HOME", "/config");
@@ -712,29 +667,6 @@ fn detect_openclaw_version(gateway_bin: &str) -> String {
 
 fn detect_addon_version() -> String {
     env::var("ADDON_VERSION").unwrap_or_else(|_| "unknown".to_string())
-}
-
-fn backup_state(args: &HaosEntryArgs) {
-    let openclaw_target = args.backup_dir.join(".openclaw");
-    let mcporter_target = args.backup_dir.join(".mcporter");
-    let _ = run_status(
-        "rsync",
-        &[
-            "-a",
-            "--delete",
-            &format!("{}/", args.openclaw_config_dir.display()),
-            &format!("{}/", openclaw_target.display()),
-        ],
-    );
-    let _ = run_status(
-        "rsync",
-        &[
-            "-a",
-            "--delete",
-            &format!("{}/", args.mcporter_home_dir.display()),
-            &format!("{}/", mcporter_target.display()),
-        ],
-    );
 }
 
 fn run_capture(program: &str, args: &[&str]) -> Option<String> {
@@ -1286,7 +1218,6 @@ fn apply_child_env(command: &mut Command) {
         "TZ",
         "OPENCLAW_CONFIG_DIR",
         "OPENCLAW_CONFIG_PATH",
-        "HAOS_PANEL_CONFIG_PATH",
         "OPENCLAW_STATE_DIR",
         "OPENCLAW_WORKSPACE_DIR",
         "XDG_CONFIG_HOME",
@@ -1466,12 +1397,10 @@ mod tests {
             options_file: root.join("options.json"),
             openclaw_config_dir: root.join(".openclaw"),
             openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
-            panel_config_path: root.join(".openclaw").join("addon-panel.json"),
             openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
             mcporter_home_dir: root.join(".mcporter"),
             mcporter_config: root.join(".mcporter").join("mcporter.json"),
             cert_dir: root.join("certs"),
-            backup_dir: root.join("backup"),
             public_share_dir: root.join("html"),
             gateway_internal_port: 18789,
             ui_port: 48101,
@@ -1521,12 +1450,10 @@ mod tests {
             options_file: root.join("options.json"),
             openclaw_config_dir: root.join(".openclaw"),
             openclaw_config_path: root.join(".openclaw").join("openclaw.json"),
-            panel_config_path: root.join(".openclaw").join("addon-panel.json"),
             openclaw_workspace_dir: root.join(".openclaw").join("workspace"),
             mcporter_home_dir: root.join(".mcporter"),
             mcporter_config: root.join(".mcporter").join("mcporter.json"),
             cert_dir: root.join("certs"),
-            backup_dir: root.join("backup"),
             public_share_dir: root.join("html"),
             gateway_internal_port: 18789,
             ui_port: 48101,

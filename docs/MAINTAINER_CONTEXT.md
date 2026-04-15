@@ -29,8 +29,8 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
   - external HTTPS gateway proxy
   - local health/readiness endpoints
 - `crates/haos-ui`
-  - multi-page HAOS UI shell
-  - keeps home-page status and resource overview
+  - Hermes-style single-page HAOS shell
+  - keeps only the Gateway open path, maintenance Shell, token display, device approval, and a small status block
 - `crates/oc-config`
   - JSON helpers for `openclaw.json`
 
@@ -72,9 +72,6 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 - Current working boundary in this add-on:
   - OpenClaw config file:
     - `/config/.openclaw/openclaw.json`
-  - HA panel overlay config:
-    - `/config/.openclaw/addon-panel.json`
-    - only store values the user explicitly configures through the HA panel
   - MCPorter config file:
     - `/config/.mcporter/mcporter.json`
     - prefer writing the official persisted config shape directly:
@@ -93,8 +90,6 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
     - `/var/tmp/openclaw-compile-cache`
   - Certificates:
     - `/config/certs`
-  - Backups:
-    - `/share/openclaw-backup/latest`
 
 ## Native Gateway status
 
@@ -123,41 +118,32 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 
 ## UI direction
 
-- The UI should feel coordinated with Home Assistant.
-- Keep the soft gradient / glow background if it still looks clean.
-- Avoid obvious OpenWrt-style visual language in the header.
+- The UI should feel coordinated with Home Assistant and stay close to the thin Hermes shell model.
+- Prefer a light, calm, utility-first page instead of a heavy console or multi-page dashboard.
 - Use Chinese for user-facing UI copy.
 - Command labels can be Chinese, but executed commands stay in English.
 - User-facing copy should explain what to do, not internal architecture rationale.
-- The home page must keep:
-  - status overview
-  - resource overview
-  - concise quick entry points
+- The single page must keep:
+  - 打开网关
+  - 维护 Shell
+  - Gateway 状态
+  - Gateway Token 显示
+  - 待批准设备列表与最新授权确认
 
 ## Current page structure
 
-- `Home`
-  - status overview
-  - resource overview
-  - concise quick entry points only
-- `Config`
-  - add-on managed settings only
-  - Web Search / Memory Search / model forms
-- `Commands`
-  - official-style native entrypoints
-  - copyable command reference only
-- `Logs`
-  - log/doctor command reference only
+- Single page only
+  - Gateway open action
+  - Shell open action
+  - small Gateway runtime status block
+  - token reveal/copy
+  - device list / approve-latest actions
 
 ## Pending recurring cleanup themes
 
-- Remove duplicated summary blocks if they repeat the same data.
-- Prefer one clear source of truth per page.
-- PID display should read like status badges, not generic pills.
-- Do not keep fake controls that do nothing.
-- If a button cannot do real work reliably, replace it with guidance instead of a fake action.
-
-## Command-page expectations
+- Prefer one clear source of truth per behavior.
+- Do not keep compatibility layers once the single-page shell no longer links to them.
+- Do not add new local control panels when the upstream Gateway or Shell already provides the real surface.
 
 - Group command actions in a way that feels close to official helper flows:
   - `Native entrypoints`

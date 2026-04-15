@@ -40,7 +40,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python-is-python3 \
     procps \
     iproute2 \
-    rsync \
     tzdata \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

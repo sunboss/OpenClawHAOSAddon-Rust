@@ -1,3 +1,12 @@
+## 2026.04.15.4
+
+- Cleanup: removed the last dead `addon-panel.json` overlay merge path from `addon-supervisor`, so the single-page Hermes shell no longer carries legacy HA panel config layering
+- Cleanup: removed the old auto-backup chain from `addon-supervisor`, dropped the unused `backup_dir` runtime path, and removed the `rsync` runtime dependency from the image
+- Cleanup: removed the obsolete `Plan` scaffold subcommand from `addon-supervisor` and trimmed child env propagation to the vars still used by the live runtime
+- Routing: removed the last `/terminal` compatibility routes from `ingressd`, keeping `ttyd` only under the direct `/shell/` entry used by the Hermes-style page
+- UX: simplified the single-page Shell button wiring so it opens the full `ttyd` Web Shell directly, without legacy command plumbing
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.3
 
 - UI: aligned the Home Assistant sidebar page further toward the Hermes thin-shell model, keeping a single light single-page surface with only Gateway open, maintenance Shell, Gateway status, token display, and device approval actions

@@ -2,6 +2,33 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 20:10 Asia/Shanghai - Strip remaining legacy panel overlay and backup logic
+
+- User request:
+  - keep shrinking everything that no longer belongs to the Hermes-style single-page shell
+  - review what can still be deleted from runtime code and image contents
+- Official references kept in mind:
+  - Control UI remains the upstream single-page console served by the Gateway
+  - the HA add-on should stay a thin shell and avoid carrying extra local control planes or stale UI compatibility layers
+- Outcome:
+  - removed the dead `addon-panel.json` merge path from `crates/addon-supervisor/src/main.rs`
+  - removed the old backup export chain and dropped `/share/openclaw-backup/latest` from live runtime behavior
+  - removed the obsolete `Plan` scaffold subcommand from `addon-supervisor`
+  - removed the `/terminal` compatibility routes from `crates/ingressd/src/main.rs`, keeping only the direct `ttyd`-backed `/shell/` path
+  - removed `rsync` from the runtime image because no live code path still uses it
+  - updated maintainer/runtime docs so the repository description matches the actual single-page Hermes shell architecture
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `Dockerfile`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `docs/RUNTIME_BOUNDARIES.md`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 17:30 Asia/Shanghai - Slim the Hermes-style shell and remove the dead embedded terminal
 
 - User request:

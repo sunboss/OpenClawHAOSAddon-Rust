@@ -141,8 +141,6 @@ async fn main() {
 
 fn build_ingress_router(state: AppState) -> Router {
     Router::new()
-        .route("/terminal", get(shell_redirect))
-        .route("/terminal/", get(shell_redirect))
         .route("/shell", get(shell_redirect))
         .route("/shell/", any(proxy_shell))
         .route("/shell/{*path}", any(proxy_shell))
