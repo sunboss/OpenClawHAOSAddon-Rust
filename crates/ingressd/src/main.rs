@@ -1,6 +1,5 @@
 use axum::{
-    Json,
-    Router,
+    Json, Router,
     body::{Body, Bytes, to_bytes},
     extract::{
         ConnectInfo, Request, State,
@@ -15,11 +14,7 @@ use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use rustls::crypto::aws_lc_rs;
 use serde::Serialize;
-use std::{
-    env, fs,
-    net::SocketAddr,
-    path::PathBuf,
-};
+use std::{env, fs, net::SocketAddr, path::PathBuf};
 use tokio::{
     net::TcpStream,
     time::{Duration, timeout},
@@ -443,7 +438,10 @@ async fn proxy_http_request(
     strip_prefix: Option<&str>,
 ) -> Response<Body> {
     let (parts, body) = request.into_parts();
-    let mut target = format!("{base}{}", rewrite_proxy_path(parts.uri.path(), strip_prefix));
+    let mut target = format!(
+        "{base}{}",
+        rewrite_proxy_path(parts.uri.path(), strip_prefix)
+    );
     if let Some(query) = parts.uri.query() {
         target.push('?');
         target.push_str(query);
@@ -785,7 +783,6 @@ fn should_skip_response_header(name: &HeaderName) -> bool {
     )
 }
 
-
 async fn local_health() -> (StatusCode, Json<ActionResponse>) {
     let probe = local_gateway_probe().await;
     (
@@ -813,7 +810,9 @@ async fn local_readyz() -> (StatusCode, [(HeaderName, &'static str); 1], String)
     probe_text_response(local_gateway_probe().await)
 }
 
-fn probe_text_response(probe: GatewayProbe) -> (StatusCode, [(HeaderName, &'static str); 1], String) {
+fn probe_text_response(
+    probe: GatewayProbe,
+) -> (StatusCode, [(HeaderName, &'static str); 1], String) {
     let body = if probe.ok {
         format!("ok: {}\n", probe.stdout)
     } else if !probe.stderr.is_empty() {
@@ -833,9 +832,7 @@ fn probe_text_response(probe: GatewayProbe) -> (StatusCode, [(HeaderName, &'stat
 
 async fn local_gateway_probe() -> GatewayProbe {
     let port = configured_gateway_port();
-    let gateway_mode = env::var("GATEWAY_MODE").unwrap_or_else(|_| "local".to_string());
-
-    let Some((process_name, pid)) = current_gateway_process() else {
+    let Some(pid) = current_gateway_pid() else {
         return GatewayProbe {
             ok: false,
             status: StatusCode::SERVICE_UNAVAILABLE,
@@ -844,16 +841,6 @@ async fn local_gateway_probe() -> GatewayProbe {
             error: Some("missing_gateway_pid".to_string()),
         };
     };
-
-    if !gateway_process_requires_local_port(&gateway_mode, process_name) {
-        return GatewayProbe {
-            ok: true,
-            status: StatusCode::OK,
-            stdout: format!("{process_name} pid {pid} running in {gateway_mode} mode"),
-            stderr: String::new(),
-            error: None,
-        };
-    }
 
     let target = format!("127.0.0.1:{port}");
     let port_ready = timeout(Duration::from_millis(800), TcpStream::connect(&target))
@@ -865,7 +852,7 @@ async fn local_gateway_probe() -> GatewayProbe {
         return GatewayProbe {
             ok: true,
             status: StatusCode::OK,
-            stdout: format!("{process_name} pid {pid} listening on {target}"),
+            stdout: format!("openclaw-gateway pid {pid} listening on {target}"),
             stderr: String::new(),
             error: None,
         };
@@ -874,7 +861,7 @@ async fn local_gateway_probe() -> GatewayProbe {
     GatewayProbe {
         ok: false,
         status: StatusCode::SERVICE_UNAVAILABLE,
-        stdout: format!("{process_name} pid {pid} present"),
+        stdout: format!("openclaw-gateway pid {pid} present"),
         stderr: format!("gateway port {target} is not accepting connections yet"),
         error: Some("gateway_port_not_ready".to_string()),
     }
@@ -887,24 +874,8 @@ fn configured_gateway_port() -> u16 {
         .unwrap_or(18790)
 }
 
-fn current_gateway_process() -> Option<(&'static str, String)> {
-    select_gateway_process(
-        non_empty_trimmed_file("/run/openclaw-rs/openclaw-gateway.pid"),
-        non_empty_trimmed_file("/run/openclaw-rs/openclaw-node.pid"),
-    )
-}
-
-fn select_gateway_process(
-    gateway_pid: Option<String>,
-    node_pid: Option<String>,
-) -> Option<(&'static str, String)> {
-    gateway_pid
-        .map(|pid| ("openclaw-gateway", pid))
-        .or_else(|| node_pid.map(|pid| ("openclaw-node", pid)))
-}
-
-fn gateway_process_requires_local_port(gateway_mode: &str, process_name: &str) -> bool {
-    !(gateway_mode == "remote" && process_name == "openclaw-node")
+fn current_gateway_pid() -> Option<String> {
+    non_empty_trimmed_file("/run/openclaw-rs/openclaw-gateway.pid")
 }
 
 fn non_empty_trimmed_file(path: &str) -> Option<String> {

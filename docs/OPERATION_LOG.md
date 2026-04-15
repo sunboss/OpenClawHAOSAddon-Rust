@@ -2,6 +2,29 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 21:10 Asia/Shanghai - Remove the last dead multi-mode config surface
+
+- User request:
+  - continue deleting everything unnecessary
+  - keep the add-on visually and behaviorally aligned with the Hermes single-page shell
+  - review whether the current official OpenClaw model allows further cleanup
+- Official references kept in mind:
+  - Control UI is already a small single-page app served by the Gateway on the same port
+  - the add-on has already committed to a fixed external HTTPS Gateway path with a local loopback runtime underneath
+- Outcome:
+  - removed `gateway_mode`, `gateway_remote_url`, `gateway_port`, `access_mode`, `enable_openai_api`, and `auto_configure_mcp` from the add-on manifest surface
+  - rewrote `crates/haos-ui/src/main.rs` into a cleaner Hermes-style single page with no leftover access-mode plumbing
+  - simplified `crates/ingressd/src/main.rs` readiness probing to the fixed `openclaw-gateway` process and local loopback port
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 20:45 Asia/Shanghai - Freeze HTTPS proxy behavior into the runtime baseline
 
 - User request:

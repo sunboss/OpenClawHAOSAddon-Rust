@@ -35,10 +35,6 @@ enum Commands {
         ingress_bin: String,
         #[arg(long, default_value = "ttyd")]
         ttyd_bin: String,
-        #[arg(long, default_value = "local")]
-        gateway_mode: String,
-        #[arg(long, default_value = "")]
-        gateway_remote_url: String,
         #[arg(long, default_value_t = true)]
         run_doctor_on_start: bool,
     },
@@ -82,13 +78,7 @@ struct HaosEntryArgs {
 struct AddonOptions {
     timezone: Option<String>,
     disable_bonjour: Option<bool>,
-    gateway_mode: Option<String>,
-    gateway_remote_url: Option<String>,
     gateway_public_url: Option<String>,
-    gateway_port: Option<u16>,
-    access_mode: Option<String>,
-    enable_openai_api: Option<bool>,
-    auto_configure_mcp: Option<bool>,
     homeassistant_token: Option<String>,
     run_doctor_on_start: Option<bool>,
 }
@@ -97,13 +87,7 @@ struct AddonOptions {
 struct RuntimeSettings {
     timezone: String,
     disable_bonjour: bool,
-    gateway_mode: String,
-    gateway_remote_url: String,
     gateway_public_url: String,
-    https_port: u16,
-    access_mode: String,
-    enable_openai_api: bool,
-    auto_configure_mcp: bool,
     homeassistant_token: String,
     run_doctor_on_start: bool,
 }
@@ -117,16 +101,12 @@ fn main() -> ExitCode {
             ui_bin,
             ingress_bin,
             ttyd_bin,
-            gateway_mode,
-            gateway_remote_url,
             run_doctor_on_start,
         } => run_services(
             gateway_bin,
             ui_bin,
             ingress_bin,
             ttyd_bin,
-            gateway_mode,
-            gateway_remote_url,
             run_doctor_on_start,
         ),
     }
@@ -151,7 +131,7 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    if let Err(err) = bootstrap_openclaw_config(&args, &settings) {
+    if let Err(err) = bootstrap_openclaw_config(&args) {
         eprintln!("addon-supervisor: failed to bootstrap OpenClaw config: {err}");
         return ExitCode::from(1);
     }
@@ -173,7 +153,7 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    if settings.auto_configure_mcp && !settings.homeassistant_token.is_empty() {
+    if !settings.homeassistant_token.is_empty() {
         let _ = configure_home_assistant_mcp(&args, &settings.homeassistant_token);
     }
 
@@ -186,8 +166,6 @@ fn haos_entry(args: HaosEntryArgs) -> ExitCode {
         args.ui_bin,
         args.ingress_bin,
         args.ttyd_bin,
-        settings.gateway_mode,
-        settings.gateway_remote_url,
         settings.run_doctor_on_start,
     )
 }
@@ -206,19 +184,7 @@ fn runtime_settings(options: &AddonOptions) -> RuntimeSettings {
             .clone()
             .unwrap_or_else(|| "Asia/Shanghai".to_string()),
         disable_bonjour: options.disable_bonjour.unwrap_or(true),
-        gateway_mode: options
-            .gateway_mode
-            .clone()
-            .unwrap_or_else(|| "local".to_string()),
-        gateway_remote_url: options.gateway_remote_url.clone().unwrap_or_default(),
         gateway_public_url: options.gateway_public_url.clone().unwrap_or_default(),
-        https_port: options.gateway_port.unwrap_or(18789),
-        access_mode: options
-            .access_mode
-            .clone()
-            .unwrap_or_else(|| "lan_https".to_string()),
-        enable_openai_api: options.enable_openai_api.unwrap_or(true),
-        auto_configure_mcp: options.auto_configure_mcp.unwrap_or(true),
         homeassistant_token: options.homeassistant_token.clone().unwrap_or_default(),
         run_doctor_on_start: options.run_doctor_on_start.unwrap_or(false),
     }
@@ -294,10 +260,7 @@ fn create_dir_symlink(_src: &Path, _dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn bootstrap_openclaw_config(
-    args: &HaosEntryArgs,
-    settings: &RuntimeSettings,
-) -> std::io::Result<()> {
+fn bootstrap_openclaw_config(args: &HaosEntryArgs) -> std::io::Result<()> {
     let mut config = if args.openclaw_config_path.exists() {
         fs::read_to_string(&args.openclaw_config_path)
             .ok()
@@ -318,7 +281,7 @@ fn bootstrap_openclaw_config(
                 "http": {
                     "endpoints": {
                         "chatCompletions": {
-                            "enabled": settings.enable_openai_api
+                            "enabled": true
                         }
                     }
                 }
@@ -393,10 +356,8 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
         env::set_var("UI_PORT", args.ui_port.to_string());
         env::set_var("INGRESS_PORT", "48099");
         env::set_var("TTYD_PORT", "7681");
-        env::set_var("ACCESS_MODE", &settings.access_mode);
-        env::set_var("GATEWAY_MODE", &settings.gateway_mode);
         env::set_var("GW_PUBLIC_URL", &settings.gateway_public_url);
-        env::set_var("HTTPS_PORT", settings.https_port.to_string());
+        env::set_var("HTTPS_PORT", "18789");
         env::set_var(
             "OPENCLAW_DISABLE_BONJOUR",
             if settings.disable_bonjour { "1" } else { "0" },
@@ -420,15 +381,11 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
         &args.oc_config_bin,
         &[
             "apply-gateway-settings",
-            &settings.gateway_mode,
-            &settings.gateway_remote_url,
+            "local",
+            "",
             "loopback",
             &args.gateway_internal_port.to_string(),
-            if settings.enable_openai_api {
-                "true"
-            } else {
-                "false"
-            },
+            "true",
             "token",
             "127.0.0.1/32,::1/128",
         ],
@@ -470,18 +427,16 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
 
 fn build_control_ui_allowed_origins(settings: &RuntimeSettings) -> Vec<String> {
     let mut origins = Vec::<String>::new();
-    let gateway_port = settings.https_port;
+    let gateway_port = 18789;
     let scheme = "https";
 
-    if settings.access_mode == "lan_https" {
-        for ip in detect_lan_ips() {
-            origins.push(format!("{scheme}://{ip}:{gateway_port}"));
-        }
-        origins.push(format!("{scheme}://localhost:{gateway_port}"));
-        origins.push(format!("{scheme}://127.0.0.1:{gateway_port}"));
-        origins.push(format!("{scheme}://homeassistant.local:{gateway_port}"));
-        origins.push(format!("{scheme}://homeassistant:{gateway_port}"));
+    for ip in detect_lan_ips() {
+        origins.push(format!("{scheme}://{ip}:{gateway_port}"));
     }
+    origins.push(format!("{scheme}://localhost:{gateway_port}"));
+    origins.push(format!("{scheme}://127.0.0.1:{gateway_port}"));
+    origins.push(format!("{scheme}://homeassistant.local:{gateway_port}"));
+    origins.push(format!("{scheme}://homeassistant:{gateway_port}"));
 
     if !settings.gateway_public_url.trim().is_empty()
         && let Ok(parsed) = Url::parse(settings.gateway_public_url.trim())
@@ -692,10 +647,8 @@ fn ensure_runtime_dir() -> std::io::Result<()> {
 }
 
 fn startup_doctor_marker_path() -> PathBuf {
-    Path::new(
-        &env::var("OPENCLAW_CONFIG_DIR").unwrap_or_else(|_| "/config/.openclaw".to_string()),
-    )
-    .join(".startup-doctor-complete")
+    Path::new(&env::var("OPENCLAW_CONFIG_DIR").unwrap_or_else(|_| "/config/.openclaw".to_string()))
+        .join(".startup-doctor-complete")
 }
 
 fn should_run_startup_doctor(force_on_start: bool) -> bool {
@@ -742,8 +695,6 @@ fn run_services(
     ui_bin: String,
     ingress_bin: String,
     ttyd_bin: String,
-    gateway_mode: String,
-    gateway_remote_url: String,
     run_doctor_on_start: bool,
 ) -> ExitCode {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -765,14 +716,7 @@ fn run_services(
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let mut handles = Vec::new();
 
-        let gateway_spec =
-            match build_gateway_spec(gateway_bin.clone(), &gateway_mode, &gateway_remote_url) {
-                Ok(spec) => spec,
-                Err(err) => {
-                    eprintln!("addon-supervisor: invalid gateway runtime settings: {err}");
-                    return ExitCode::from(1);
-                }
-            };
+        let gateway_spec = build_gateway_spec(gateway_bin.clone());
 
         handles.push(tokio::spawn(run_managed_process(
             gateway_spec,
@@ -831,50 +775,12 @@ fn run_services(
     })
 }
 
-fn build_gateway_spec(
-    gateway_bin: String,
-    gateway_mode: &str,
-    gateway_remote_url: &str,
-) -> Result<ProcessSpec, String> {
-    match gateway_mode {
-        "remote" => {
-            let parsed = Url::parse(gateway_remote_url)
-                .map_err(|err| format!("failed to parse gateway_remote_url: {err}"))?;
-            let scheme = parsed.scheme();
-            if scheme != "ws" && scheme != "wss" {
-                return Err(format!(
-                    "gateway_remote_url must use ws:// or wss://, got {scheme}://"
-                ));
-            }
-            let host = parsed
-                .host_str()
-                .ok_or_else(|| "gateway_remote_url is missing host".to_string())?;
-            let port = parsed
-                .port_or_known_default()
-                .ok_or_else(|| "gateway_remote_url is missing port".to_string())?;
-
-            let mut args = vec![
-                "node".to_string(),
-                "run".to_string(),
-                "--host".to_string(),
-                host.to_string(),
-                "--port".to_string(),
-                port.to_string(),
-            ];
-            if scheme == "wss" {
-                args.push("--tls".to_string());
-            }
-            Ok(ProcessSpec::new("openclaw-node", gateway_bin, args))
-        }
-        "local" | "" => Ok(ProcessSpec::new(
-            "openclaw-gateway",
-            gateway_bin,
-            vec!["gateway".to_string(), "run".to_string()],
-        )),
-        other => Err(format!(
-            "unsupported gateway_mode '{other}' (expected local or remote)"
-        )),
-    }
+fn build_gateway_spec(gateway_bin: String) -> ProcessSpec {
+    ProcessSpec::new(
+        "openclaw-gateway",
+        gateway_bin,
+        vec!["gateway".to_string(), "run".to_string()],
+    )
 }
 
 #[derive(Clone)]
@@ -1136,7 +1042,8 @@ fn upsert_home_assistant_mcp_server(
     args: &HaosEntryArgs,
     homeassistant_token: &str,
 ) -> std::io::Result<()> {
-    let contents = fs::read_to_string(&args.mcporter_config).unwrap_or_else(|_| "{\"mcpServers\":{}}\n".to_string());
+    let contents = fs::read_to_string(&args.mcporter_config)
+        .unwrap_or_else(|_| "{\"mcpServers\":{}}\n".to_string());
     let mut config = serde_json::from_str::<serde_json::Value>(&contents)
         .unwrap_or_else(|_| serde_json::json!({ "mcpServers": {} }));
 
@@ -1169,7 +1076,8 @@ fn upsert_home_assistant_mcp_server(
         &args.mcporter_config,
         format!(
             "{}\n",
-            serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{\"mcpServers\":{}}".to_string())
+            serde_json::to_string_pretty(&config)
+                .unwrap_or_else(|_| "{\"mcpServers\":{}}".to_string())
         ),
     )
 }
@@ -1220,8 +1128,6 @@ fn apply_child_env(command: &mut Command) {
         "UI_PORT",
         "INGRESS_PORT",
         "TTYD_PORT",
-        "ACCESS_MODE",
-        "GATEWAY_MODE",
         "GW_PUBLIC_URL",
         "HTTPS_PORT",
         "OPENCLAW_DISABLE_BONJOUR",
@@ -1244,13 +1150,7 @@ mod tests {
         RuntimeSettings {
             timezone: "Asia/Shanghai".to_string(),
             disable_bonjour: false,
-            gateway_mode: "gateway".to_string(),
-            gateway_remote_url: String::new(),
             gateway_public_url: String::new(),
-            https_port: 9443,
-            access_mode: "lan_https".to_string(),
-            enable_openai_api: false,
-            auto_configure_mcp: true,
             homeassistant_token: "token".to_string(),
             run_doctor_on_start: false,
         }
@@ -1264,8 +1164,8 @@ mod tests {
         let origins = build_control_ui_allowed_origins(&settings);
 
         assert!(origins.contains(&"https://gateway.example.com".to_string()));
-        assert!(origins.contains(&"https://homeassistant.local:9443".to_string()));
-        assert!(origins.contains(&"https://homeassistant:9443".to_string()));
+        assert!(origins.contains(&"https://homeassistant.local:18789".to_string()));
+        assert!(origins.contains(&"https://homeassistant:18789".to_string()));
 
         let unique_count = origins.iter().collect::<HashSet<_>>().len();
         assert_eq!(origins.len(), unique_count);
@@ -1278,12 +1178,11 @@ mod tests {
     #[test]
     fn allowed_origins_ignore_invalid_public_url_without_lan_mode() {
         let mut settings = sample_settings();
-        settings.access_mode = "remote_https".to_string();
         settings.gateway_public_url = "not-a-url".to_string();
 
         let origins = build_control_ui_allowed_origins(&settings);
 
-        assert!(origins.is_empty());
+        assert!(origins.contains(&"https://homeassistant.local:18789".to_string()));
     }
 
     #[test]
@@ -1460,5 +1359,4 @@ mod tests {
 
         let _ = fs::remove_dir_all(root);
     }
-
 }

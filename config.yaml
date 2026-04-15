@@ -1,5 +1,5 @@
 name: OpenClawHAOSAddon-Rust
-version: "2026.04.15.6"
+version: "2026.04.15.7"
 slug: openclaw_assistant_rust
 description: Rust rewrite of the local HAOS add-on layer while keeping upstream OpenClaw runtimes unchanged.
 url: https://github.com/sunboss/OpenClawHAOSAddon-Rust
@@ -22,25 +22,13 @@ map:
 options:
   timezone: "Asia/Shanghai"
   disable_bonjour: true
-  gateway_mode: local
-  gateway_remote_url: ""
   gateway_public_url: ""
-  gateway_port: 18789
-  access_mode: lan_https
-  enable_openai_api: true
-  auto_configure_mcp: true
   homeassistant_token: ""
   run_doctor_on_start: false
 
 schema:
   timezone: str
   disable_bonjour: bool?
-  gateway_mode: list(local|remote)?
-  gateway_remote_url: str?
   gateway_public_url: str?
-  gateway_port: int(1,65535)?
-  access_mode: list(custom|local_only|lan_https|lan_reverse_proxy|tailnet_https)?
-  enable_openai_api: bool?
-  auto_configure_mcp: bool?
   homeassistant_token: str?
   run_doctor_on_start: bool?

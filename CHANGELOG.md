@@ -1,3 +1,10 @@
+## 2026.04.15.7
+
+- Cleanup: removed the last exposed remote/local gateway mode options from `config.yaml`, leaving only the small option surface the Hermes-style single-page shell still uses
+- Cleanup: rewrote `crates/haos-ui/src/main.rs` as a clean single-file Hermes thin shell with only Gateway open, Shell open, Gateway status, token display, and device approval actions
+- Cleanup: simplified `crates/ingressd/src/main.rs` health probing to the fixed local `openclaw-gateway` process instead of carrying dead remote-mode branching
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.6
 
 - Runtime: removed the last `ENABLE_HTTPS_PROXY` / `HTTPS_PROXY_PORT` toggle path and made the external HTTPS Gateway proxy the fixed add-on architecture
