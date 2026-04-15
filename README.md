@@ -1,6 +1,6 @@
 # OpenClawHAOSAddon-Rust
 
-![OpenClawHAOSAddon-Rust](./logo.png)
+<img src="https://raw.githubusercontent.com/sunboss/OpenClawHAOSAddon-Rust/main/logo.png" alt="OpenClaw official logo" width="560">
 
 [![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fsunboss%2FOpenClawHAOSAddon-Rust)
 [![GitHub last commit](https://img.shields.io/github/last-commit/sunboss/OpenClawHAOSAddon-Rust)](https://github.com/sunboss/OpenClawHAOSAddon-Rust/commits/main)

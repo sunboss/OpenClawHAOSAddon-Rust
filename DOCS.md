@@ -1,6 +1,6 @@
 # OpenClawHAOSAddon-Rust 说明文档
 
-![OpenClawHAOSAddon-Rust](./logo.png)
+<img src="https://raw.githubusercontent.com/sunboss/OpenClawHAOSAddon-Rust/main/logo.png" alt="OpenClaw official logo" width="560">
 
 ## 这个 add-on 做什么
 
