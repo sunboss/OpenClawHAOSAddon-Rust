@@ -301,7 +301,7 @@ async fn open_shell() -> impl IntoResponse {
 async fn brand_icon() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "image/png")],
-        include_bytes!("../../../icon.png").as_slice(),
+        include_bytes!("../assets/brand-icon.png").as_slice(),
     )
 }
 

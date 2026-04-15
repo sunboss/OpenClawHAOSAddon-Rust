@@ -1,3 +1,8 @@
+## 2026.04.15.15
+
+- CI: fix GitHub Actions image builds by moving the shell header lobster asset into `crates/haos-ui/assets/`, so `include_bytes!` resolves correctly inside the Docker builder workspace
+- Validation: `cargo test -p addon-supervisor -p haos-ui -p ingressd`
+
 ## 2026.04.15.14
 
 - Runtime: write add-on timezone into the official `agents.defaults.userTimezone` field instead of keeping it only as a container-level wrapper setting

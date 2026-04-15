@@ -2,6 +2,27 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-16 23:04 Asia/Shanghai - Repair the CI image build after swapping in official branding
+
+- User request:
+  - investigate why the push appeared to fail after the branding swap
+- Ground truth checked:
+  - `git push` itself had succeeded and `origin/main` matched local `HEAD`
+  - the failing piece was the latest `Build and Push GHCR Image` GitHub Actions run
+  - the exact build error was `couldn't read crates/haos-ui/src/../../../icon.png` during Docker builder compilation, because the builder stage only copies `Cargo.toml`, `Cargo.lock`, and `crates/`
+- Outcome:
+  - moved the shell header image dependency into `crates/haos-ui/assets/brand-icon.png`
+  - updated `crates/haos-ui/src/main.rs` so `include_bytes!` reads the crate-local asset path instead of the repo-root icon
+  - bumped the add-on version to `2026.04.15.15` so the repaired build and the earlier official-branding swap are easy to distinguish
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+  - `crates/haos-ui/assets/brand-icon.png`
+- Validation:
+  - `cargo test -p addon-supervisor -p haos-ui -p ingressd`
+
 ## 2026-04-16 22:48 Asia/Shanghai - Replace shell and documentation branding with the official OpenClaw lobster artwork
 
 - User request:
