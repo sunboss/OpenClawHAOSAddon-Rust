@@ -401,8 +401,6 @@ fn apply_runtime_env(args: &HaosEntryArgs, settings: &RuntimeSettings) {
             "OPENCLAW_DISABLE_BONJOUR",
             if settings.disable_bonjour { "1" } else { "0" },
         );
-        env::set_var("ENABLE_HTTPS_PROXY", "true");
-        env::set_var("HTTPS_PROXY_PORT", settings.https_port.to_string());
         env::set_var(
             "GATEWAY_INTERNAL_PORT",
             args.gateway_internal_port.to_string(),
@@ -473,14 +471,7 @@ fn apply_gateway_settings(args: &HaosEntryArgs, settings: &RuntimeSettings) -> b
 fn build_control_ui_allowed_origins(settings: &RuntimeSettings) -> Vec<String> {
     let mut origins = Vec::<String>::new();
     let gateway_port = settings.https_port;
-    let scheme = if env::var("ENABLE_HTTPS_PROXY")
-        .map(|value| value == "true")
-        .unwrap_or(false)
-    {
-        "https"
-    } else {
-        "http"
-    };
+    let scheme = "https";
 
     if settings.access_mode == "lan_https" {
         for ip in detect_lan_ips() {
@@ -1234,8 +1225,6 @@ fn apply_child_env(command: &mut Command) {
         "GW_PUBLIC_URL",
         "HTTPS_PORT",
         "OPENCLAW_DISABLE_BONJOUR",
-        "ENABLE_HTTPS_PROXY",
-        "HTTPS_PROXY_PORT",
         "GATEWAY_INTERNAL_PORT",
         "ADDON_VERSION",
         "OPENCLAW_VERSION",
@@ -1275,8 +1264,8 @@ mod tests {
         let origins = build_control_ui_allowed_origins(&settings);
 
         assert!(origins.contains(&"https://gateway.example.com".to_string()));
-        assert!(origins.contains(&"http://homeassistant.local:9443".to_string()));
-        assert!(origins.contains(&"http://homeassistant:9443".to_string()));
+        assert!(origins.contains(&"https://homeassistant.local:9443".to_string()));
+        assert!(origins.contains(&"https://homeassistant:9443".to_string()));
 
         let unique_count = origins.iter().collect::<HashSet<_>>().len();
         assert_eq!(origins.len(), unique_count);

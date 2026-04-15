@@ -1,3 +1,10 @@
+## 2026.04.15.6
+
+- Runtime: removed the last `ENABLE_HTTPS_PROXY` / `HTTPS_PROXY_PORT` toggle path and made the external HTTPS Gateway proxy the fixed add-on architecture
+- Cleanup: simplified `ingressd` startup so it always serves the HTTPS Gateway path instead of branching on an env-controlled proxy mode we no longer use
+- Cleanup: simplified allowed-origin generation in `addon-supervisor` to the now-fixed HTTPS scheme
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.5
 
 - Image: removed the unused global `pnpm` install from the runtime image, keeping only the binaries the add-on actually uses at runtime

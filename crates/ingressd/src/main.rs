@@ -80,9 +80,6 @@ async fn main() {
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(18789);
-    let enable_https = env::var("ENABLE_HTTPS_PROXY")
-        .map(|value| value == "true")
-        .unwrap_or(true);
     let ttyd_port = env::var("TTYD_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
@@ -117,26 +114,22 @@ async fn main() {
         .expect("serve ingress app");
     });
 
-    if enable_https {
-        let gateway_app = build_gateway_router(state);
-        let https_addr = SocketAddr::from(([0, 0, 0, 0], https_port));
-        let tls_config =
-            RustlsConfig::from_pem_file("/config/certs/gateway.crt", "/config/certs/gateway.key")
-                .await
-                .expect("load rustls config");
-        println!("ingressd: Gateway HTTPS listening on https://{https_addr}");
+    let gateway_app = build_gateway_router(state);
+    let https_addr = SocketAddr::from(([0, 0, 0, 0], https_port));
+    let tls_config =
+        RustlsConfig::from_pem_file("/config/certs/gateway.crt", "/config/certs/gateway.key")
+            .await
+            .expect("load rustls config");
+    println!("ingressd: Gateway HTTPS listening on https://{https_addr}");
 
-        let gateway_server = tokio::spawn(async move {
-            axum_server::bind_rustls(https_addr, tls_config)
-                .serve(gateway_app.into_make_service_with_connect_info::<SocketAddr>())
-                .await
-                .expect("serve gateway app");
-        });
+    let gateway_server = tokio::spawn(async move {
+        axum_server::bind_rustls(https_addr, tls_config)
+            .serve(gateway_app.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+            .expect("serve gateway app");
+    });
 
-        let _ = tokio::join!(ingress_server, gateway_server);
-    } else {
-        let _ = ingress_server.await;
-    }
+    let _ = tokio::join!(ingress_server, gateway_server);
 }
 
 fn build_ingress_router(state: AppState) -> Router {

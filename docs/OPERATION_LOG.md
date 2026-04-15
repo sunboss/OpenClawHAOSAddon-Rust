@@ -2,6 +2,26 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 20:45 Asia/Shanghai - Freeze HTTPS proxy behavior into the runtime baseline
+
+- User request:
+  - continue slimming runtime decisions that no longer need to stay configurable
+  - keep the current Hermes single-page shell and direct Gateway/Shell launch paths
+- Official references kept in mind:
+  - remote browser access to Control UI should stay on HTTPS or localhost secure context
+  - this add-on has already committed to the external `https://<host>:18789` gateway path
+- Outcome:
+  - removed the old `ENABLE_HTTPS_PROXY` / `HTTPS_PROXY_PORT` env toggles
+  - made `ingressd` always serve the external HTTPS Gateway proxy path
+  - simplified allowed-origin generation in `addon-supervisor` to always use `https`
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `crates/addon-supervisor/src/main.rs`
+  - `crates/ingressd/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 20:30 Asia/Shanghai - Trim image and add-on boundaries after the big shell cleanup
 
 - User request:
