@@ -1,3 +1,9 @@
+## 2026.04.15.11
+
+- UI: tightened the responsive system for the Hermes-style shell with dedicated desktop, tablet, narrow-tablet, and phone breakpoints instead of a single mobile collapse
+- UI: improved small-screen readability by preventing metric/token overflow, stacking the hero and action deck earlier, and making command buttons fill naturally on narrow screens
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.10
 
 - UI: art-directed the single-page shell again into a stronger Hermes-adjacent control surface with a full hero, cleaner metric hierarchy, two large action panels, and a thinner operations strip

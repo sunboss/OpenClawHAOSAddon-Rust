@@ -607,6 +607,7 @@ h1 {{
   font-weight:850;
   line-height:1.02;
   letter-spacing:-.05em;
+  overflow-wrap:anywhere;
 }}
 .metric-sub {{
   margin-top:12px;
@@ -739,6 +740,7 @@ h1 {{
   color:#dff2f7;
   font:14px/1.5 ui-monospace,Consolas,monospace;
   overflow:auto;
+  overflow-wrap:anywhere;
 }}
 .inline-actions {{
   display:flex;
@@ -786,6 +788,26 @@ pre {{
   color:var(--muted);
   font-size:15px;
 }}
+@media (max-width: 1080px) {{
+  .shell {{ width:min(100% - 28px, 1180px); }}
+  .hero-grid {{ grid-template-columns:minmax(0,1fr); }}
+  .hero-main {{ max-width:none; }}
+  .hero-side {{ max-width:700px; }}
+  .metrics {{ grid-template-columns:repeat(2,minmax(0,1fr)); }}
+  .metric-card.access {{ grid-column:1 / -1; min-height:unset; }}
+  .support-strip {{ grid-template-columns:repeat(3,minmax(0,1fr)); }}
+  .action-deck {{ grid-template-columns:1fr; }}
+}}
+@media (max-width: 900px) {{
+  .hero {{ padding:28px 24px 24px; }}
+  h1 {{ max-width:12ch; font-size:clamp(38px, 7vw, 56px); }}
+  .lede {{ max-width:44ch; font-size:17px; }}
+  .brand-lockup {{ margin-bottom:20px; }}
+  .metrics {{ grid-template-columns:1fr; }}
+  .support-strip {{ grid-template-columns:1fr 1fr; }}
+  .ops-strip {{ grid-template-columns:1fr; }}
+  .notice-strip {{ flex-direction:column; align-items:flex-start; }}
+}}
 @media (max-width: 720px) {{
   .shell {{ width:min(100% - 20px, 1180px); padding:14px 0 24px; }}
   .hero {{ padding:24px 18px 20px; border-radius:28px; }}
@@ -793,9 +815,7 @@ pre {{
   .metrics,
   .support-strip,
   .action-deck,
-  .ops-strip {{
-    grid-template-columns:1fr;
-  }}
+  .ops-strip {{ grid-template-columns:1fr; }}
   .brand-lockup {{ align-items:flex-start; }}
   .mark {{ width:72px; height:72px; border-radius:22px; }}
   .mark .o {{ font-size:36px; }}
@@ -810,11 +830,60 @@ pre {{
   .action-card h2 {{ font-size:34px; }}
   .action-card p,
   .lede {{ font-size:16px; }}
+  .support-card strong {{ font-size:20px; }}
   .action-buttons .btn,
   .inline-actions .btn {{
     flex:1 1 100%;
   }}
-  .notice-strip {{ flex-direction:column; align-items:flex-start; }}
+  .hero-side-grid {{ gap:12px 14px; }}
+  .hero-side-grid strong {{ font-size:20px; }}
+  .action-buttons {{ margin-top:22px; }}
+}}
+@media (max-width: 560px) {{
+  .shell {{ width:min(100% - 16px, 1180px); }}
+  .hero {{ padding:20px 14px 16px; border-radius:24px; }}
+  .brand-lockup {{ gap:14px; margin-bottom:18px; }}
+  .brand-rule {{ width:min(140px, 38vw); }}
+  h1 {{ max-width:none; font-size:34px; line-height:1.02; }}
+  .lede {{ margin-top:14px; font-size:15px; line-height:1.66; }}
+  .hero-flags {{ gap:8px; margin-top:18px; }}
+  .flag {{ min-height:30px; padding:0 11px; font-size:12px; }}
+  .hero-side {{ padding:16px 14px; }}
+  .hero-side-grid {{ grid-template-columns:1fr; }}
+  .metric-card,
+  .action-card,
+  .ops-block {{ padding:16px 14px 14px; border-radius:22px; }}
+  .metric-card {{ min-height:unset; }}
+  .metric-value {{ font-size:28px; }}
+  .metric-sub,
+  .status-hint,
+  .notice-strip span {{ font-size:14px; }}
+  .support-card {{ padding:14px; }}
+  .support-card strong {{ font-size:18px; }}
+  .action-card .glyph {{ width:68px; height:68px; border-radius:20px; font-size:30px; }}
+  .action-card h2 {{ margin-top:18px; font-size:28px; }}
+  .action-card p {{ margin-top:12px; font-size:15px; line-height:1.64; }}
+  .btn {{ min-height:48px; padding:0 18px; font-size:15px; }}
+  .inline-actions .btn {{ min-height:42px; }}
+  pre {{ padding:14px; border-radius:16px; font-size:12px; }}
+  .notice-strip {{ padding:16px 14px; border-radius:22px; }}
+}}
+@media (max-width: 420px) {{
+  .shell {{ width:calc(100% - 12px); }}
+  .hero {{ border-radius:20px; }}
+  .mark {{ width:62px; height:62px; border-radius:18px; }}
+  .mark::before {{ inset:7px; border-radius:14px; }}
+  .mark .o {{ font-size:30px; }}
+  .mark .trace {{ width:42px; bottom:10px; }}
+  h1 {{ font-size:30px; }}
+  .eyebrow,
+  .metric-label,
+  .ops-title {{ font-size:11px; letter-spacing:.14em; }}
+  .metric-value {{ font-size:24px; }}
+  .hero-side-grid strong {{ font-size:18px; }}
+  .btn,
+  .inline-actions .btn {{ width:100%; }}
+  .token {{ font-size:13px; }}
 }}
 </style>
 </head>

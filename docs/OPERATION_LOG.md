@@ -2,6 +2,23 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-16 00:10 Asia/Shanghai - Add proper multi-breakpoint responsiveness to the redesigned shell
+
+- User request:
+  - make the page truly adaptive instead of only looking right on desktop
+  - keep the redesigned Hermes-style single-page shell and improve the mobile experience
+- Outcome:
+  - extended the inline CSS in `crates/haos-ui/src/main.rs` with multi-stage responsive breakpoints for desktop, tablet, narrow tablet, phone, and very narrow phone widths
+  - made the hero stack earlier, collapsed the metrics and action deck progressively, and ensured token / model / status values can wrap cleanly instead of overflowing
+  - made the command buttons and operations strip work more naturally on small screens without changing any Gateway or Shell behavior
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 23:55 Asia/Shanghai - Rebuild the Hermes-style single page into a stronger command-center composition
 
 - User request:
