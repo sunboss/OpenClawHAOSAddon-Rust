@@ -1,3 +1,9 @@
+## 2026.04.15.12
+
+- UI: tuned the redesigned shell to follow the concept composition more closely, with a wider poster layout, larger hero spacing, stronger action-card proportion, and thinner notice rhythm
+- UI: added the concept reference asset at `docs/OPENCLAW_SHELL_CONCEPT.svg` so the visual direction stays anchored while we keep iterating
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.11
 
 - UI: tightened the responsive system for the Hermes-style shell with dedicated desktop, tablet, narrow-tablet, and phone breakpoints instead of a single mobile collapse

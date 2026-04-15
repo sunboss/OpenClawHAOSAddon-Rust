@@ -393,7 +393,7 @@ body::before {{
     linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
   background-size:32px 32px;
 }}
-.shell {{ width:min(1180px, calc(100% - 32px)); margin:0 auto; padding:28px 0 34px; }}
+.shell {{ width:min(1240px, calc(100% - 32px)); margin:0 auto; padding:30px 0 36px; }}
 .eyebrow {{
   color:var(--cyan);
   font-size:12px;
@@ -406,7 +406,7 @@ h1,h2,h3,p {{ margin:0; }}
 .hero {{
   position:relative;
   overflow:hidden;
-  padding:34px 34px 30px;
+  padding:38px 38px 34px;
   border:1px solid var(--line);
   border-radius:34px;
   background:
@@ -435,10 +435,10 @@ h1,h2,h3,p {{ margin:0; }}
   z-index:1;
   display:grid;
   grid-template-columns:minmax(0, 1.28fr) minmax(300px, .72fr);
-  gap:22px;
+  gap:26px;
   align-items:end;
 }}
-.hero-main {{ max-width:680px; }}
+.hero-main {{ max-width:720px; }}
 .brand-lockup {{
   display:flex;
   align-items:center;
@@ -563,7 +563,7 @@ h1 {{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
   gap:18px;
-  margin-top:20px;
+  margin-top:24px;
 }}
 .metric-card,
 .action-card,
@@ -575,7 +575,7 @@ h1 {{
   box-shadow:0 24px 70px rgba(0,0,0,.28);
 }}
 .metric-card {{
-  min-height:220px;
+  min-height:236px;
   padding:24px 24px 22px;
   display:flex;
   flex-direction:column;
@@ -620,8 +620,8 @@ h1 {{
 .support-strip {{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
-  gap:14px;
-  margin-top:14px;
+  gap:16px;
+  margin-top:16px;
 }}
 .support-card {{
   padding:16px 18px;
@@ -638,13 +638,14 @@ h1 {{
 }}
 .action-deck {{
   display:grid;
-  grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);
-  gap:20px;
-  margin-top:22px;
+  grid-template-columns:minmax(0,1.16fr) minmax(0,.84fr);
+  gap:22px;
+  margin-top:24px;
 }}
 .action-card {{
   position:relative;
   overflow:hidden;
+  min-height:342px;
   padding:28px 28px 24px;
 }}
 .action-card::before {{
@@ -713,7 +714,7 @@ h1 {{
 }}
 .ops-strip {{
   display:grid;
-  grid-template-columns:minmax(280px,.92fr) minmax(0,1.08fr);
+  grid-template-columns:minmax(280px,.82fr) minmax(0,1.18fr);
   gap:18px;
   margin-top:22px;
   padding:22px;
@@ -774,8 +775,8 @@ pre {{
   justify-content:space-between;
   gap:14px;
   align-items:center;
-  margin-top:18px;
-  padding:18px 22px;
+  margin-top:20px;
+  padding:16px 22px;
   background:linear-gradient(180deg, rgba(9,16,28,.82), rgba(7,13,24,.92));
 }}
 .notice-strip strong {{
@@ -789,7 +790,7 @@ pre {{
   font-size:15px;
 }}
 @media (max-width: 1080px) {{
-  .shell {{ width:min(100% - 28px, 1180px); }}
+  .shell {{ width:min(100% - 28px, 1240px); }}
   .hero-grid {{ grid-template-columns:minmax(0,1fr); }}
   .hero-main {{ max-width:none; }}
   .hero-side {{ max-width:700px; }}
@@ -809,7 +810,7 @@ pre {{
   .notice-strip {{ flex-direction:column; align-items:flex-start; }}
 }}
 @media (max-width: 720px) {{
-  .shell {{ width:min(100% - 20px, 1180px); padding:14px 0 24px; }}
+  .shell {{ width:min(100% - 20px, 1240px); padding:14px 0 24px; }}
   .hero {{ padding:24px 18px 20px; border-radius:28px; }}
   .hero-grid,
   .metrics,
@@ -840,7 +841,7 @@ pre {{
   .action-buttons {{ margin-top:22px; }}
 }}
 @media (max-width: 560px) {{
-  .shell {{ width:min(100% - 16px, 1180px); }}
+  .shell {{ width:min(100% - 16px, 1240px); }}
   .hero {{ padding:20px 14px 16px; border-radius:24px; }}
   .brand-lockup {{ gap:14px; margin-bottom:18px; }}
   .brand-rule {{ width:min(140px, 38vw); }}
@@ -1188,7 +1189,7 @@ mod tests {
 
     fn sample_page_config() -> PageConfig {
         PageConfig {
-            addon_version: "2026.04.15.10".to_string(),
+            addon_version: "2026.04.15.12".to_string(),
             gateway_url: String::new(),
             openclaw_version: "2026.4.14".to_string(),
             gateway_token: "tok_test_12345678".to_string(),

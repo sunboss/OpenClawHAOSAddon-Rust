@@ -1,0 +1,166 @@
+<svg width="1600" height="1180" viewBox="0 0 1600 1180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="180" y1="0" x2="1400" y2="1180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10192B"/>
+      <stop offset="0.52" stop-color="#09111E"/>
+      <stop offset="1" stop-color="#050A14"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(286 116) rotate(20) scale(460 240)">
+      <stop stop-color="#267983" stop-opacity="0.46"/>
+      <stop offset="1" stop-color="#267983" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1228 160) rotate(133) scale(420 280)">
+      <stop stop-color="#47D2EA" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#47D2EA" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#101A2E" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#0B1322" stop-opacity="0.98"/>
+    </linearGradient>
+    <linearGradient id="softPanel" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#132338" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="#0A1120" stop-opacity="0.96"/>
+    </linearGradient>
+    <linearGradient id="tealStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4BD9EF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#F3C96B" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="logoFill" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4CDBEF"/>
+      <stop offset="1" stop-color="#E9C563"/>
+    </linearGradient>
+    <linearGradient id="ctaFill" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#49DAF0"/>
+      <stop offset="1" stop-color="#22B6D2"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#000814" flood-opacity="0.36"/>
+    </filter>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#FFFFFF" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="1180" fill="url(#bg)"/>
+  <rect width="1600" height="1180" fill="url(#glowA)"/>
+  <rect width="1600" height="1180" fill="url(#glowB)"/>
+  <rect width="1600" height="1180" fill="url(#grid)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="54" y="44" width="1492" height="1090" rx="36" fill="url(#panel)" stroke="#6B88A3" stroke-opacity="0.16"/>
+  </g>
+
+  <g>
+    <rect x="92" y="88" width="90" height="90" rx="28" fill="url(#logoFill)"/>
+    <rect x="101" y="97" width="72" height="72" rx="22" fill="#0A1321" fill-opacity="0.20"/>
+    <text x="137" y="145" fill="#08121D" font-size="46" font-family="Segoe UI, Arial, sans-serif" font-weight="900" text-anchor="middle">O</text>
+    <rect x="119" y="154" width="38" height="4" rx="2" fill="#08121D" fill-opacity="0.62"/>
+  </g>
+
+  <text x="214" y="106" fill="#47D2EA" font-size="15" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="5">HOME ASSISTANT INGRESS</text>
+  <text x="214" y="166" fill="#EEF5FB" font-size="74" font-family="Segoe UI, Arial, sans-serif" font-weight="800">OpenClaw 主控台</text>
+  <text x="214" y="218" fill="#D3DEEB" font-size="24" font-family="Segoe UI, Arial, sans-serif">更像一张持续值守的 Agent 入口海报，而不是普通后台。原生 HTTPS 网关优先，</text>
+  <text x="214" y="256" fill="#D3DEEB" font-size="24" font-family="Segoe UI, Arial, sans-serif">HAOS Ingress 测试路径与维护 Shell 保留在同一工作面上。</text>
+
+  <g>
+    <rect x="1178" y="96" width="286" height="170" rx="28" fill="url(#softPanel)" stroke="#57D7ED" stroke-opacity="0.14"/>
+    <text x="1212" y="132" fill="#4BD9EF" font-size="14" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="4">RUNTIME SNAPSHOT</text>
+    <text x="1212" y="178" fill="#8EA3BD" font-size="13" font-family="Segoe UI, Arial, sans-serif" letter-spacing="1.2">ADD-ON</text>
+    <text x="1322" y="178" fill="#8EA3BD" font-size="13" font-family="Segoe UI, Arial, sans-serif" letter-spacing="1.2">RUNTIME</text>
+    <text x="1212" y="216" fill="#F0F5FB" font-size="28" font-family="Segoe UI, Arial, sans-serif" font-weight="700">2026.04.15.11</text>
+    <text x="1322" y="216" fill="#F0F5FB" font-size="28" font-family="Segoe UI, Arial, sans-serif" font-weight="700">v2026.4.14</text>
+    <text x="1212" y="252" fill="#8EA3BD" font-size="13" font-family="Segoe UI, Arial, sans-serif" letter-spacing="1.2">GATEWAY PID</text>
+    <text x="1322" y="252" fill="#8EA3BD" font-size="13" font-family="Segoe UI, Arial, sans-serif" letter-spacing="1.2">UPTIME</text>
+    <text x="1212" y="292" fill="#F0F5FB" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="800">36</text>
+    <text x="1322" y="292" fill="#F0F5FB" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="800">2 小时</text>
+  </g>
+
+  <g>
+    <rect x="92" y="328" width="456" height="244" rx="28" fill="#122233" fill-opacity="0.86" stroke="url(#tealStroke)"/>
+    <text x="130" y="384" fill="#97A9C0" font-size="16" font-family="Segoe UI, Arial, sans-serif" letter-spacing="3">当前模型</text>
+    <text x="130" y="474" fill="#EEF5FB" font-size="60" font-family="Segoe UI, Arial, sans-serif" font-weight="800">gpt-5.4</text>
+    <text x="130" y="526" fill="#9CB0C7" font-size="28" font-family="Segoe UI, Arial, sans-serif">openai-codex</text>
+    <text x="130" y="556" fill="#76889D" font-size="18" font-family="Segoe UI, Arial, sans-serif">直接从运行配置读取，不再手写占位值</text>
+  </g>
+
+  <g>
+    <rect x="572" y="328" width="456" height="244" rx="28" fill="#0D1527" stroke="#6C86A2" stroke-opacity="0.16"/>
+    <text x="610" y="384" fill="#97A9C0" font-size="16" font-family="Segoe UI, Arial, sans-serif" letter-spacing="3">网关状态</text>
+    <text x="610" y="474" fill="#8BF0C7" font-size="60" font-family="Segoe UI, Arial, sans-serif" font-weight="800">已就绪</text>
+    <text x="610" y="526" fill="#CFDAE7" font-size="28" font-family="Segoe UI, Arial, sans-serif">OpenClaw Gateway 已通过健康检查</text>
+    <text x="610" y="556" fill="#76889D" font-size="18" font-family="Segoe UI, Arial, sans-serif">PID 36 · 适合直接进入原生控制台</text>
+  </g>
+
+  <g>
+    <rect x="1052" y="328" width="412" height="244" rx="28" fill="#0D1628" stroke="#6C86A2" stroke-opacity="0.16"/>
+    <text x="1090" y="384" fill="#97A9C0" font-size="16" font-family="Segoe UI, Arial, sans-serif" letter-spacing="3">访问方式</text>
+    <text x="1090" y="474" fill="#EEF5FB" font-size="56" font-family="Segoe UI, Arial, sans-serif" font-weight="800">双路径</text>
+    <text x="1090" y="526" fill="#CFDAE7" font-size="28" font-family="Segoe UI, Arial, sans-serif">原生 HTTPS 与 HAOS Ingress 测试并存</text>
+    <text x="1090" y="556" fill="#76889D" font-size="18" font-family="Segoe UI, Arial, sans-serif">默认优先原生网关，测试链路只做验证</text>
+  </g>
+
+  <g>
+    <rect x="92" y="596" width="440" height="110" rx="24" fill="#0A1221" fill-opacity="0.76" stroke="#6C86A2" stroke-opacity="0.12"/>
+    <text x="126" y="640" fill="#97A9C0" font-size="15" font-family="Segoe UI, Arial, sans-serif" letter-spacing="3">OPENCLAW RUNTIME</text>
+    <text x="126" y="686" fill="#EEF5FB" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="700">v2026.4.14</text>
+  </g>
+  <g>
+    <rect x="556" y="596" width="440" height="110" rx="24" fill="#0A1221" fill-opacity="0.76" stroke="#6C86A2" stroke-opacity="0.12"/>
+    <text x="590" y="640" fill="#97A9C0" font-size="15" font-family="Segoe UI, Arial, sans-serif" letter-spacing="3">GATEWAY 入口</text>
+    <text x="590" y="686" fill="#EEF5FB" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="700">https://主机:18789</text>
+  </g>
+  <g>
+    <rect x="1020" y="596" width="444" height="110" rx="24" fill="#0A1221" fill-opacity="0.76" stroke="#6C86A2" stroke-opacity="0.12"/>
+    <text x="1054" y="640" fill="#97A9C0" font-size="15" font-family="Segoe UI, Arial, sans-serif" letter-spacing="3">当前运行时长</text>
+    <text x="1054" y="686" fill="#EEF5FB" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="700">2 小时 18 分钟</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="92" y="742" width="792" height="260" rx="34" fill="url(#softPanel)" stroke="#6C86A2" stroke-opacity="0.16"/>
+    <rect x="132" y="786" width="88" height="88" rx="26" fill="#163549" stroke="#47D2EA" stroke-opacity="0.18"/>
+    <path d="M157 840h38M157 818h38M157 862h24" stroke="#47D2EA" stroke-width="7" stroke-linecap="round"/>
+    <text x="132" y="930" fill="#4BD9EF" font-size="16" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="3">官方 WEB 控制面板</text>
+    <text x="132" y="990" fill="#EEF5FB" font-size="58" font-family="Segoe UI, Arial, sans-serif" font-weight="800">打开 Gateway</text>
+    <text x="132" y="1044" fill="#D3DEEB" font-size="28" font-family="Segoe UI, Arial, sans-serif">主按钮直接进入原生 HTTPS Gateway。副按钮保留 HAOS Ingress 测试链路，</text>
+    <text x="132" y="1082" fill="#D3DEEB" font-size="28" font-family="Segoe UI, Arial, sans-serif">方便对比两条路径的真实行为。</text>
+
+    <rect x="132" y="1112" width="238" height="62" rx="31" fill="url(#ctaFill)"/>
+    <text x="251" y="1152" fill="#07101A" font-size="28" font-family="Segoe UI, Arial, sans-serif" font-weight="800" text-anchor="middle">打开网关</text>
+
+    <rect x="392" y="1112" width="306" height="62" rx="31" fill="#0F1A2D" stroke="#47D2EA" stroke-opacity="0.28"/>
+    <text x="545" y="1152" fill="#EEF5FB" font-size="26" font-family="Segoe UI, Arial, sans-serif" font-weight="700" text-anchor="middle">HAOS 网关（测试）</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="910" y="742" width="554" height="260" rx="34" fill="url(#softPanel)" stroke="#6C86A2" stroke-opacity="0.16"/>
+    <rect x="948" y="786" width="88" height="88" rx="26" fill="#163549" stroke="#47D2EA" stroke-opacity="0.18"/>
+    <path d="M975 844l11-12-11-12M1000 852h18" stroke="#47D2EA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="948" y="930" fill="#4BD9EF" font-size="16" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="3">原生命令行</text>
+    <text x="948" y="990" fill="#EEF5FB" font-size="58" font-family="Segoe UI, Arial, sans-serif" font-weight="800">维护 Shell</text>
+    <text x="948" y="1044" fill="#D3DEEB" font-size="28" font-family="Segoe UI, Arial, sans-serif">在完整的 Web Shell 里运行 openclaw 命令、查看日志、</text>
+    <text x="948" y="1082" fill="#D3DEEB" font-size="28" font-family="Segoe UI, Arial, sans-serif">核对设备授权，不再绕旧终端注入路径。</text>
+    <rect x="948" y="1112" width="240" height="62" rx="31" fill="url(#ctaFill)"/>
+    <text x="1068" y="1152" fill="#07101A" font-size="28" font-family="Segoe UI, Arial, sans-serif" font-weight="800" text-anchor="middle">进入命令行</text>
+  </g>
+
+  <g>
+    <rect x="92" y="1028" width="1372" height="90" rx="28" fill="#09121F" fill-opacity="0.84" stroke="#6C86A2" stroke-opacity="0.12"/>
+    <text x="130" y="1068" fill="#47D2EA" font-size="15" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="3">令牌与授权操作带</text>
+    <text x="130" y="1102" fill="#9DB0C6" font-size="24" font-family="Segoe UI, Arial, sans-serif">左侧显示 Token 与复制控制，右侧显示待批准设备与确认授权按钮。整体压成一条薄操作带，不再撑大页面。</text>
+  </g>
+
+  <g transform="translate(1208,824)">
+    <rect x="0" y="0" width="214" height="316" rx="34" fill="#0A1220" stroke="#6C86A2" stroke-opacity="0.16"/>
+    <rect x="18" y="18" width="178" height="280" rx="26" fill="#0E192B"/>
+    <text x="36" y="52" fill="#47D2EA" font-size="9" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="2">MOBILE PREVIEW</text>
+    <rect x="36" y="70" width="44" height="44" rx="14" fill="url(#logoFill)"/>
+    <text x="95" y="100" fill="#EEF5FB" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="800">OpenClaw</text>
+    <text x="95" y="121" fill="#EEF5FB" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="800">主控台</text>
+    <rect x="36" y="138" width="142" height="58" rx="18" fill="#122233" stroke="#47D2EA" stroke-opacity="0.18"/>
+    <rect x="36" y="206" width="142" height="58" rx="18" fill="#0D1527" stroke="#6C86A2" stroke-opacity="0.14"/>
+    <rect x="36" y="274" width="142" height="44" rx="22" fill="url(#ctaFill)"/>
+    <text x="107" y="303" fill="#07101A" font-size="14" font-family="Segoe UI, Arial, sans-serif" font-weight="800" text-anchor="middle">打开网关</text>
+    <rect x="36" y="326" width="142" height="44" rx="22" fill="#0F1A2D" stroke="#47D2EA" stroke-opacity="0.26"/>
+    <text x="107" y="355" fill="#EEF5FB" font-size="13" font-family="Segoe UI, Arial, sans-serif" font-weight="700" text-anchor="middle">进入命令行</text>
+  </g>
+</svg>

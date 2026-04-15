@@ -2,6 +2,24 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-16 00:24 Asia/Shanghai - Apply the concept-sheet composition back into the real shell
+
+- User request:
+  - after seeing the concept artwork, continue and actually move the real page closer to that composition
+  - keep iterating on the page direction rather than stopping at the concept image
+- Outcome:
+  - added `docs/OPENCLAW_SHELL_CONCEPT.svg` as the visual anchor for the redesigned shell
+  - tuned `crates/haos-ui/src/main.rs` so the live page follows the concept more closely: wider poster layout, stronger hero spacing, more deliberate action-card proportions, and a calmer bottom notice rhythm
+  - kept the current functionality intact: native Gateway open, HAOS Gateway test open, maintenance Shell, token handling, and device approval
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/OPENCLAW_SHELL_CONCEPT.svg`
+  - `docs/OPERATION_LOG.md`
+  - `crates/haos-ui/src/main.rs`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-16 00:10 Asia/Shanghai - Add proper multi-breakpoint responsiveness to the redesigned shell
 
 - User request:
