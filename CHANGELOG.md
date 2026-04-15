@@ -1,3 +1,11 @@
+## 2026.04.15.5
+
+- Image: removed the unused global `pnpm` install from the runtime image, keeping only the binaries the add-on actually uses at runtime
+- Image: removed the unused `/share` preparation path and dropped the `share:rw` Home Assistant map now that backup export logic is gone
+- Build: trimmed `ingressd` dependencies by removing unused `http`, `http-body-util`, and `serde_json`
+- Build: trimmed `haos-ui` dependencies by removing the unused direct `serde` dependency
+- Validation: `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026.04.15.4
 
 - Cleanup: removed the last dead `addon-panel.json` overlay merge path from `addon-supervisor`, so the single-page Hermes shell no longer carries legacy HA panel config layering

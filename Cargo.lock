@@ -514,7 +514,6 @@ name = "haos-ui"
 version = "0.1.0"
 dependencies = [
  "axum",
- "serde",
  "serde_json",
  "tokio",
 ]
@@ -758,12 +757,9 @@ dependencies = [
  "axum",
  "axum-server",
  "futures-util",
- "http",
- "http-body-util",
  "reqwest",
  "rustls",
  "serde",
- "serde_json",
  "tokio",
  "tokio-tungstenite",
 ]

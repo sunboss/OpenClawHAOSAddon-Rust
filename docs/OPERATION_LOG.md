@@ -2,6 +2,29 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-04-15 20:30 Asia/Shanghai - Trim image and add-on boundaries after the big shell cleanup
+
+- User request:
+  - continue slimming everything unnecessary
+  - review whether the image and add-on manifest can be tightened further
+  - keep the Hermes-style single-page shell and official Gateway/TUI boundaries intact
+- Official references kept in mind:
+  - Control UI should stay the upstream console surfaced by the Gateway
+  - the HA add-on should remain a thin launcher/status shell instead of recreating a second platform
+- Outcome:
+  - removed the unused global `pnpm` install from the runtime image
+  - removed the now-unused `/share` directory preparation and dropped `share:rw` from `config.yaml`
+  - trimmed dead crate dependencies from `ingressd` and `haos-ui`
+  - kept the full `ttyd` Shell, direct Gateway launch path, Python runtime, and MCPorter/OpenClaw runtime intact
+- Files changed:
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `Dockerfile`
+  - `crates/ingressd/Cargo.toml`
+  - `crates/haos-ui/Cargo.toml`
+- Validation:
+  - `cargo test -p haos-ui -p addon-supervisor -p ingressd`
+
 ## 2026-04-15 20:10 Asia/Shanghai - Strip remaining legacy panel overlay and backup logic
 
 - User request:
