@@ -18,6 +18,19 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
   - commit hash
   - what validation ran and whether it passed
 
+## OpenClaw upstream version lookup
+
+- Before upgrading bundled OpenClaw, check the official release source first:
+  - `https://github.com/openclaw/openclaw/releases`
+  - `https://github.com/openclaw/openclaw/releases/latest`
+- Treat the GitHub release marked `Latest` as the authoritative latest stable release for this add-on.
+- Use npm only as a package availability cross-check:
+  - `https://www.npmjs.com/package/openclaw`
+  - `https://registry.npmjs.org/openclaw/latest`
+- Do not rely on third-party release aggregators or package mirrors as the primary source; they can lag behind GitHub or mix stable/beta channels.
+- For the 2026-05-17 upgrade, the official latest release was:
+  - `https://github.com/openclaw/openclaw/releases/tag/v2026.5.12`
+
 ## Current runtime architecture
 
 - `crates/addon-supervisor`
@@ -163,9 +176,9 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
   - `Logs`
     - `openclaw logs --follow`
     - gateway log tail
-- `Check npm version`
-  - should run a real version query
-  - expected command: `npm view openclaw version`
+- Version check button
+  - should report the bundled local OpenClaw runtime
+  - expected command: `openclaw --version`
 - Device pairing / approval should stay with native Control UI or upstream TUI flows.
 - Do not rebuild a separate HA-only pairing control surface.
 

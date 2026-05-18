@@ -1,3 +1,10 @@
+## 2026.05.17.1
+
+- Runtime: upgrade the bundled OpenClaw npm runtime from `2026.4.14` to the official latest GitHub release `2026.5.12`
+- Docs: record the authoritative upstream version lookup URLs so future upgrades check GitHub Releases first and use npm only as a package availability cross-check
+- Maintenance: update the version-check handoff note to prefer the bundled local runtime command, `openclaw --version`
+- Validation: `cargo test --workspace`
+
 ## 2026.04.15.16
 
 - Config: add an explicit `dangerous_enable_haos_http_control_ui_debug` add-on option so HAOS HTTP sidebar testing is always opt-in and clearly labeled as unsafe

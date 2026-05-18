@@ -2,6 +2,34 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-05-17 00:00 Asia/Shanghai - Upgrade bundled OpenClaw runtime to v2026.5.12
+
+- User request:
+  - 联网搜索最新版本，准备升级推送
+  - 把官方版本地址写进文档，避免后续 AI 误用第三方聚合页
+- Ground truth checked:
+  - official GitHub release page marks `v2026.5.12` as `Latest`
+  - release URL: `https://github.com/openclaw/openclaw/releases/tag/v2026.5.12`
+  - durable lookup URLs were recorded in `docs/MAINTAINER_CONTEXT.md`:
+    - `https://github.com/openclaw/openclaw/releases`
+    - `https://github.com/openclaw/openclaw/releases/latest`
+    - `https://www.npmjs.com/package/openclaw`
+    - `https://registry.npmjs.org/openclaw/latest`
+  - npm/package mirrors should only be used as package availability cross-checks, not as the primary latest-version source
+- Outcome:
+  - bumped Docker build arg `OPENCLAW_VERSION` from `2026.4.14` to `2026.5.12`
+  - bumped add-on version from `2026.04.15.16` to `2026.05.17.1`
+  - added a `CHANGELOG.md` entry for the upgrade
+  - fixed stale maintainer wording for the local version-check command (`openclaw --version`)
+- Files changed:
+  - `Dockerfile`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `docs/OPERATION_LOG.md`
+- Validation:
+  - `cargo test --workspace` — 20 passed, 0 failed
+
 ## 2026-04-15 23:40 Asia/Shanghai - Add an explicit dangerous debug switch for HAOS HTTP Control UI testing
 
 - User request:
