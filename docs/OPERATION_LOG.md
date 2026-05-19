@@ -2,6 +2,34 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-05-19 07:48 Asia/Shanghai - Upgrade bundled OpenClaw runtime to v2026.5.18
+
+- User request:
+  - 参考 `https://github.com/openclaw/openclaw/releases/tag/v2026.5.18` 的升级内容，对照准备升级推送
+- Ground truth checked:
+  - official GitHub release page marks `v2026.5.18` as `Latest`
+  - release URL: `https://github.com/openclaw/openclaw/releases/tag/v2026.5.18`
+  - npm package availability cross-check: `npm view openclaw@2026.5.18 version engines dependencies --json`
+  - npm confirmed `version: 2026.5.18` and `engines.node: >=22.19.0`
+- Release-note impact reviewed:
+  - Node.js minimum is now 22.19; this image already uses `node:24-bookworm-slim`, so no base image bump is required
+  - upstream added `OPENCLAW_IMAGE_APT_PACKAGES` with `OPENCLAW_DOCKER_APT_PACKAGES` as legacy fallback; mirror that build-arg behavior in this add-on image
+  - Gateway startup/restart and readiness improvements are upstream runtime changes; this add-on keeps the foreground `openclaw gateway run` supervisor model and lightweight local probes
+  - startup `doctor --fix` remains controlled by the existing first-install / explicit option path rather than being forced on every boot
+- Outcome:
+  - bumped Docker build arg `OPENCLAW_VERSION` from `2026.5.12` to `2026.5.18`
+  - bumped add-on version from `2026.05.17.1` to `2026.05.19.1`
+  - added optional extra apt package build args aligned with upstream naming
+  - added a `CHANGELOG.md` entry and recorded this handoff note
+- Files changed:
+  - `Dockerfile`
+  - `config.yaml`
+  - `CHANGELOG.md`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `docs/OPERATION_LOG.md`
+- Validation:
+  - `cargo test --workspace` — 20 passed, 0 failed
+
 ## 2026-05-17 00:00 Asia/Shanghai - Upgrade bundled OpenClaw runtime to v2026.5.12
 
 - User request:

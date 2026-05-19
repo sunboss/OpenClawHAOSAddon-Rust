@@ -8,8 +8,10 @@ RUN cargo build --release --workspace
 FROM node:24-bookworm-slim
 
 ARG TARGETARCH
-ARG OPENCLAW_VERSION=2026.5.12
+ARG OPENCLAW_VERSION=2026.5.18
 ARG TTYD_VERSION=1.7.7
+ARG OPENCLAW_IMAGE_APT_PACKAGES=""
+ARG OPENCLAW_DOCKER_APT_PACKAGES=""
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
 ARG BUILD_DATE=unknown
@@ -43,6 +45,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    extra_packages="${OPENCLAW_IMAGE_APT_PACKAGES:-${OPENCLAW_DOCKER_APT_PACKAGES:-}}"; \
+    if [ -n "$extra_packages" ]; then \
+      apt-get update; \
+      apt-get install -y --no-install-recommends $extra_packages; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 
 RUN set -eux; \
     case "${TARGETARCH}" in \

@@ -1,3 +1,10 @@
+## 2026.05.19.1
+
+- Runtime: upgrade the bundled OpenClaw npm runtime from `2026.5.12` to the official latest GitHub release `2026.5.18`
+- Image: keep the runtime on Node 24, which satisfies OpenClaw 2026.5.18's `>=22.19.0` Node engine requirement
+- Image: add the upstream-aligned `OPENCLAW_IMAGE_APT_PACKAGES` build arg with `OPENCLAW_DOCKER_APT_PACKAGES` as the legacy fallback for optional extra apt packages
+- Validation: `cargo test --workspace`
+
 ## 2026.05.17.1
 
 - Runtime: upgrade the bundled OpenClaw npm runtime from `2026.4.14` to the official latest GitHub release `2026.5.12`

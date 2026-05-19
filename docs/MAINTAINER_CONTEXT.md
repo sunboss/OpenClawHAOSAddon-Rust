@@ -30,6 +30,8 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 - Do not rely on third-party release aggregators or package mirrors as the primary source; they can lag behind GitHub or mix stable/beta channels.
 - For the 2026-05-17 upgrade, the official latest release was:
   - `https://github.com/openclaw/openclaw/releases/tag/v2026.5.12`
+- For the 2026-05-19 upgrade, the official latest release was:
+  - `https://github.com/openclaw/openclaw/releases/tag/v2026.5.18`
 
 ## Current runtime architecture
 
