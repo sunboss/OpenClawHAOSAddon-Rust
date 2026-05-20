@@ -1,44 +1,34 @@
 # Maintainer Context
 
-This file is the durable handoff memory for future edits to `OpenClawHAOSAddon-Rust`.
-Read it before changing UI, runtime, release flow, or the HAOS integration layer.
+This file is the handoff memory for future edits to `OpenClawHAOSAddon-Rust`.
+Read this before making UI, runtime, or release changes.
+
+## First-read handoff
+
+- Read `docs/AI_HANDOFF.md` first for the current production-vs-Rust-rewrite
+  distinction and the 2026-05-20 HAOS repair summary.
+- Read `docs/HAOS_MAINTENANCE_RUNBOOK.md` before touching HAOS release,
+  store, cron, OAuth, or disk-cleanup tasks.
+- Read `docs/RELEASE_2026-05-20.md` for the exact production upgrade record.
 
 ## Project intent
 
 - This repository rewrites the Home Assistant add-on layer in Rust.
 - Upstream `openclaw` and `mcporter` are intentionally not rewritten.
-- The add-on should feel native inside HAOS while staying close to official OpenClaw behavior.
+- The add-on must feel native inside HAOS, not like an OpenWrt web panel.
+- The current installed production add-on is `sunboss/openclaw-ha-addon`; do not
+  assume changes in this Rust rewrite repo affect that installation.
 
 ## Versioning
 
 - Add-on version format must be `YYYY.MM.DD.N`.
 - Every pushed fix increments `N`.
-- When reporting a push, always include:
-  - version number
-  - commit hash
-  - what validation ran and whether it passed
-
-## OpenClaw upstream version lookup
-
-- Before upgrading bundled OpenClaw, check the official release source first:
-  - `https://github.com/openclaw/openclaw/releases`
-  - `https://github.com/openclaw/openclaw/releases/latest`
-- Treat the GitHub release marked `Latest` as the authoritative latest stable release for this add-on.
-- Use npm only as a package availability cross-check:
-  - `https://www.npmjs.com/package/openclaw`
-  - `https://registry.npmjs.org/openclaw/latest`
-- Do not rely on third-party release aggregators or package mirrors as the primary source; they can lag behind GitHub or mix stable/beta channels.
-- For the 2026-05-17 upgrade, the official latest release was:
-  - `https://github.com/openclaw/openclaw/releases/tag/v2026.5.12`
-- For the 2026-05-19 upgrade, the official latest release was:
-  - `https://github.com/openclaw/openclaw/releases/tag/v2026.5.18`
+- Always tell the user the version number and commit hash when pushing.
+- When reporting a push, include the validation log summary too.
+  - At minimum: what checks ran and whether they passed.
 
 ## Current runtime architecture
 
-- Home Assistant repository layout:
-  - root `repository.yaml`
-  - add-on implementation under `openclaw_assistant_rust/`
-  - do not put a live `config.yaml` at repository root; Supervisor should scan the subdirectory add-on layout
 - `crates/addon-supervisor`
   - bootstraps config
   - writes runtime env
@@ -46,158 +36,100 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 - `crates/ingressd`
   - HA ingress
   - external HTTPS gateway proxy
-  - local health/readiness endpoints
+  - browser terminal transport
+- `crates/actiond`
+  - local actions such as managed gateway restart
 - `crates/haos-ui`
-  - Hermes-style single-page HAOS shell
-  - keeps only the Gateway open path, maintenance Shell, token display, device approval, and a small status block
-- `crates/oc-config`
-  - JSON helpers for `openclaw.json`
+  - multi-page HAOS UI
 
 ## Important behavioral decisions
 
 - The managed OpenClaw process is the foreground `openclaw gateway run` process.
-- For HAOS LAN browser access, keep the official secure-context requirement in mind:
-  - remote Control UI over plain `http://<lan-ip>:18789` is rejected because device identity requires HTTPS or localhost secure context
-  - in this add-on, external dashboard access should remain `https://<host>:18789`
-  - keeping an internal loopback gateway port is acceptable when it is required to preserve remote HTTPS access
-- Startup self-heal should run `openclaw doctor --fix`, but only automatically on first install.
-  - After the first successful run, do not force `doctor --fix` on every startup.
-  - This keeps migrations safe without turning normal boot into a heavy repair path.
+- Startup self-heal should run `openclaw doctor --fix`.
+  - This is intentional so config/runtime migrations such as `x_search` / Firecrawl changes do not depend on manual repair.
+- Do not use `openclaw gateway restart` for the add-on restart button.
+  - In this containerized setup that command prints guidance and does not restart
+    the supervisor-managed foreground gateway process.
+- The restart button must use the local action endpoint:
+  - `POST http://127.0.0.1:48100/action/restart`
 - `OpenClaw runtime` must be based on the real gateway PID written under:
   - `/run/openclaw-rs/openclaw-gateway.pid`
   - fallback `/run/openclaw-rs/openclaw-node.pid`
-
-## Probe semantics
-
-- `GET /healthz`
-  - liveness only
-  - confirms the local ingress path is alive
-  - must stay lightweight and unauthenticated
-- `GET /readyz`
-  - readiness probe for the managed gateway path
-  - checks supervisor-managed PID presence first
-  - in local mode it also requires `127.0.0.1:$GATEWAY_INTERNAL_PORT` to accept connections
-  - the home page and gateway-facing proxy readiness should prefer this endpoint
-- `GET /health`
-  - JSON wrapper around the same lightweight readiness result
-  - do not turn this back into a heavy `openclaw health --json` startup probe
-- Keep probe semantics close to official OpenClaw docs:
-  - lightweight `healthz` / `readyz` for startup and routing
-  - deeper CLI health only when the user explicitly asks for diagnostics
-
-## Config and state boundaries
-
-- Keep moving toward the official `config path / state dir` mental model.
-- Current working boundary in this add-on:
-  - OpenClaw config file:
-    - `/config/.openclaw/openclaw.json`
-  - MCPorter config file:
-    - `/config/.mcporter/mcporter.json`
-    - prefer writing the official persisted config shape directly:
-      - `mcpServers.<name>.baseUrl`
-      - `mcpServers.<name>.headers`
-    - do not rely on startup-time `mcporter config add` flag syntax unless upstream explicitly requires it
-  - OpenClaw persistent state root:
-    - `/config/.openclaw`
-  - Workspace:
-    - `/config/.openclaw/workspace`
-  - Runtime-only pid files:
-    - `/run/openclaw-rs`
-  - Shared public runtime files:
-    - `/run/openclaw-rs/public`
-  - Runtime compile cache:
-    - `/var/tmp/openclaw-compile-cache`
-  - Certificates:
-    - `/config/certs`
+- If uptime does not reset after restart, the restart path is wrong.
 
 ## Native Gateway status
 
-- Native Gateway and HA panel are separate paths.
-  - If the HA panel loads, that does not automatically mean native Gateway works.
-- The most important native Gateway fixes already in place are:
-  - preserve forwarded headers
-  - allow the correct control UI origins
-  - open the native dashboard with `#token=...`
-  - keep remote browser access on HTTPS
+- The severe native Gateway `ws closed before connect` problem was largely fixed by:
+  - preserving forwarded headers
+  - allowing the correct control UI origins
+  - opening the native dashboard with `#token=...`
+- Embedded terminal and native Gateway are separate paths.
+  - If embedded terminal works, that does not automatically mean native Gateway works.
 
 ## Known noisy logs
 
-- `actiond`
-  - no longer part of the runtime architecture
-  - if it appears in logs or docs again, treat that as regression drift
-- `Health check failed: Error: gateway timeout after 10000ms` during startup doctor
-  - not a primary add-on failure
-  - doctor can race early startup while browser/acpx sidecars are still warming up
-- `Gateway port: Port 18790 is already in use` in doctor output
-  - expected in the current HTTPS-preserving architecture
-- `Memory search is enabled, but no embedding provider is ready`
-  - not an error unless the user explicitly wants Memory Search
-- optional plugin dependency warnings
-  - often upstream plugin noise, not a primary add-on failure
+- `No pending device pairing requests to approve`
+  - not an error
+  - just the auto-approve poller finding nothing to approve
+- `amazon-bedrock failed to load`
+- `Cannot find module '@slack/web-api'`
+  - optional plugin dependency noise from upstream OpenClaw
+  - usually not a primary add-on failure
 
 ## UI direction
 
-- The UI should feel coordinated with Home Assistant and stay close to the thin Hermes shell model.
-- Prefer a light, calm, utility-first page instead of a heavy console or multi-page dashboard.
+- The UI should feel coordinated with Home Assistant.
+- Keep the soft gradient / glow background if it still looks clean.
+- Avoid obvious OpenWrt-style visual language in the header.
 - Use Chinese for user-facing UI copy.
-- Command labels can be Chinese, but executed commands stay in English.
-- User-facing copy should explain what to do, not internal architecture rationale.
-- The single page must keep:
-  - 打开网关
-  - 维护 Shell
-  - Gateway 状态
-  - Gateway Token 显示
-  - 待批准设备列表与最新授权确认
+- Command labels can be Chinese, but actual executed commands stay in English.
+- User-facing text should explain what to do, not internal architecture rationale.
 
 ## Current page structure
 
-- Single page only
-  - Gateway open action
-  - Shell open action
-  - small Gateway runtime status block
-  - token reveal/copy
-  - device list / approve-latest actions
+- `Home`
+  - status overview
+  - resource overview
+  - concise quick entry points only
+- `Config`
+  - what the add-on manages
+  - persistent directories
+  - capability status
+- `Commands`
+  - operational buttons
+  - embedded terminal
+- `Logs`
+  - log/doctor actions
+  - log terminal
 
 ## Pending recurring cleanup themes
 
-- Prefer one clear source of truth per behavior.
-- Do not keep compatibility layers once the single-page shell no longer links to them.
-- Do not add new local control panels when the upstream Gateway or Shell already provides the real surface.
+- Remove duplicated summary blocks if they repeat the same data.
+- Prefer one clear source of truth per page.
+- PID display should read like status badges, not generic pills.
+- Do not keep fake controls that do nothing.
+  - Example: the old fake log filter row (`source / lines / time range / keyword`) should stay removed.
+- If a button cannot do real work reliably, replace it with guidance instead of a fake action.
 
-- Group command actions in a way that feels close to official helper flows:
-  - `Native entrypoints`
-    - `openclaw tui`
-    - native Gateway
-    - `openclaw onboard`
-  - `Health / Status`
-    - `curl .../healthz`
-    - `curl .../readyz`
-    - `openclaw status --deep`
-    - `openclaw health --json`
-  - `Maintenance`
-    - doctor
-    - doctor --fix
-    - security audit
-    - memory status
-  - `Logs`
-    - `openclaw logs --follow`
-    - gateway log tail
-- Version check button
-  - should report the bundled local OpenClaw runtime
-  - expected command: `openclaw --version`
-- Device pairing / approval should stay with native Control UI or upstream TUI flows.
-- Do not rebuild a separate HA-only pairing control surface.
+## Command-page expectations
 
-## Shell boundary
+- `Check npm version`
+  - should run a real version query
+  - expected command: `npm view openclaw version`
+- `Approve authorization`
+  - only makes sense when there is a pending pairing request
+  - otherwise prefer a user hint pointing to the command page:
+    - `openclaw devices list`
+    - `openclaw devices approve --latest`
 
-- The add-on no longer ships its own embedded terminal.
-- Commands and logs pages should stay as guidance/reference pages, not become another pseudo-shell.
-- If users need a shell, guide them to Home Assistant `Terminal & SSH`, SSH, or another host-local shell.
-- Keep the command examples aligned with official upstream flows:
-  - `openclaw tui`
-  - `openclaw onboard`
-  - `openclaw doctor`
-  - `openclaw status --deep`
+## Terminal rendering
+
+- The embedded terminal previously rendered ANSI/TUI output poorly.
+- The terminal was upgraded to handle more complete ANSI/TUI behavior.
+- If output becomes garbled again, check terminal rendering before blaming Chinese text.
+- `新窗口打开终端` should behave like a native terminal page.
+  - Do not depend on a separate input box at the bottom.
+  - The page itself should take focus and accept direct keyboard input and paste.
 
 ## Workflow note
 
@@ -214,3 +146,5 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
     - next handoff note for the next AI
   - This log is the durable bridge for future AI handoff and external tool calls.
   - Do not rely on chat history being available later.
+- Keep documentation archives under `docs/archives/` when the user asks for a
+  packaged handoff. Do not include secrets in archives.

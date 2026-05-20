@@ -1,17 +1,44 @@
 # OpenClawHAOSAddon-Rust
 
-Home Assistant add-on repository for running OpenClaw on HAOS.
+Rust rewrite project for the Home Assistant OpenClaw add-on.
 
-Add this repository in Home Assistant:
+This project is intentionally separate from the current production repository.
+The goal is to replace our local Python/Bash/UI layer with Rust components while
+continuing to consume upstream `openclaw` and `mcporter`.
 
-```text
-https://github.com/sunboss/OpenClawHAOSAddon-Rust
-```
+## Crates
 
-The add-on lives in [`openclaw_assistant_rust/`](./openclaw_assistant_rust/) using the standard Home Assistant add-on repository layout. Repository-level handoff and maintenance notes stay under [`docs/`](./docs/).
+- `haos-ui`: Rust + htmx control page
+- `actiond`: local action API for gateway and diagnostics
+- `oc-config`: JSON config helper for `openclaw.json`
+- `ingressd`: Rust ingress, browser terminal, and external HTTPS gateway proxy replacing `nginx` + `ttyd`
+- `addon-supervisor`: runtime orchestrator replacing shell startup glue
 
-## Add-on
+## Status
 
-- Add-on docs: [`openclaw_assistant_rust/README.md`](./openclaw_assistant_rust/README.md)
-- Install guide: [`openclaw_assistant_rust/INSTALL.md`](./openclaw_assistant_rust/INSTALL.md)
-- Runtime notes: [`openclaw_assistant_rust/DOCS.md`](./openclaw_assistant_rust/DOCS.md)
+- UI prototype: working baseline
+- Action server: working baseline
+- Config helper: working baseline
+- Supervisor: now handles startup bootstrap, certificate/token prep, backup sync, `openclaw gateway run` / `openclaw node run`, and supervision of `haos-ui`, `actiond`, and `ingressd`
+- Add-on wrapper: `Dockerfile`, `config.yaml`, `build.yaml`, and a thin fallback `run.sh` remain, but the container default entry now goes straight to `addon-supervisor haos-entry`
+
+## Repository shape
+
+- `repository.yaml`: Home Assistant custom repository metadata
+- `config.yaml`: HA add-on manifest for the Rust rewrite project
+- `Dockerfile`: builds the Rust binaries and bundles upstream `openclaw`
+- `run.sh`: ultra-thin compatibility wrapper; no longer the primary startup path
+- `docs/AI_HANDOFF.md`: first-read context for future AI maintainers
+- `docs/MAINTAINER_CONTEXT.md`: persistent handoff notes for future edits and debugging
+- `docs/HAOS_MAINTENANCE_RUNBOOK.md`: production HAOS upgrade, release, and troubleshooting process
+- `docs/RELEASE_2026-05-20.md`: 2026-05-20 production upgrade and repair record
+
+## Production note
+
+The HAOS add-on currently installed on the user's Home Assistant host is the
+production repository at `https://github.com/sunboss/openclaw-ha-addon`, not this
+Rust rewrite repository. As of 2026-05-20, that production add-on is running
+`2026.05.20.2` from `ghcr.io/sunboss/openclaw-ha-addon:2026.05.20.2`.
+
+Future AI maintainers should read `docs/AI_HANDOFF.md` before changing either
+repository.
