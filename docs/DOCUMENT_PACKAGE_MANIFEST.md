@@ -7,11 +7,12 @@ and continue OpenClaw HAOS add-on maintenance without relying on chat history.
 
 1. `README.md`
 2. `docs/AI_HANDOFF.md`
-3. `docs/RELEASE_2026-05-20.md`
-4. `docs/HAOS_MAINTENANCE_RUNBOOK.md`
-5. `docs/MAINTAINER_CONTEXT.md`
-6. `docs/OPERATION_LOG.md`
-7. `MIGRATION.md`
+3. `docs/AI_MAINTENANCE_CHECKLIST.md`
+4. `docs/RELEASE_2026-05-20.md`
+5. `docs/HAOS_MAINTENANCE_RUNBOOK.md`
+6. `docs/MAINTAINER_CONTEXT.md`
+7. `docs/OPERATION_LOG.md`
+8. `MIGRATION.md`
 
 ## Included document groups
 
@@ -25,6 +26,7 @@ and continue OpenClaw HAOS add-on maintenance without relying on chat history.
   - `translations/en.yaml`
 - Maintainer handoff:
   - `docs/AI_HANDOFF.md`
+  - `docs/AI_MAINTENANCE_CHECKLIST.md`
   - `docs/MAINTAINER_CONTEXT.md`
   - `docs/OPERATION_LOG.md`
   - `docs/HAOS_MAINTENANCE_RUNBOOK.md`

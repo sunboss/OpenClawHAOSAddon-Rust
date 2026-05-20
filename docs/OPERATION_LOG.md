@@ -1218,6 +1218,39 @@ Copy this block before each push and fill it in:
   - Never rsync local `docs/` over the remote clone without checking whether local docs are older.
   - Prefer editing the fresh clone directly or pulling remote docs before appending new entries.
 
+## 2026-05-21 02:05 Asia/Shanghai - Add AI maintenance checklist and refresh full document archive
+
+- User request:
+  - Continue improving logs and maintenance documentation.
+- Intent / context:
+  - The handoff docs existed, but future AI maintainers still needed a short executable checklist separate from long runbooks and operation history.
+  - The archive should include every Markdown/YAML document in the repository, including add-on implementation docs and workflow metadata.
+- Files changed:
+  - `docs/AI_MAINTENANCE_CHECKLIST.md`
+  - `docs/DOCUMENT_PACKAGE_MANIFEST.md`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `docs/OPERATION_LOG.md`
+  - `docs/archives/openclaw-haos-maintenance-docs-*.filelist.txt`
+  - `docs/archives/openclaw-haos-maintenance-docs-*.zip`
+  - `docs/archives/openclaw-haos-maintenance-docs-*.tar.gz`
+- Commands / validation:
+  - `find . -path ./.git -prune -o -path './docs/archives' -prune -o \\( -name '*.md' -o -name '*.yaml' -o -name '*.yml' \\) -type f -print`
+  - `zip -q ...`
+  - `tar -czf ...`
+  - `unzip -l docs/archives/openclaw-haos-maintenance-docs-*.zip`
+  - `tar -tzf docs/archives/openclaw-haos-maintenance-docs-*.tar.gz`
+- Version:
+  - Documentation only; no add-on version bump.
+- Commit:
+  - pending at time of entry
+- Push:
+  - pending at time of entry
+- Result summary:
+  - Added a concise action checklist covering repository orientation, dirty-worktree protection, HAOS verification, cron checks, OAuth handling, release pushes, documentation packaging, and secret hygiene.
+  - Archive now includes all repository Markdown/YAML docs plus a file list.
+- Next handoff:
+  - Start with `docs/AI_HANDOFF.md`, then use `docs/AI_MAINTENANCE_CHECKLIST.md` as the operational checklist.
+
 ## 2026-05-20 20:28 Asia/Shanghai - Production OpenClaw HA add-on upgrade, HAOS repair, and documentation package
 
 - User request:

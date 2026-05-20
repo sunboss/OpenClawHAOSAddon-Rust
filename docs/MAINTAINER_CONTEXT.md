@@ -7,6 +7,8 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 
 - Read `docs/AI_HANDOFF.md` first for the current production-vs-Rust-rewrite
   distinction and the 2026-05-20 HAOS repair summary.
+- Use `docs/AI_MAINTENANCE_CHECKLIST.md` as the action checklist before editing,
+  pushing, touching HAOS, or packaging docs.
 - Read `docs/HAOS_MAINTENANCE_RUNBOOK.md` before touching HAOS release,
   store, cron, OAuth, or disk-cleanup tasks.
 - Read `docs/RELEASE_2026-05-20.md` for the exact production upgrade record.
