@@ -1,3 +1,10 @@
+## 2026.05.20.1
+
+- Repository: move the Home Assistant add-on into the standard `openclaw_assistant_rust/` subdirectory so Supervisor scans a canonical add-on layout instead of a root-level `config.yaml`
+- CI: update the GHCR build workflow to read the add-on version from `openclaw_assistant_rust/config.yaml` and build from `openclaw_assistant_rust/`
+- Runtime: no OpenClaw runtime change; this keeps bundled OpenClaw at `2026.5.18`
+- Validation: `cargo test --workspace`
+
 ## 2026.05.19.1
 
 - Runtime: upgrade the bundled OpenClaw npm runtime from `2026.5.12` to the official latest GitHub release `2026.5.18`

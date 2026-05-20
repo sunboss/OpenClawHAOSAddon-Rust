@@ -2,6 +2,27 @@
 
 This file preserves task and push history for future AI handoff.
 
+## 2026-05-20 14:20 Asia/Shanghai - Move add-on into standard HAOS repository subdirectory
+
+- User request:
+  - HAOS still cannot detect the `2026.05.19.1` update; fix the repository so updates are detected reliably
+- Intent / context:
+  - GitHub raw `config.yaml`, GHCR images, and GitHub Actions were already correct for `2026.05.19.1`
+  - The remaining suspect is repository layout: HAOS add-on repositories are more reliably scanned when root has `repository.yaml` and add-ons live in subdirectories
+- Outcome:
+  - moved the add-on implementation into `openclaw_assistant_rust/`
+  - removed the live root-level `config.yaml` path from the add-on layout
+  - updated the GHCR workflow to read/build from `openclaw_assistant_rust/`
+  - bumped add-on version to `2026.05.20.1` so Supervisor has a fresh version to detect after the layout correction
+- Files changed:
+  - `.github/workflows/build-ghcr.yml`
+  - `README.md`
+  - `openclaw_assistant_rust/**`
+  - `docs/MAINTAINER_CONTEXT.md`
+  - `docs/OPERATION_LOG.md`
+- Validation:
+  - `cargo test --workspace` — 20 passed, 0 failed
+
 ## 2026-05-19 07:48 Asia/Shanghai - Upgrade bundled OpenClaw runtime to v2026.5.18
 
 - User request:

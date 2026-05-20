@@ -6,15 +6,8 @@ on:
     branches:
       - main
     paths:
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "Dockerfile"
-      - "build.yaml"
-      - "config.yaml"
+      - "openclaw_assistant_rust/**"
       - "repository.yaml"
-      - "run.sh"
-      - "translations/**"
-      - "crates/**"
       - ".github/workflows/build-ghcr.yml"
 
 permissions:
@@ -39,7 +32,7 @@ jobs:
         id: meta
         shell: bash
         run: |
-          VERSION="$(grep -E '^version:' config.yaml | head -1 | sed -E 's/version:\s*"([^"]+)"/\1/')"
+          VERSION="$(grep -E '^version:' openclaw_assistant_rust/config.yaml | head -1 | sed -E 's/version:\s*"([^"]+)"/\1/')"
           if [ -z "${VERSION}" ]; then
             echo "Failed to parse version from config.yaml" >&2
             exit 1
@@ -83,8 +76,8 @@ jobs:
       - name: Build and push arch image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
+          context: ./openclaw_assistant_rust
+          file: ./openclaw_assistant_rust/Dockerfile
           push: true
           platforms: ${{ matrix.platform }}
           provenance: false

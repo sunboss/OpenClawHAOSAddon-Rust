@@ -35,6 +35,10 @@ Read it before changing UI, runtime, release flow, or the HAOS integration layer
 
 ## Current runtime architecture
 
+- Home Assistant repository layout:
+  - root `repository.yaml`
+  - add-on implementation under `openclaw_assistant_rust/`
+  - do not put a live `config.yaml` at repository root; Supervisor should scan the subdirectory add-on layout
 - `crates/addon-supervisor`
   - bootstraps config
   - writes runtime env
