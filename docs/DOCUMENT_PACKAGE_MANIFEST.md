@@ -29,6 +29,18 @@ and continue OpenClaw HAOS add-on maintenance without relying on chat history.
   - `docs/OPERATION_LOG.md`
   - `docs/HAOS_MAINTENANCE_RUNBOOK.md`
   - `docs/RELEASE_2026-05-20.md`
+  - `docs/RUNTIME_BOUNDARIES.md`
+- Add-on implementation docs:
+  - `openclaw_assistant_rust/README.md`
+  - `openclaw_assistant_rust/INSTALL.md`
+  - `openclaw_assistant_rust/DOCS.md`
+  - `openclaw_assistant_rust/CHANGELOG.md`
+- Add-on implementation metadata:
+  - `openclaw_assistant_rust/config.yaml`
+  - `openclaw_assistant_rust/build.yaml`
+  - `openclaw_assistant_rust/translations/en.yaml`
+- CI:
+  - `.github/workflows/build-ghcr.yml`
 - Package metadata:
   - `docs/DOCUMENT_PACKAGE_MANIFEST.md`
 
@@ -51,4 +63,3 @@ Generated archives should use this pattern:
 docs/archives/openclaw-haos-maintenance-docs-YYYYMMDD-HHMMSS.zip
 docs/archives/openclaw-haos-maintenance-docs-YYYYMMDD-HHMMSS.tar.gz
 ```
-
